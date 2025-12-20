@@ -52,7 +52,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 96A921622EF531D900BE0070 /* Build configuration list for PBXNativeTarget "VietnameseIMEFast" */;
 			buildPhases = (
-				96A9216E2EF5350600BE0070 /* Run Script */,
 				96A921532EF531D900BE0070 /* Sources */,
 				96A921542EF531D900BE0070 /* Frameworks */,
 				96A921552EF531D900BE0070 /* Resources */,
@@ -114,27 +113,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		96A9216E2EF5350600BE0070 /* Run Script */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Run Script";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Build Rust Core\ncd \"$SRCROOT/../../../core\"\n~/.cargo/bin/cargo build --release\n        \n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		96A921532EF531D900BE0070 /* Sources */ = {
