@@ -113,7 +113,9 @@ class MenuToggleView: NSView {
         super.viewDidChangeEffectiveAppearance()
         label.textColor = .labelColor
         
-        // Recreate hosting view to pick up new appearance
-        recreateToggleView()
+        // Defer to next runloop to avoid layout recursion
+        DispatchQueue.main.async { [weak self] in
+            self?.recreateToggleView()
+        }
     }
 }
