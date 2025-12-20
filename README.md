@@ -13,6 +13,7 @@ Bộ gõ tiếng Việt hiệu suất cao với Core engine bằng Rust, hỗ tr
 - **⚡ Hiệu suất cao:** Độ trễ < 3ms, nhanh hơn 47× so với các giải pháp thông thường
 - **🛡️ An toàn bộ nhớ:** 100% memory-safe với Rust Core
 - **🎯 Trải nghiệm native:** Hoạt động mượt mà như bộ gõ gốc
+- **⌨️ Toggle nhanh:** Control+Space để chuyển đổi, priority cao nhất (không bị override)
 - **🔧 Đa nền tảng:** macOS (Swift/IMKit) và Windows (C++/TSF)
 
 ---
@@ -80,6 +81,7 @@ vietnamese-ime/
 | [PERFORMANCE_OPTIMIZATION_GUIDE.md](docs/PERFORMANCE_OPTIMIZATION_GUIDE.md) | Implementation guide đầy đủ |
 | [BACKSPACE_FIX.md](docs/BACKSPACE_FIX.md) | Chi tiết về bugs và giải pháp (500+ dòng) |
 | [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | Hướng dẫn testing toàn diện |
+| [SHORTCUT_GUIDE.md](docs/SHORTCUT_GUIDE.md) | Keyboard shortcut configuration & priority |
 
 ### Dành cho Users & Testers
 
@@ -119,6 +121,16 @@ vietnamese-ime/
 ---
 
 ## 🎨 Tính năng
+
+### Toggle Shortcut
+
+- **Default:** Control+Space (⌃Space) để chuyển đổi gõ Việt ↔ English
+- **High Priority:** Sử dụng `.headInsertEventTap` - luôn capture trước tất cả ứng dụng
+- **No Conflicts:** Không xung đột với Spotlight hay các system shortcuts khác
+- **Customizable:** Có thể đổi sang Control+Shift+Space, Control+Option+Space, etc.
+- **Persistent:** Lưu cấu hình qua UserDefaults
+
+📖 **Chi tiết:** [`docs/SHORTCUT_GUIDE.md`](docs/SHORTCUT_GUIDE.md)
 
 ### Input Methods
 
@@ -197,13 +209,40 @@ Chúng tôi hoan nghênh mọi đóng góp! Vui lòng:
 
 ## 🚀 Roadmap
 
-### Upcoming Features
+### Phase 1: Core Features ✅ COMPLETE
 
-- [ ] Settings UI panel
+- [x] Keyboard shortcut toggle (Control+Space)
+- [x] High-priority event capture (never overridden)
+- [x] Persistent shortcut configuration
+- [x] System-wide operation
+
+### Phase 2: Shortcut Customization 🎯 NEXT
+
+- [ ] **Settings UI panel for shortcut customization**
+  - Visual shortcut recorder (like macOS System Settings)
+  - Live preview of shortcut conflicts
+  - Preset shortcuts selector (Control+Shift+Space, Control+Option+Space, etc.)
+  - Test shortcut button (verify it works)
+  - Reset to default option
+
+- [ ] **Advanced Shortcut Features**
+  - Multiple shortcut support (primary + secondary)
+  - Modifier-only shortcuts (double-tap Shift, double-tap Control)
+  - Per-app shortcut overrides (different shortcut per app)
+  - Shortcut profiles (switch between profiles)
+  - Import/export shortcut configurations
+
+- [ ] **Conflict Detection & Resolution**
+  - Real-time system shortcut conflict warnings
+  - App-specific conflict detection (VSCode, Terminal, etc.)
+  - Automatic conflict resolution suggestions
+  - Disable conflicting app shortcuts option
+
+### Phase 3: Enhanced Features
+
 - [ ] Dictionary/Autocomplete
 - [ ] Emoji picker
-- [ ] Menu bar icon với quick toggle
-- [ ] Cloud sync settings
+- [ ] Cloud sync settings (including shortcuts)
 - [ ] Windows platform support
 
 ---
