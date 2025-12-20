@@ -11,6 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     var statusItem: NSStatusItem!
     var isEnabled: Bool = true
+    var toggleView: MenuToggleView?
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Enable logging in debug mode
@@ -22,9 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create Status Bar Item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
-        if let button = statusItem.button {
-            updateStatusIcon()
-        }
+        updateStatusIcon()
         
         setupMenu()
         setupObservers()
@@ -38,15 +37,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupMenu() {
         let menu = NSMenu()
         
-        // Toggle Item (with checkmark)
-        let toggleItem = NSMenuItem(
-            title: "Vietnamese Input",
-            action: #selector(toggleVietnamese),
+        // Toggle Item with NSSwitch using custom view
+        let toggleMenuItem = NSMenuItem()
+        toggleMenuItem.tag = 100
+        
+        // Create custom toggle view
+        toggleView = MenuToggleView(labelText: "Vietnamese Input", isOn: isEnabled) { [weak self] newState in
+            self?.handleToggleChanged(newState)
+        }
+        
+        toggleMenuItem.view = toggleView
+        menu.addItem(toggleMenuItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Shortcut info (non-clickable)
+        let shortcutInfo = NSMenuItem(
+            title: "Toggle: \(InputManager.shared.getCurrentShortcut().displayString)",
+            action: nil,
             keyEquivalent: ""
         )
-        toggleItem.tag = 100 // Tag for easy access
-        toggleItem.state = isEnabled ? .on : .off
-        menu.addItem(toggleItem)
+        shortcutInfo.isEnabled = false
+        menu.addItem(shortcutInfo)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -144,6 +156,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateToggleMenuItem()
             }
         }
+        
+        // Listen for shortcut changes
+        NotificationCenter.default.addObserver(
+            forName: .shortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.setupMenu()  // Rebuild menu to show new shortcut
+        }
     }
     
     func updateStatusIcon() {
@@ -154,21 +175,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func updateToggleMenuItem() {
-        if let menu = statusItem.menu,
-           let toggleItem = menu.item(withTag: 100) {
-            toggleItem.state = isEnabled ? .on : .off
-        }
+        toggleView?.updateState(isEnabled)
+    }
+    
+    // MARK: - Toggle Handler
+    
+    func handleToggleChanged(_ newState: Bool) {
+        isEnabled = newState
+        InputManager.shared.setEnabled(isEnabled)
+        updateStatusIcon()
+        
+        Log.info("Toggle Vietnamese: \(isEnabled ? "ON" : "OFF")")
     }
     
     // MARK: - Menu Actions
     
-    @objc func toggleVietnamese() {
+    @objc func toggleVietnamese(_ sender: Any?) {
+        // Toggle state
         isEnabled.toggle()
-        InputManager.shared.setEnabled(isEnabled)
-        updateStatusIcon()
+        handleToggleChanged(isEnabled)
         updateToggleMenuItem()
-        
-        Log.info("Toggle Vietnamese: \(isEnabled ? "ON" : "OFF")")
     }
     
     @objc func selectTelex() {
@@ -238,6 +264,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showAbout() {
+        let shortcut = InputManager.shared.getCurrentShortcut()
         let alert = NSAlert()
         alert.messageText = "VietnameseIMEFast"
         alert.informativeText = """
@@ -251,6 +278,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         • Smart text injection (app-aware)
         • Telex and VNI input methods
         • Modern and traditional tone styles
+        
+        Toggle Shortcut: \(shortcut.displayString)
+        (Use \(shortcut.displayString) to switch between Vietnamese and English)
         
         Built with ❤️ using Rust + Swift
         """

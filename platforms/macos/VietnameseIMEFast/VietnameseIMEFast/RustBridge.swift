@@ -516,14 +516,19 @@ func setupShortcutObserver() {
 }
 
 func matchesToggleShortcut(keyCode: UInt16, flags: CGEventFlags) -> Bool {
-    // Example: Cmd+Shift+V to toggle IME
-    // This should be configurable via UserDefaults
-    return keyCode == 9 && flags.contains(.maskCommand) && flags.contains(.maskShift)
+    // Load current shortcut configuration (default: Control+Space)
+    let currentShortcut = KeyboardShortcut.load()
+    return currentShortcut.matches(keyCode: keyCode, flags: flags)
 }
 
 func matchesModifierOnlyShortcut(flags: CGEventFlags) -> Bool {
-    // Some users prefer double-tap Shift to toggle
-    return false // Not implemented yet
+    // Check if current shortcut is modifier-only (e.g., double-tap Shift)
+    let currentShortcut = KeyboardShortcut.load()
+    guard currentShortcut.isModifierOnly else { return false }
+    
+    let savedFlags = CGEventFlags(rawValue: currentShortcut.modifiers)
+    let kModifierMask: CGEventFlags = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
+    return flags.intersection(kModifierMask) == savedFlags.intersection(kModifierMask)
 }
 
 // MARK: - Keyboard Event Callback

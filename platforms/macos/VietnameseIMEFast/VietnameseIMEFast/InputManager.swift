@@ -20,6 +20,9 @@ class InputManager {
     // IME state
     private var isEnabled: Bool = true
     
+    // Shortcut configuration
+    private var currentShortcut: KeyboardShortcut
+    
     // Previous key for detecting double-tap shortcuts
     private var previousKeyCode: UInt16?
     private var previousKeyTimestamp: TimeInterval = 0
@@ -27,6 +30,10 @@ class InputManager {
     private init() {
         self.bridge = RustBridge()
         self.bridge.initialize()
+        
+        // Load shortcut configuration
+        self.currentShortcut = KeyboardShortcut.load()
+        Log.info("Toggle shortcut loaded: \(currentShortcut.displayString)")
         
         // Setup observers for configuration changes
         setupObservers()
@@ -115,7 +122,17 @@ class InputManager {
             forName: .shortcutChanged,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            // Reload toggle shortcut configuration
+            if let shortcut = notification.object as? KeyboardShortcut {
+                self?.currentShortcut = shortcut
+                Log.info("Toggle shortcut updated: \(shortcut.displayString)")
+            } else {
+                self?.currentShortcut = KeyboardShortcut.load()
+                Log.info("Toggle shortcut reloaded: \(self?.currentShortcut.displayString ?? "unknown")")
+            }
+            
+            // Also reload text expansion shortcuts
             self?.reloadShortcuts()
         }
     }
@@ -180,9 +197,10 @@ class InputManager {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
         
-        // 4. Check for toggle shortcut
-        if matchesToggleShortcut(keyCode: keyCode, flags: flags) {
+        // 4. Check for toggle shortcut (default: Control+Space)
+        if currentShortcut.matches(keyCode: keyCode, flags: flags) {
             toggleEnabled()
+            Log.info("Toggle shortcut triggered: \(currentShortcut.displayString)")
             return nil // Swallow event
         }
         
@@ -391,5 +409,14 @@ extension InputManager {
     
     func clearComposition() {
         ime_clear()
+    }
+    
+    func getCurrentShortcut() -> KeyboardShortcut {
+        return currentShortcut
+    }
+    
+    func setShortcut(_ shortcut: KeyboardShortcut) {
+        currentShortcut = shortcut
+        shortcut.save()
     }
 }
