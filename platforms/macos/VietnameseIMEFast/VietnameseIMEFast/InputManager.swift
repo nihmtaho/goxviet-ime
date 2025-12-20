@@ -17,9 +17,6 @@ class InputManager {
     private var runLoopSource: CFRunLoopSource?
     private var bridge: RustBridge
     
-    // IME state
-    private var isEnabled: Bool = true
-    
     // Shortcut configuration
     private var currentShortcut: KeyboardShortcut
     
@@ -35,8 +32,37 @@ class InputManager {
         self.currentShortcut = KeyboardShortcut.load()
         Log.info("Toggle shortcut loaded: \(currentShortcut.displayString)")
         
+        // Load and apply saved settings from AppState
+        loadSavedSettings()
+        
         // Setup observers for configuration changes
         setupObservers()
+    }
+    
+    private func loadSavedSettings() {
+        // Apply saved input method
+        let method = AppState.shared.inputMethod
+        ime_method(UInt8(method))
+        Log.info("Loaded input method: \(method == 0 ? "Telex" : "VNI")")
+        
+        // Apply saved tone style
+        let modernTone = AppState.shared.modernToneStyle
+        ime_modern(modernTone)
+        Log.info("Loaded tone style: \(modernTone ? "Modern" : "Traditional")")
+        
+        // Apply saved ESC restore setting
+        let escRestore = AppState.shared.escRestoreEnabled
+        ime_esc_restore(escRestore)
+        Log.info("Loaded ESC restore: \(escRestore ? "enabled" : "disabled")")
+        
+        // Apply saved free tone setting
+        let freeTone = AppState.shared.freeToneEnabled
+        ime_free_tone(freeTone)
+        Log.info("Loaded free tone: \(freeTone ? "enabled" : "disabled")")
+        
+        // Set initial enabled state (will be overridden by per-app mode if enabled)
+        ime_enabled(AppState.shared.isEnabled)
+        Log.info("Initial Vietnamese input state: \(AppState.shared.isEnabled ? "enabled" : "disabled")")
     }
     
     deinit {
@@ -138,40 +164,43 @@ class InputManager {
     }
     
     func setEnabled(_ enabled: Bool) {
-        isEnabled = enabled
-        bridge.setEnabled(enabled)
+        // Update AppState
+        AppState.shared.setEnabled(enabled)
+        
+        // Update Rust engine
+        ime_enabled(enabled)
         
         // Clear buffer when toggling
         ime_clear()
         
         Log.info("IME \(enabled ? "enabled" : "disabled")")
         
-        // Update per-app state
-        PerAppModeManager.shared.setStateForCurrentApp(enabled)
-        
-        // Post notification for UI update
-        NotificationCenter.default.post(name: .updateStateChanged, object: enabled)
+        // Update per-app state if smart mode is enabled
+        if AppState.shared.isSmartModeEnabled {
+            PerAppModeManager.shared.setStateForCurrentApp(enabled)
+        }
     }
     
     func toggleEnabled() {
-        setEnabled(!isEnabled)
+        setEnabled(!AppState.shared.isEnabled)
     }
     
     func setInputMethod(_ method: Int) {
-        bridge.setMethod(method)
+        AppState.shared.inputMethod = method
         ime_method(UInt8(method))
+        Log.info("Input method changed: \(method == 0 ? "Telex" : "VNI")")
     }
     
     func setModernToneStyle(_ modern: Bool) {
-        bridge.setModernTone(modern)
+        AppState.shared.modernToneStyle = modern
         ime_modern(modern)
+        Log.info("Modern tone style: \(modern ? "enabled" : "disabled")")
     }
     
     func reloadShortcuts() {
         // Load shortcuts from UserDefaults or other storage
         // For now, just clear
         ime_clear_shortcuts()
-        bridge.clearShortcuts()
         Log.info("Shortcuts reloaded")
     }
     
@@ -205,7 +234,7 @@ class InputManager {
         }
         
         // 5. If IME is disabled, pass through
-        guard isEnabled else {
+        guard AppState.shared.isEnabled else {
             return Unmanaged.passUnretained(event)
         }
         
@@ -404,7 +433,7 @@ class InputManager {
 
 extension InputManager {
     func getCurrentState() -> Bool {
-        return isEnabled
+        return AppState.shared.isEnabled
     }
     
     func clearComposition() {
@@ -418,5 +447,17 @@ extension InputManager {
     func setShortcut(_ shortcut: KeyboardShortcut) {
         currentShortcut = shortcut
         shortcut.save()
+    }
+    
+    func setEscRestore(_ enabled: Bool) {
+        AppState.shared.escRestoreEnabled = enabled
+        ime_esc_restore(enabled)
+        Log.info("ESC restore: \(enabled ? "enabled" : "disabled")")
+    }
+    
+    func setFreeTone(_ enabled: Bool) {
+        AppState.shared.freeToneEnabled = enabled
+        ime_free_tone(enabled)
+        Log.info("Free tone: \(enabled ? "enabled" : "disabled")")
     }
 }
