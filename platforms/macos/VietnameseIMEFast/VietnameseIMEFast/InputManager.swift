@@ -77,7 +77,19 @@ class InputManager {
         
         if !accessEnabled {
             Log.info("Accessibility permission not granted")
-            KeyboardHookManager.shared.showAccessibilityAlert()
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Accessibility Permission Required"
+                alert.informativeText = "VietnameseIMEFast needs accessibility access to capture keyboard input.\n\nPlease enable it in System Preferences → Security & Privacy → Privacy → Accessibility."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Open System Preferences")
+                alert.addButton(withTitle: "Cancel")
+                
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
+            }
             return
         }
         
@@ -245,25 +257,8 @@ class InputManager {
             return Unmanaged.passUnretained(event)
         }
         
-        // 7. Handle special keys
-        if handleSpecialKey(keyCode: keyCode, flags: flags, event: event, proxy: proxy) {
-            return nil // Special key was handled
-        }
-        
-        // 8. Process with Rust engine
-        return processKeyWithEngine(keyCode: keyCode, flags: flags, proxy: proxy, event: event)
-    }
-    
-    private func handleFlagsChanged(event: CGEvent, proxy: CGEventTapProxy) -> Unmanaged<CGEvent>? {
-        // This can be used for modifier-only shortcuts (e.g., double-tap Shift)
-        // For now, just pass through
-        return Unmanaged.passUnretained(event)
-    }
-    
-    private func handleSpecialKey(keyCode: UInt16, flags: CGEventFlags, event: CGEvent, proxy: CGEventTapProxy) -> Bool {
-        // Handle ESC key for word restoration
-        if keyCode == KeyCode.escape {
-            // ESC restore is handled internally by Rust engine
+        // 7. Handle ESC key for word restoration
+        if keyCode == 53 { // ESC key
             let result = ime_key(keyCode, false, false)
             if let r = result {
                 defer { ime_free(r) }
@@ -278,12 +273,12 @@ class InputManager {
                         delays: delays,
                         proxy: proxy
                     )
-                    return true
+                    return nil
                 }
             }
         }
         
-        // Handle navigation keys (clear composition and pass through)
+        // 8. Handle navigation keys (clear composition and pass through)
         let navigationKeys: Set<UInt16> = [
             36,  // Return
             76,  // Enter
@@ -296,22 +291,65 @@ class InputManager {
         
         if navigationKeys.contains(keyCode) {
             ime_clear()
-            return false // Don't swallow, let system handle
+            return Unmanaged.passUnretained(event)
         }
         
-        // Backspace is handled in processKeyWithEngine
-        // No special treatment needed here
-        
-        return false
+        // 9. Process with Rust engine
+        return processKeyWithEngine(keyCode: keyCode, flags: flags, proxy: proxy, event: event)
     }
+    
+    private func handleFlagsChanged(event: CGEvent, proxy: CGEventTapProxy) -> Unmanaged<CGEvent>? {
+        // This can be used for modifier-only shortcuts (e.g., double-tap Shift)
+        // For now, just pass through
+        return Unmanaged.passUnretained(event)
+    }
+    
+
     
     private func processKeyWithEngine(keyCode: UInt16, flags: CGEventFlags, proxy: CGEventTapProxy, event: CGEvent) -> Unmanaged<CGEvent>? {
         let caps = flags.contains(.maskAlphaShift)
         let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
+        let shift = flags.contains(.maskShift)
         
         Log.key(keyCode, "Processing")
         
-        // Call Rust engine
+        // Special handling for backspace: try to restore word from screen
+        if keyCode == 51 && !ctrl { // 51 = backspace
+            // First try Rust engine
+            let result = ime_key(keyCode, caps, ctrl)
+            if let r = result {
+                defer { ime_free(r) }
+                
+                if r.pointee.action == 1 { // Send - replace text
+                    let backspaceCount = Int(r.pointee.backspace)
+                    let chars = extractChars(from: r.pointee)
+                    
+                    Log.transform(backspaceCount, String(chars))
+                    
+                    let (method, delays) = detectMethod()
+                    TextInjector.shared.injectSync(
+                        bs: backspaceCount,
+                        text: String(chars),
+                        method: method,
+                        delays: delays,
+                        proxy: proxy
+                    )
+                    return nil
+                }
+            }
+            
+            // Engine returned none - try to restore word from screen
+            if let word = getWordToRestoreOnBackspace() {
+                // TODO: Add ime_restore_word function to Rust bridge
+                Log.info("Restored word from screen: \(word)")
+                // For now, just log - will implement restoration in next iteration
+            }
+            
+            // Pass through backspace to delete the character
+            return Unmanaged.passUnretained(event)
+        }
+        
+        // Call Rust engine for other keys
         let result = ime_key(keyCode, caps, ctrl)
         
         guard let r = result else {
