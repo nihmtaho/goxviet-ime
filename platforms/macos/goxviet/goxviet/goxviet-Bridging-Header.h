@@ -1,5 +1,5 @@
-#ifndef VietnameseIME_Bridging_Header_h
-#define VietnameseIME_Bridging_Header_h
+#ifndef GoxViet_Bridging_Header_h
+#define GoxViet_Bridging_Header_h
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -75,4 +75,4 @@ void ime_clear_shortcuts(void);
 /// Restore buffer from a Vietnamese word string
 void ime_restore_word(const char* word);
 
-#endif /* VietnameseIME_Bridging_Header_h */
+#endif /* GoxViet_Bridging_Header_h */

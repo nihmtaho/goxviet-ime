@@ -1,8 +1,8 @@
 //
 //  AppDelegate.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
-//  Enhanced with toggle functionality and state management from GoNhanh
+//  Enhanced with toggle functionality and state management
 //
 
 import Cocoa
@@ -10,21 +10,24 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     var statusItem: NSStatusItem!
-    var isEnabled: Bool = true
+    var toggleView: MenuToggleView?
+    var smartModeToggleView: MenuToggleView?
+    
+    var isEnabled: Bool {
+        return AppState.shared.isEnabled
+    }
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Enable logging in debug mode
         #if DEBUG
         Log.isEnabled = true
-        Log.info("VietnameseIMEFast starting in DEBUG mode")
+        Log.info("GoxViet starting in DEBUG mode")
         #endif
         
         // Create Status Bar Item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
-        if let button = statusItem.button {
-            updateStatusIcon()
-        }
+        updateStatusIcon()
         
         setupMenu()
         setupObservers()
@@ -38,15 +41,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupMenu() {
         let menu = NSMenu()
         
-        // Toggle Item (with checkmark)
-        let toggleItem = NSMenuItem(
-            title: "Vietnamese Input",
-            action: #selector(toggleVietnamese),
+        // Toggle Item with NSSwitch using custom view
+        let toggleMenuItem = NSMenuItem()
+        toggleMenuItem.tag = 100
+        
+        // Create custom toggle view
+        toggleView = MenuToggleView(labelText: "Vietnamese Input", isOn: AppState.shared.isEnabled) { [weak self] newState in
+            self?.handleToggleChanged(newState)
+        }
+        
+        toggleMenuItem.view = toggleView
+        menu.addItem(toggleMenuItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Smart Per-App Mode Toggle
+        let smartModeMenuItem = NSMenuItem()
+        smartModeMenuItem.tag = 101
+        
+        smartModeToggleView = MenuToggleView(
+            labelText: "Smart Per-App Mode",
+            isOn: AppState.shared.isSmartModeEnabled
+        ) { [weak self] newState in
+            self?.handleSmartModeChanged(newState)
+        }
+        
+        smartModeMenuItem.view = smartModeToggleView
+        menu.addItem(smartModeMenuItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Shortcut info (non-clickable)
+        let shortcutInfo = NSMenuItem(
+            title: "Toggle: \(InputManager.shared.getCurrentShortcut().displayString)",
+            action: nil,
             keyEquivalent: ""
         )
-        toggleItem.tag = 100 // Tag for easy access
-        toggleItem.state = isEnabled ? .on : .off
-        menu.addItem(toggleItem)
+        shortcutInfo.isEnabled = false
+        menu.addItem(shortcutInfo)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -54,11 +86,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let methodMenu = NSMenu()
         let telexItem = NSMenuItem(title: "Telex", action: #selector(selectTelex), keyEquivalent: "")
         telexItem.tag = 0
-        telexItem.state = .on // Default
+        telexItem.state = (AppState.shared.inputMethod == 0) ? .on : .off
         methodMenu.addItem(telexItem)
         
         let vniItem = NSMenuItem(title: "VNI", action: #selector(selectVNI), keyEquivalent: "")
         vniItem.tag = 1
+        vniItem.state = (AppState.shared.inputMethod == 1) ? .on : .off
         methodMenu.addItem(vniItem)
         
         let methodMenuItem = NSMenuItem(title: "Input Method", action: nil, keyEquivalent: "")
@@ -69,11 +102,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let toneMenu = NSMenu()
         let modernToneItem = NSMenuItem(title: "Modern (hoà, thuỷ)", action: #selector(selectModernTone), keyEquivalent: "")
         modernToneItem.tag = 1
+        modernToneItem.state = AppState.shared.modernToneStyle ? .on : .off
         toneMenu.addItem(modernToneItem)
         
         let oldToneItem = NSMenuItem(title: "Traditional (hòa, thủy)", action: #selector(selectOldTone), keyEquivalent: "")
         oldToneItem.tag = 0
-        oldToneItem.state = .on // Default
+        oldToneItem.state = AppState.shared.modernToneStyle ? .off : .on
         toneMenu.addItem(oldToneItem)
         
         let toneMenuItem = NSMenuItem(title: "Tone Style", action: nil, keyEquivalent: "")
@@ -102,7 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // About
         menu.addItem(NSMenuItem(
-            title: "About VietnameseIMEFast",
+            title: "About GoxViet",
             action: #selector(showAbout),
             keyEquivalent: ""
         ))
@@ -125,8 +159,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if let enabled = notification.object as? Bool {
-                self?.isEnabled = enabled
+            if notification.object as? Bool != nil {
                 self?.updateStatusIcon()
                 self?.updateToggleMenuItem()
             }
@@ -138,37 +171,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if let enabled = notification.object as? Bool {
-                self?.isEnabled = enabled
+            if notification.object as? Bool != nil {
                 self?.updateStatusIcon()
                 self?.updateToggleMenuItem()
             }
+        }
+        
+        // Listen for shortcut changes
+        NotificationCenter.default.addObserver(
+            forName: .shortcutChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.setupMenu()  // Rebuild menu to show new shortcut
         }
     }
     
     func updateStatusIcon() {
         if let button = statusItem.button {
             button.title = isEnabled ? "🇻🇳" : "EN"
-            button.toolTip = isEnabled ? "Vietnamese Input (Enabled)" : "Vietnamese Input (Disabled)"
+            button.toolTip = isEnabled ? "Gõ Việt (Enabled)" : "Gõ Việt (Disabled)"
         }
     }
     
     func updateToggleMenuItem() {
-        if let menu = statusItem.menu,
-           let toggleItem = menu.item(withTag: 100) {
-            toggleItem.state = isEnabled ? .on : .off
+        toggleView?.updateState(isEnabled)
+    }
+    
+    // MARK: - Toggle Handlers
+    
+    func handleToggleChanged(_ newState: Bool) {
+        InputManager.shared.setEnabled(newState)
+        updateStatusIcon()
+        
+        Log.info("Toggle Vietnamese: \(newState ? "ON" : "OFF")")
+    }
+    
+    func handleSmartModeChanged(_ newState: Bool) {
+        AppState.shared.isSmartModeEnabled = newState
+        
+        if newState {
+            // Refresh to apply saved state for current app
+            PerAppModeManager.shared.refresh()
         }
+        
+        Log.info("Smart Per-App Mode: \(newState ? "ON" : "OFF")")
     }
     
     // MARK: - Menu Actions
     
-    @objc func toggleVietnamese() {
-        isEnabled.toggle()
-        InputManager.shared.setEnabled(isEnabled)
-        updateStatusIcon()
+    @objc func toggleVietnamese(_ sender: Any?) {
+        // Toggle state
+        let newState = !AppState.shared.isEnabled
+        handleToggleChanged(newState)
         updateToggleMenuItem()
-        
-        Log.info("Toggle Vietnamese: \(isEnabled ? "ON" : "OFF")")
     }
     
     @objc func selectTelex() {
@@ -218,10 +274,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings() {
         let alert = NSAlert()
         alert.messageText = "Settings"
-        alert.informativeText = "Settings panel coming soon!\n\nFor now, use the menu to:\n• Toggle Vietnamese input\n• Switch input methods (Telex/VNI)\n• Change tone style"
+        
+        let currentApp = PerAppModeManager.shared.getCurrentAppName() ?? "Unknown"
+        let smartModeStatus = AppState.shared.isSmartModeEnabled ? "Enabled" : "Disabled"
+        let perAppCount = AppState.shared.getAllPerAppModes().count
+        
+        alert.informativeText = """
+        Current Configuration:
+        
+        • Input Method: \(AppState.shared.inputMethod == 0 ? "Telex" : "VNI")
+        • Tone Style: \(AppState.shared.modernToneStyle ? "Modern" : "Traditional")
+        • ESC Restore: \(AppState.shared.escRestoreEnabled ? "Enabled" : "Disabled")
+        • Free Tone: \(AppState.shared.freeToneEnabled ? "Enabled" : "Disabled")
+        
+        Smart Per-App Mode: \(smartModeStatus)
+        • Current App: \(currentApp)
+        • Apps with custom settings: \(perAppCount)
+        
+        Use the menu to configure settings.
+        """
+        
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
-        alert.runModal()
+        
+        if perAppCount > 0 {
+            alert.addButton(withTitle: "Clear Per-App Settings")
+            let response = alert.runModal()
+            if response == .alertSecondButtonReturn {
+                clearPerAppSettings()
+            }
+        } else {
+            alert.runModal()
+        }
+    }
+    
+    func clearPerAppSettings() {
+        let confirmAlert = NSAlert()
+        confirmAlert.messageText = "Clear All Per-App Settings?"
+        confirmAlert.informativeText = "This will reset Gõ Việt input mode to default (enabled) for all applications."
+        confirmAlert.alertStyle = .warning
+        confirmAlert.addButton(withTitle: "Clear")
+        confirmAlert.addButton(withTitle: "Cancel")
+        
+        if confirmAlert.runModal() == .alertFirstButtonReturn {
+            AppState.shared.clearAllPerAppModes()
+            
+            let successAlert = NSAlert()
+            successAlert.messageText = "Settings Cleared"
+            successAlert.informativeText = "All per-app settings have been reset."
+            successAlert.alertStyle = .informational
+            successAlert.addButton(withTitle: "OK")
+            successAlert.runModal()
+        }
     }
     
     @objc func viewLog() {
@@ -238,19 +342,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showAbout() {
+        let shortcut = InputManager.shared.getCurrentShortcut()
         let alert = NSAlert()
-        alert.messageText = "VietnameseIMEFast"
+        alert.messageText = "GoxViet - Gõ Việt"
         alert.informativeText = """
         A high-performance Vietnamese IME powered by Rust.
         
-        Version: 1.0.0
+        Version: 1.0.2
         
         Features:
         • Native macOS integration via Accessibility API
-        • Ultra-low latency input processing
+        • Ultra-low latency input processing (< 5ms)
         • Smart text injection (app-aware)
+        • Per-app Vietnamese mode memory
         • Telex and VNI input methods
         • Modern and traditional tone styles
+        
+        Toggle Shortcut: \(shortcut.displayString)
+        (Use \(shortcut.displayString) to switch between Gõ Việt and English)
         
         Built with ❤️ using Rust + Swift
         """

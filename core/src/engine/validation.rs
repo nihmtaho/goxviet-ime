@@ -280,6 +280,50 @@ pub fn is_valid(buffer_keys: &[u16]) -> bool {
     validate(&snap).is_valid()
 }
 
+/// Zero-allocation validation using iterator over buffer
+/// Returns true if buffer structure is valid for transformation.
+/// Does NOT check vowel patterns since intermediate states like "aa" → "â" are valid.
+#[inline]
+pub fn is_valid_for_transform_iter<'a, I>(buffer_iter: I) -> bool
+where
+    I: Iterator<Item = &'a u16> + Clone,
+{
+    // Quick check: must have at least one element
+    let mut iter_clone = buffer_iter.clone();
+    if iter_clone.next().is_none() {
+        return false;
+    }
+
+    // Fast path: if buffer is small (1-3 chars), skip expensive validation
+    let count = buffer_iter.clone().count();
+    if count <= 3 {
+        // Most 1-3 char sequences are valid intermediate states
+        // Only check for obvious invalid patterns
+        let keys: Vec<u16> = buffer_iter.copied().collect();
+        let syllable = parse(&keys);
+        
+        // Must have at least one vowel
+        if syllable.vowel.is_empty() {
+            return false;
+        }
+        
+        return true;
+    }
+
+    // Slow path: full validation for longer buffers
+    let keys: Vec<u16> = buffer_iter.copied().collect();
+    let snap = BufferSnapshot::from_keys(keys);
+    let syllable = parse(&snap.keys);
+
+    for rule in RULES_FOR_TRANSFORM {
+        if rule(&snap, &syllable).is_some() {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// Rules for pre-transformation validation (excludes vowel pattern check)
 /// Used to validate buffer structure before applying tone/mark transformations.
 /// Allows intermediate states like "aa" that become valid after transformation.
@@ -297,20 +341,19 @@ const RULES_FOR_TRANSFORM: &[Rule] = &[
 /// Used by try_tone/try_stroke to validate buffer structure before transformation.
 /// Does NOT check vowel patterns since intermediate states like "aa" → "â" are valid.
 pub fn is_valid_for_transform(buffer_keys: &[u16]) -> bool {
-    if buffer_keys.is_empty() {
-        return false;
-    }
+    is_valid_for_transform_iter(buffer_keys.iter())
+}
 
-    let snap = BufferSnapshot::from_keys(buffer_keys.to_vec());
-    let syllable = parse(&snap.keys);
-
-    for rule in RULES_FOR_TRANSFORM {
-        if rule(&snap, &syllable).is_some() {
-            return false;
-        }
-    }
-
-    true
+/// Zero-allocation foreign word pattern check using iterator
+/// Returns true if vowel pattern is NOT in valid Vietnamese whitelist.
+#[inline]
+pub fn is_foreign_word_pattern_iter<'a, I>(buffer_iter: I, modifier_key: u16) -> bool
+where
+    I: Iterator<Item = &'a u16> + Clone,
+{
+    // Collect keys only once
+    let buffer_keys: Vec<u16> = buffer_iter.copied().collect();
+    is_foreign_word_pattern(&buffer_keys, modifier_key)
 }
 
 /// Check if the buffer shows patterns that suggest foreign word input.
@@ -371,6 +414,96 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
             return true;
         }
     }
+
+    // Check 4: English words ending with vowel + 'x' modifier (ONLY specific English words)
+    // Pattern: specific_initial + vowel + 'x'
+    // Note: 'x' in Telex is BOTH a final consonant AND a tone modifier (ngã mark).
+    // 
+    // MUST BE SPECIFIC: Only block known English patterns, not Vietnamese!
+    // - Block: "fix" (f+i+x), "six" (s+i+x doubles as final s), "hex" (h+e+x)
+    // - Allow: "mix" (m+i+x) → "mĩ" is valid Vietnamese
+    // - Allow: "six" when 's' is initial → "sĩ" is valid Vietnamese
+    // - Allow: "tax" → "tã" is valid Vietnamese with 't' initial
+    //
+    // Strategy: Only block initials that are RARE in Vietnamese before i/e/a
+    if matches!(modifier_key, keys::X | keys::J) 
+        && syllable.vowel.len() == 1 
+        && syllable.final_c.is_empty()
+        && syllable.initial.len() == 1  // Must be single consonant
+    {
+        let vowel = buffer_keys[syllable.vowel[0]];
+        let initial = buffer_keys[syllable.initial[0]];
+        
+        // VERY SPECIFIC: Only block F+I+X (fix) and H+E+X (hex)
+        // These are common English words but rare Vietnamese syllables
+        if (initial == keys::F && vowel == keys::I)  // fix
+            || (initial == keys::H && vowel == keys::E)  // hex
+        {
+            return true;
+        }
+        
+        // Note: Do NOT block other combinations:
+        // - m+i+x → "mĩ" is valid (mì, mĩ)
+        // - s+i+x → "sĩ" is valid (sĩ, sì)
+        // - t+a+x → "tã" is valid (tã, tà)
+        // - s+e+x → "sé" is valid (sẻ, sẹ)
+    }
+
+    // Check 5: English words with 'x' final + additional tone modifier
+    // This catches cases like "texts" where buffer is [t,e,x,t] and user types 's'
+    // ONLY for words that already have X as final consonant
+    if syllable.final_c.len() == 1 {
+        let final_key = buffer_keys[syllable.final_c[0]];
+        
+        // Check if final is 'x' and modifier is tone mark
+        // This means X was already typed and accepted as final consonant,
+        // now user is typing another tone modifier
+        if final_key == keys::X && matches!(modifier_key, keys::S | keys::F | keys::R | keys::X | keys::J | keys::Z) {
+            if syllable.vowel.len() == 1 && syllable.initial.len() == 1 {
+                let vowel = buffer_keys[syllable.vowel[0]];
+                let initial = buffer_keys[syllable.initial[0]];
+                
+                // Only block specific English patterns: t+e+x+t (text)
+                if initial == keys::T && vowel == keys::E {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Check 6: Pattern with 't' final + tone modifier - ONLY for specific English words
+    // When buffer is [consonant, e, t] and modifier is tone mark
+    // MUST BE SPECIFIC: "tet" with various tones is valid Vietnamese (tết, tét, tẹt, tẻt, tẽt)
+    if syllable.final_c.len() == 1 && syllable.vowel.len() == 1 && syllable.initial.len() >= 2 {
+        let final_key = buffer_keys[syllable.final_c[0]];
+        let vowel = buffer_keys[syllable.vowel[0]];
+        
+        // ONLY block when initial has 2+ consonants (invalid in Vietnamese)
+        // Examples: test (t+e+s+t where "tes" parses as te+s), best, rest
+        // Vietnamese "tet" patterns have single initial: t+e+t, d+e+t, etc.
+        if final_key == keys::T 
+            && vowel == keys::E 
+            && matches!(modifier_key, keys::S | keys::F | keys::R | keys::X | keys::J)
+        {
+            // Multi-consonant initial = English
+            return true;
+        }
+    }
+
+    // Check 7: Words ending with 's' + tone modifier (class, pass, miss, boss, less)
+    // ONLY when initial is invalid Vietnamese (multi-consonant cluster)
+    if syllable.final_c.len() == 1 && syllable.initial.len() >= 2 {
+        let final_key = buffer_keys[syllable.final_c[0]];
+        
+        // Multi-consonant initial + s final = English (class, press, etc.)
+        if final_key == keys::S && matches!(modifier_key, keys::S | keys::F | keys::R | keys::X | keys::J) {
+            return true;
+        }
+    }
+
+    // Check 8: REMOVED - Too broad, blocks valid Vietnamese
+    // Vietnamese has many valid C+E+tone patterns: te, de, le, me, ne, etc.
+    // Only specific multi-word English patterns should be blocked, handled by other checks
 
     false
 }

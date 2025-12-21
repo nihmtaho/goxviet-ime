@@ -1,6 +1,6 @@
 //
 //  InputManager.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
 //  Updated to use new Rust core API (ime_init, ime_key, etc.)
 //
@@ -17,8 +17,8 @@ class InputManager {
     private var runLoopSource: CFRunLoopSource?
     private var bridge: RustBridge
     
-    // IME state
-    private var isEnabled: Bool = true
+    // Shortcut configuration
+    private var currentShortcut: KeyboardShortcut
     
     // Previous key for detecting double-tap shortcuts
     private var previousKeyCode: UInt16?
@@ -28,8 +28,41 @@ class InputManager {
         self.bridge = RustBridge()
         self.bridge.initialize()
         
+        // Load shortcut configuration
+        self.currentShortcut = KeyboardShortcut.load()
+        Log.info("Toggle shortcut loaded: \(currentShortcut.displayString)")
+        
+        // Load and apply saved settings from AppState
+        loadSavedSettings()
+        
         // Setup observers for configuration changes
         setupObservers()
+    }
+    
+    private func loadSavedSettings() {
+        // Apply saved input method
+        let method = AppState.shared.inputMethod
+        ime_method(UInt8(method))
+        Log.info("Loaded input method: \(method == 0 ? "Telex" : "VNI")")
+        
+        // Apply saved tone style
+        let modernTone = AppState.shared.modernToneStyle
+        ime_modern(modernTone)
+        Log.info("Loaded tone style: \(modernTone ? "Modern" : "Traditional")")
+        
+        // Apply saved ESC restore setting
+        let escRestore = AppState.shared.escRestoreEnabled
+        ime_esc_restore(escRestore)
+        Log.info("Loaded ESC restore: \(escRestore ? "enabled" : "disabled")")
+        
+        // Apply saved free tone setting
+        let freeTone = AppState.shared.freeToneEnabled
+        ime_free_tone(freeTone)
+        Log.info("Loaded free tone: \(freeTone ? "enabled" : "disabled")")
+        
+        // Set initial enabled state (will be overridden by per-app mode if enabled)
+        ime_enabled(AppState.shared.isEnabled)
+        Log.info("Initial Gõ Việt input state: \(AppState.shared.isEnabled ? "enabled" : "disabled")")
     }
     
     deinit {
@@ -44,7 +77,19 @@ class InputManager {
         
         if !accessEnabled {
             Log.info("Accessibility permission not granted")
-            KeyboardHookManager.shared.showAccessibilityAlert()
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Accessibility Permission Required"
+                alert.informativeText = "GoxViet needs accessibility access to capture keyboard input.\n\nPlease enable it in System Preferences → Security & Privacy → Privacy → Accessibility."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Open System Preferences")
+                alert.addButton(withTitle: "Cancel")
+                
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
+            }
             return
         }
         
@@ -115,46 +160,59 @@ class InputManager {
             forName: .shortcutChanged,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            // Reload toggle shortcut configuration
+            if let shortcut = notification.object as? KeyboardShortcut {
+                self?.currentShortcut = shortcut
+                Log.info("Toggle shortcut updated: \(shortcut.displayString)")
+            } else {
+                self?.currentShortcut = KeyboardShortcut.load()
+                Log.info("Toggle shortcut reloaded: \(self?.currentShortcut.displayString ?? "unknown")")
+            }
+            
+            // Also reload text expansion shortcuts
             self?.reloadShortcuts()
         }
     }
     
     func setEnabled(_ enabled: Bool) {
-        isEnabled = enabled
-        bridge.setEnabled(enabled)
+        // Update AppState
+        AppState.shared.setEnabled(enabled)
+        
+        // Update Rust engine
+        ime_enabled(enabled)
         
         // Clear buffer when toggling
         ime_clear()
         
         Log.info("IME \(enabled ? "enabled" : "disabled")")
         
-        // Update per-app state
-        PerAppModeManager.shared.setStateForCurrentApp(enabled)
-        
-        // Post notification for UI update
-        NotificationCenter.default.post(name: .updateStateChanged, object: enabled)
+        // Update per-app state if smart mode is enabled
+        if AppState.shared.isSmartModeEnabled {
+            PerAppModeManager.shared.setStateForCurrentApp(enabled)
+        }
     }
     
     func toggleEnabled() {
-        setEnabled(!isEnabled)
+        setEnabled(!AppState.shared.isEnabled)
     }
     
     func setInputMethod(_ method: Int) {
-        bridge.setMethod(method)
+        AppState.shared.inputMethod = method
         ime_method(UInt8(method))
+        Log.info("Input method changed: \(method == 0 ? "Telex" : "VNI")")
     }
     
     func setModernToneStyle(_ modern: Bool) {
-        bridge.setModernTone(modern)
+        AppState.shared.modernToneStyle = modern
         ime_modern(modern)
+        Log.info("Modern tone style: \(modern ? "enabled" : "disabled")")
     }
     
     func reloadShortcuts() {
         // Load shortcuts from UserDefaults or other storage
         // For now, just clear
         ime_clear_shortcuts()
-        bridge.clearShortcuts()
         Log.info("Shortcuts reloaded")
     }
     
@@ -180,14 +238,15 @@ class InputManager {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
         
-        // 4. Check for toggle shortcut
-        if matchesToggleShortcut(keyCode: keyCode, flags: flags) {
+        // 4. Check for toggle shortcut (default: Control+Space)
+        if currentShortcut.matches(keyCode: keyCode, flags: flags) {
             toggleEnabled()
+            Log.info("Toggle shortcut triggered: \(currentShortcut.displayString)")
             return nil // Swallow event
         }
         
         // 5. If IME is disabled, pass through
-        guard isEnabled else {
+        guard AppState.shared.isEnabled else {
             return Unmanaged.passUnretained(event)
         }
         
@@ -198,25 +257,8 @@ class InputManager {
             return Unmanaged.passUnretained(event)
         }
         
-        // 7. Handle special keys
-        if handleSpecialKey(keyCode: keyCode, flags: flags, event: event, proxy: proxy) {
-            return nil // Special key was handled
-        }
-        
-        // 8. Process with Rust engine
-        return processKeyWithEngine(keyCode: keyCode, flags: flags, proxy: proxy, event: event)
-    }
-    
-    private func handleFlagsChanged(event: CGEvent, proxy: CGEventTapProxy) -> Unmanaged<CGEvent>? {
-        // This can be used for modifier-only shortcuts (e.g., double-tap Shift)
-        // For now, just pass through
-        return Unmanaged.passUnretained(event)
-    }
-    
-    private func handleSpecialKey(keyCode: UInt16, flags: CGEventFlags, event: CGEvent, proxy: CGEventTapProxy) -> Bool {
-        // Handle ESC key for word restoration
-        if keyCode == KeyCode.escape {
-            // ESC restore is handled internally by Rust engine
+        // 7. Handle ESC key for word restoration
+        if keyCode == 53 { // ESC key
             let result = ime_key(keyCode, false, false)
             if let r = result {
                 defer { ime_free(r) }
@@ -231,12 +273,12 @@ class InputManager {
                         delays: delays,
                         proxy: proxy
                     )
-                    return true
+                    return nil
                 }
             }
         }
         
-        // Handle navigation keys (clear composition and pass through)
+        // 8. Handle navigation keys (clear composition and pass through)
         let navigationKeys: Set<UInt16> = [
             36,  // Return
             76,  // Enter
@@ -249,22 +291,65 @@ class InputManager {
         
         if navigationKeys.contains(keyCode) {
             ime_clear()
-            return false // Don't swallow, let system handle
+            return Unmanaged.passUnretained(event)
         }
         
-        // Backspace is handled in processKeyWithEngine
-        // No special treatment needed here
-        
-        return false
+        // 9. Process with Rust engine
+        return processKeyWithEngine(keyCode: keyCode, flags: flags, proxy: proxy, event: event)
     }
+    
+    private func handleFlagsChanged(event: CGEvent, proxy: CGEventTapProxy) -> Unmanaged<CGEvent>? {
+        // This can be used for modifier-only shortcuts (e.g., double-tap Shift)
+        // For now, just pass through
+        return Unmanaged.passUnretained(event)
+    }
+    
+
     
     private func processKeyWithEngine(keyCode: UInt16, flags: CGEventFlags, proxy: CGEventTapProxy, event: CGEvent) -> Unmanaged<CGEvent>? {
         let caps = flags.contains(.maskAlphaShift)
         let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
+        let shift = flags.contains(.maskShift)
         
         Log.key(keyCode, "Processing")
         
-        // Call Rust engine
+        // Special handling for backspace: try to restore word from screen
+        if keyCode == 51 && !ctrl { // 51 = backspace
+            // First try Rust engine
+            let result = ime_key(keyCode, caps, ctrl)
+            if let r = result {
+                defer { ime_free(r) }
+                
+                if r.pointee.action == 1 { // Send - replace text
+                    let backspaceCount = Int(r.pointee.backspace)
+                    let chars = extractChars(from: r.pointee)
+                    
+                    Log.transform(backspaceCount, String(chars))
+                    
+                    let (method, delays) = detectMethod()
+                    TextInjector.shared.injectSync(
+                        bs: backspaceCount,
+                        text: String(chars),
+                        method: method,
+                        delays: delays,
+                        proxy: proxy
+                    )
+                    return nil
+                }
+            }
+            
+            // Engine returned none - try to restore word from screen
+            if let word = getWordToRestoreOnBackspace() {
+                // TODO: Add ime_restore_word function to Rust bridge
+                Log.info("Restored word from screen: \(word)")
+                // For now, just log - will implement restoration in next iteration
+            }
+            
+            // Pass through backspace to delete the character
+            return Unmanaged.passUnretained(event)
+        }
+        
+        // Call Rust engine for other keys
         let result = ime_key(keyCode, caps, ctrl)
         
         guard let r = result else {
@@ -386,10 +471,31 @@ class InputManager {
 
 extension InputManager {
     func getCurrentState() -> Bool {
-        return isEnabled
+        return AppState.shared.isEnabled
     }
     
     func clearComposition() {
         ime_clear()
+    }
+    
+    func getCurrentShortcut() -> KeyboardShortcut {
+        return currentShortcut
+    }
+    
+    func setShortcut(_ shortcut: KeyboardShortcut) {
+        currentShortcut = shortcut
+        shortcut.save()
+    }
+    
+    func setEscRestore(_ enabled: Bool) {
+        AppState.shared.escRestoreEnabled = enabled
+        ime_esc_restore(enabled)
+        Log.info("ESC restore: \(enabled ? "enabled" : "disabled")")
+    }
+    
+    func setFreeTone(_ enabled: Bool) {
+        AppState.shared.freeToneEnabled = enabled
+        ime_free_tone(enabled)
+        Log.info("Free tone: \(enabled ? "enabled" : "disabled")")
     }
 }

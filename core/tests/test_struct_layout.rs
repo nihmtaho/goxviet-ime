@@ -1,4 +1,4 @@
-use vietnamese_ime_core::engine::Result;
+use goxviet_core::engine::Result;
 use std::mem::{size_of, offset_of};
 
 #[test]
