@@ -24,5 +24,9 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>GoxViet needs access to control your keyboard input for Vietnamese typing.</string>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>GoxViet requires Accessibility permissions to capture keyboard events and provide Vietnamese input method functionality.</string>
 </dict>
 </plist>
