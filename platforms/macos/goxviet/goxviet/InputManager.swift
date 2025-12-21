@@ -24,6 +24,12 @@ class InputManager {
     private var previousKeyCode: UInt16?
     private var previousKeyTimestamp: TimeInterval = 0
     
+    // Event coalescing for rapid backspace (fix flicker - issue #13)
+    private var pendingDeletes: Int = 0
+    private var coalesceTimer: DispatchWorkItem?
+    private var coalesceProxy: CGEventTapProxy?
+    private let coalesceDelay: UInt64 = 8_000_000 // 8ms delay for batching
+    
     private init() {
         self.bridge = RustBridge()
         self.bridge.initialize()
@@ -313,8 +319,17 @@ class InputManager {
         
         Log.key(keyCode, "Processing")
         
-        // Special handling for backspace: try to restore word from screen
+        // Special handling for backspace: coalesce rapid deletes to fix flicker
         if keyCode == 51 && !ctrl { // 51 = backspace
+            handleDeleteKeyCoalesced(caps: caps, ctrl: ctrl, proxy: proxy, event: event)
+            return nil // Always swallow during coalescing
+        }
+        
+        // Cancel any pending coalesced deletes when non-delete key is pressed
+        cancelCoalescedDeletes()
+        
+        // Old backspace handling (kept for reference, now replaced by coalescing)
+        if false && keyCode == 51 && !ctrl { // 51 = backspace
             // First try Rust engine
             let result = ime_key(keyCode, caps, ctrl)
             if let r = result {
@@ -413,6 +428,131 @@ class InputManager {
         // Unknown action - pass through
         Log.skip()
         return Unmanaged.passUnretained(event)
+    }
+    
+    // MARK: - Event Coalescing Methods
+    
+    /// Handle DELETE key with coalescing to fix flicker on rapid/held backspace
+    /// Based on issue #13: https://github.com/nihmtaho/goxviet-ime/issues/13
+    private func handleDeleteKeyCoalesced(caps: Bool, ctrl: Bool, proxy: CGEventTapProxy, event: CGEvent) {
+        // Store proxy for later use
+        coalesceProxy = proxy
+        
+        // Try Rust engine first to see if it has anything to delete
+        let result = ime_key(51, caps, ctrl)
+        
+        if let r = result {
+            defer { ime_free(r) }
+            
+            // If engine has content to process, queue it
+            if r.pointee.action == 1 || r.pointee.backspace > 0 {
+                pendingDeletes += 1
+                scheduleCoalescedDelete()
+                return
+            }
+        }
+        
+        // Engine has no content - try to restore word from screen
+        if let word = getWordToRestoreOnBackspace() {
+            Log.info("Restored word from screen: \(word)")
+            // For now, just log - will implement restoration in next iteration
+        }
+        
+        // If we get here, pass through a single backspace
+        // (This handles the case where buffer is empty)
+        if pendingDeletes == 0 {
+            // Post a single backspace event
+            guard let src = CGEventSource(stateID: .privateState) else { return }
+            TextInjector.shared.postKey(51, source: src, proxy: proxy)
+        }
+    }
+    
+    /// Schedule or reschedule the coalesced delete processing
+    private func scheduleCoalescedDelete() {
+        // Cancel existing timer
+        coalesceTimer?.cancel()
+        
+        // Create new work item
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.processBatchDelete()
+        }
+        
+        coalesceTimer = workItem
+        
+        // Schedule execution after delay
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .nanoseconds(Int(coalesceDelay)),
+            execute: workItem
+        )
+    }
+    
+    /// Process accumulated DELETE events in batch
+    private func processBatchDelete() {
+        guard pendingDeletes > 0 else { return }
+        guard let proxy = coalesceProxy else { return }
+        
+        let count = pendingDeletes
+        pendingDeletes = 0
+        coalesceProxy = nil
+        
+        Log.info("Processing batch delete: \(count) keys")
+        
+        // Process each delete through engine to update its internal state
+        // Accumulate total backspaces needed from screen
+        var totalBackspace = 0
+        var finalText = ""
+        var lastActionWasSend = false
+        
+        for _ in 0..<count {
+            let result = ime_key(51, false, false)
+            
+            if let r = result {
+                defer { ime_free(r) }
+                
+                if r.pointee.action == 1 { // Send action
+                    // Accumulate backspace counts (total chars to delete from screen)
+                    totalBackspace += Int(r.pointee.backspace)
+                    // Keep the latest text replacement
+                    let chars = extractChars(from: r.pointee)
+                    finalText = String(chars)
+                    lastActionWasSend = true
+                } else if r.pointee.action == 0 && lastActionWasSend {
+                    // Buffer became empty, but we had previous content
+                    // Just track that we need to delete more
+                    totalBackspace += 1
+                }
+            }
+        }
+        
+        // Inject accumulated result once (this eliminates flicker)
+        // Delete all accumulated chars, insert final text
+        if totalBackspace > 0 || !finalText.isEmpty {
+            let (method, delays) = detectMethod()
+            TextInjector.shared.injectSync(
+                bs: totalBackspace,
+                text: finalText,
+                method: method,
+                delays: delays,
+                proxy: proxy
+            )
+            Log.info("Batch delete complete: \(count) deletes, bs=\(totalBackspace), text=\(finalText)")
+        } else {
+            // No engine content - post raw backspace events
+            guard let src = CGEventSource(stateID: .privateState) else { return }
+            for _ in 0..<count {
+                TextInjector.shared.postKey(51, source: src, proxy: proxy)
+            }
+            Log.info("Batch delete: posted \(count) raw backspaces")
+        }
+    }
+    
+    /// Cancel any pending coalesced deletes
+    private func cancelCoalescedDeletes() {
+        if pendingDeletes > 0 {
+            coalesceTimer?.cancel()
+            // Process immediately if there were pending deletes
+            processBatchDelete()
+        }
     }
     
     private func getCharFromEvent(event: CGEvent, keyCode: UInt16, caps: Bool) -> Character? {
