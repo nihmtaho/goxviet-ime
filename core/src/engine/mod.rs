@@ -27,7 +27,7 @@ use crate::input::{self, ToneType};
 use crate::utils;
 use buffer::{Buffer, Char, MAX};
 use shortcut::{InputMethod, ShortcutTable};
-use validation::{is_foreign_word_pattern, is_valid_for_transform, is_valid_with_tones};
+use validation::{is_foreign_word_pattern, is_valid_with_tones};
 
 /// Engine action result
 #[repr(u8)]
@@ -669,8 +669,8 @@ impl Engine {
 
             // COMPLEX PATH: Has vowels, need validation
             if !self.free_tone_enabled {
-                let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-                if !is_valid_for_transform(&buffer_keys) {
+                // Use iterator-based validation to avoid allocation
+                if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
                     return None;
                 }
             }
@@ -702,8 +702,8 @@ impl Engine {
         // Allow "d9" → "đ" before vowel is typed
         let has_vowel_after = self.buf.iter().skip(pos + 1).any(|c| keys::is_vowel(c.key));
         if !self.free_tone_enabled && has_vowel_after {
-            let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-            if !is_valid_for_transform(&buffer_keys) {
+            // Use iterator-based validation to avoid allocation
+            if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
                 return None;
             }
         }
@@ -737,9 +737,11 @@ impl Engine {
 
         // Validate buffer structure (not vowel patterns - those are checked after transform)
         // Skip validation if free_tone mode is enabled
-        let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        if !self.free_tone_enabled && !is_valid_for_transform(&buffer_keys) {
-            return None;
+        if !self.free_tone_enabled {
+            // Use iterator-based validation to avoid allocation
+            if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
+                return None;
+            }
         }
 
         let tone_val = tone_type.value();
@@ -966,13 +968,14 @@ impl Engine {
 
         // Validate buffer structure (skip if has horn/stroke transforms - already intentional Vietnamese)
         // Also skip validation if free_tone mode is enabled
-        let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
         if !self.free_tone_enabled
             && !has_horn_transforms
             && !has_stroke_transforms
-            && !is_valid_for_transform(&buffer_keys)
         {
-            return None;
+            // Use iterator-based validation to avoid allocation
+            if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
+                return None;
+            }
         }
 
         // Skip modifier if buffer shows foreign word patterns.
@@ -991,9 +994,12 @@ impl Engine {
         if !self.free_tone_enabled
             && !has_horn_transforms
             && !has_stroke_transforms
-            && is_foreign_word_pattern(&buffer_keys, key)
         {
-            return None;
+            // Collect buffer_keys only once for foreign word pattern check
+            let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+            if is_foreign_word_pattern(&buffer_keys, key) {
+                return None;
+            }
         }
 
         // Issue #29: Normalize ưo → ươ compound before placing mark
