@@ -1,15 +1,15 @@
 //
 //  Log.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
-//  Logging utility for Vietnamese IME debugging
+//  Logging utility for Gõ Việt IME debugging
 //
 
 import Foundation
 
 enum Log {
     static let logPath = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/VietnameseIME/keyboard.log")
+        .appendingPathComponent("Library/Logs/GoxViet/keyboard.log")
     
     static var isEnabled: Bool = false
     

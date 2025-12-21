@@ -15,7 +15,7 @@
 //! - Skips transformation when pattern is detected
 //! - Maintains Vietnamese typing when intentional (e.g., with horn/stroke transforms)
 
-use vietnamese_ime_core::engine::Engine;
+use goxviet_core::engine::Engine;
 
 /// Helper function to simulate typing and get final output
 fn type_word(word: &str, method: u8) -> String {
@@ -440,7 +440,7 @@ fn test_real_world_bilingual_typing() {
 /// This ensures our improvements don't break normal Vietnamese input
 #[test]
 fn debug_basic_vietnamese_typing() {
-    use vietnamese_ime_core::data::keys;
+    use goxviet_core::data::keys;
     
     let mut engine = Engine::new();
     engine.set_method(0); // Telex

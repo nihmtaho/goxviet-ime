@@ -1,8 +1,8 @@
 //
 //  AppDelegate.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
-//  Enhanced with toggle functionality and state management from GoNhanh
+//  Enhanced with toggle functionality and state management
 //
 
 import Cocoa
@@ -21,7 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Enable logging in debug mode
         #if DEBUG
         Log.isEnabled = true
-        Log.info("VietnameseIMEFast starting in DEBUG mode")
+        Log.info("GoxViet starting in DEBUG mode")
         #endif
         
         // Create Status Bar Item
@@ -136,7 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // About
         menu.addItem(NSMenuItem(
-            title: "About VietnameseIMEFast",
+            title: "About GoxViet",
             action: #selector(showAbout),
             keyEquivalent: ""
         ))
@@ -190,7 +190,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateStatusIcon() {
         if let button = statusItem.button {
             button.title = isEnabled ? "🇻🇳" : "EN"
-            button.toolTip = isEnabled ? "Vietnamese Input (Enabled)" : "Vietnamese Input (Disabled)"
+            button.toolTip = isEnabled ? "Gõ Việt (Enabled)" : "Gõ Việt (Disabled)"
         }
     }
     
@@ -311,7 +311,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func clearPerAppSettings() {
         let confirmAlert = NSAlert()
         confirmAlert.messageText = "Clear All Per-App Settings?"
-        confirmAlert.informativeText = "This will reset Vietnamese input mode to default (enabled) for all applications."
+        confirmAlert.informativeText = "This will reset Gõ Việt input mode to default (enabled) for all applications."
         confirmAlert.alertStyle = .warning
         confirmAlert.addButton(withTitle: "Clear")
         confirmAlert.addButton(withTitle: "Cancel")
@@ -344,22 +344,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showAbout() {
         let shortcut = InputManager.shared.getCurrentShortcut()
         let alert = NSAlert()
-        alert.messageText = "VietnameseIMEFast"
+        alert.messageText = "GoxViet - Gõ Việt"
         alert.informativeText = """
         A high-performance Vietnamese IME powered by Rust.
         
-        Version: 1.0.1
+        Version: 1.0.2
         
         Features:
         • Native macOS integration via Accessibility API
-        • Ultra-low latency input processing (< 16ms)
+        • Ultra-low latency input processing (< 5ms)
         • Smart text injection (app-aware)
         • Per-app Vietnamese mode memory
         • Telex and VNI input methods
         • Modern and traditional tone styles
         
         Toggle Shortcut: \(shortcut.displayString)
-        (Use \(shortcut.displayString) to switch between Vietnamese and English)
+        (Use \(shortcut.displayString) to switch between Gõ Việt and English)
         
         Built with ❤️ using Rust + Swift
         """

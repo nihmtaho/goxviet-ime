@@ -6,8 +6,8 @@
 //! - Cache effectiveness on consecutive backspaces
 //! - Edge cases and boundary conditions
 
-use vietnamese_ime_core::engine::Engine;
-use vietnamese_ime_core::engine::shortcut::InputMethod;
+use goxviet_core::engine::Engine;
+use goxviet_core::engine::shortcut::InputMethod;
 
 // Key codes (simplified mapping)
 const KEY_A: u16 = 0;
@@ -63,7 +63,7 @@ fn type_keys(engine: &mut Engine, keys: &str) {
 }
 
 /// Helper: Get output string from result
-fn result_to_string(result: &vietnamese_ime_core::engine::Result) -> String {
+fn result_to_string(result: &goxviet_core::engine::Result) -> String {
     let mut output = String::new();
     for i in 0..result.count as usize {
         if let Some(ch) = char::from_u32(result.chars[i]) {

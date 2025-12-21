@@ -1,8 +1,8 @@
 //
 //  KeyboardShortcut.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
-//  Manages keyboard shortcuts for toggling Vietnamese input
+//  Manages keyboard shortcuts for toggling Gõ Việt input
 //  Based on reference implementation
 //
 
