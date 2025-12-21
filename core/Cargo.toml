@@ -1,13 +1,13 @@
 [package]
-name = "vietnamese-ime-core"
-version = "0.1.0"
+name = "goxviet-core"
+version = "1.0.2"
 edition = "2021"
-authors = ["Vietnamese IME Contributors"]
+authors = ["GoxViet Contributors"]
 license = "MIT"
-description = "Vietnamese input method core engine"
+description = "Gõ Việt - Vietnamese input method core engine"
 
 [lib]
-name = "vietnamese_ime_core"
+name = "goxviet_core"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
@@ -31,4 +31,8 @@ debug = true             # Full debug info
 
 [[bench]]
 name = "backspace_bench"
+harness = false
+
+[[bench]]
+name = "memory_bench"
 harness = false

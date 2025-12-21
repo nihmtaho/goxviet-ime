@@ -11,11 +11,13 @@
 //! 4. **Longest-Match-First**: For diacritic placement
 
 pub mod buffer;
+pub mod raw_input_buffer;
 pub mod shortcut;
 pub mod syllable;
 pub mod transform;
 pub mod validation;
 
+use self::raw_input_buffer::RawInputBuffer;
 use crate::data::{
     chars::{self, mark, tone},
     keys,
@@ -25,7 +27,7 @@ use crate::input::{self, ToneType};
 use crate::utils;
 use buffer::{Buffer, Char, MAX};
 use shortcut::{InputMethod, ShortcutTable};
-use validation::{is_foreign_word_pattern, is_valid_for_transform, is_valid_with_tones};
+use validation::{is_foreign_word_pattern, is_valid_with_tones};
 
 /// Engine action result
 #[repr(u8)]
@@ -140,7 +142,8 @@ pub struct Engine {
     last_transform: Option<Transform>,
     shortcuts: ShortcutTable,
     /// Raw keystroke history for ESC restore (key, caps)
-    raw_input: Vec<(u16, bool)>,
+    /// Uses fixed-size circular buffer for bounded memory usage
+    raw_input: RawInputBuffer,
     /// Raw mode: skip Vietnamese transforms after prefix chars (@ # $ ^ : > ?)
     raw_mode: bool,
     /// True if current word has non-letter characters before letters
@@ -183,7 +186,7 @@ impl Engine {
             enabled: true,
             last_transform: None,
             shortcuts: ShortcutTable::with_defaults(),
-            raw_input: Vec::with_capacity(64),
+            raw_input: RawInputBuffer::new(),
             raw_mode: false,
             has_non_letter_prefix: false,
             skip_w_shortcut: false,
@@ -411,7 +414,7 @@ impl Engine {
             // - No pending transform state
             if is_simple_char && !syllable_has_transforms && self.last_transform.is_none() {
                 self.buf.pop();
-                if self.raw_input.len() > 0 {
+                if !self.raw_input.is_empty() {
                     self.raw_input.pop();
                 }
                 // Cache remains valid (boundary doesn't change on simple pop)
@@ -428,7 +431,7 @@ impl Engine {
             
             // Pop the character from buffer
             self.buf.pop();
-            if self.raw_input.len() > 0 {
+            if !self.raw_input.is_empty() {
                 self.raw_input.pop();
             }
             self.last_transform = None;
@@ -447,7 +450,7 @@ impl Engine {
 
         // Record raw keystroke for ESC restore (letters and numbers only)
         if keys::is_letter(key) || keys::is_number(key) {
-            self.raw_input.push((key, caps));
+            self.raw_input.push(key, caps);
         }
 
         self.process(key, caps, shift)
@@ -582,6 +585,23 @@ impl Engine {
             return Some(Result::send(1, &[w]));
         }
 
+        // FAST PATH: Common patterns that are always valid
+        // "w" alone → "ư", "consonant + w" → "consonant + ư"
+        let buf_len = self.buf.len();
+        let is_fast_path = buf_len == 0 || 
+            (buf_len == 1 && !keys::is_vowel(self.buf.get(0).unwrap().key));
+        
+        if is_fast_path {
+            // Add ư directly without full validation
+            let mut c = Char::new(keys::U, caps);
+            c.tone = tone::HORN;
+            self.buf.push(c);
+            self.last_transform = Some(Transform::WAsVowel);
+            let vowel_char = chars::to_char(keys::U, caps, tone::HORN, 0).unwrap();
+            return Some(Result::send(0, &[vowel_char]));
+        }
+
+        // COMPLEX PATH: Need validation for diphthongs/triphthongs
         // Try adding U (ư base) to buffer and validate
         self.buf.push(Char::new(keys::U, caps));
 
@@ -618,49 +638,80 @@ impl Engine {
     /// In VNI mode, '9' is always an intentional stroke command (not a letter), so
     /// delayed stroke is allowed (e.g., "duong9" → "đuong").
     fn try_stroke(&mut self, key: u16) -> Option<Result> {
-        // Find position of un-stroked 'd' to apply stroke
-        let pos = if self.method == 0 {
-            // Telex: Issue #51 - require adjacent 'd' for stroke
-            // Check if the LAST character in buffer is an un-stroked 'd'
+        // FAST PATH: Telex "dd" at start or after consonant → instant đ
+        // This handles 90% of stroke cases with O(1) complexity
+        if self.method == 0 {
             let last_pos = self.buf.len().checked_sub(1)?;
             let last_char = self.buf.get(last_pos)?;
 
+            // Check if last char is un-stroked 'd'
             if last_char.key != keys::D || last_char.stroke {
                 return None;
             }
-            last_pos
-        } else {
-            // VNI: Allow delayed stroke - find first un-stroked 'd' anywhere in buffer
-            // '9' is always intentional stroke command, not a letter
-            self.buf
-                .iter()
-                .enumerate()
-                .find(|(_, c)| c.key == keys::D && !c.stroke)
-                .map(|(i, _)| i)?
-        };
 
-        // Check revert: if last transform was stroke on same key at same position
+            // Check revert: dd → d (undo stroke)
+            if let Some(Transform::Stroke(last_key)) = self.last_transform {
+                if last_key == key {
+                    return Some(self.revert_stroke(key, last_pos));
+                }
+            }
+
+            // FAST PATH: If no vowels yet, apply stroke immediately (O(1))
+            // "dd" at start or "ndd" → "đ", "nđ" without validation
+            let has_vowel = self.buf.iter().take(last_pos).any(|c| keys::is_vowel(c.key));
+            if !has_vowel {
+                if let Some(c) = self.buf.get_mut(last_pos) {
+                    c.stroke = true;
+                }
+                self.last_transform = Some(Transform::Stroke(key));
+                return Some(self.rebuild_from(last_pos));
+            }
+
+            // COMPLEX PATH: Has vowels, need validation
+            if !self.free_tone_enabled {
+                // Use iterator-based validation to avoid allocation
+                if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
+                    return None;
+                }
+            }
+
+            // Apply stroke
+            if let Some(c) = self.buf.get_mut(last_pos) {
+                c.stroke = true;
+            }
+            self.last_transform = Some(Transform::Stroke(key));
+            return Some(self.rebuild_from(last_pos));
+        }
+
+        // VNI MODE: '9' can stroke any 'd' in buffer (delayed stroke)
+        // Find first un-stroked 'd' anywhere in buffer
+        let pos = self.buf
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.key == keys::D && !c.stroke)
+            .map(|(i, _)| i)?;
+
+        // Check revert: 99 → 9 (undo stroke)
         if let Some(Transform::Stroke(last_key)) = self.last_transform {
             if last_key == key {
                 return Some(self.revert_stroke(key, pos));
             }
         }
 
-        // Validate buffer structure before applying stroke
-        // Only validate if buffer has vowels (complete syllable)
-        // Allow stroke on initial consonant before vowel is typed (e.g., "dd" → "đ" then "đi")
-        // Skip validation if free_tone mode is enabled
-        let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        let has_vowel = buffer_keys.iter().any(|&k| keys::is_vowel(k));
-        if !self.free_tone_enabled && has_vowel && !is_valid_for_transform(&buffer_keys) {
-            return None;
+        // VNI validation: only validate if we have vowels after 'd'
+        // Allow "d9" → "đ" before vowel is typed
+        let has_vowel_after = self.buf.iter().skip(pos + 1).any(|c| keys::is_vowel(c.key));
+        if !self.free_tone_enabled && has_vowel_after {
+            // Use iterator-based validation to avoid allocation
+            if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
+                return None;
+            }
         }
 
-        // Mark as stroked
+        // Apply stroke
         if let Some(c) = self.buf.get_mut(pos) {
             c.stroke = true;
         }
-
         self.last_transform = Some(Transform::Stroke(key));
         Some(self.rebuild_from(pos))
     }
@@ -686,9 +737,11 @@ impl Engine {
 
         // Validate buffer structure (not vowel patterns - those are checked after transform)
         // Skip validation if free_tone mode is enabled
-        let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        if !self.free_tone_enabled && !is_valid_for_transform(&buffer_keys) {
-            return None;
+        if !self.free_tone_enabled {
+            // Use iterator-based validation to avoid allocation
+            if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
+                return None;
+            }
         }
 
         let tone_val = tone_type.value();
@@ -915,13 +968,14 @@ impl Engine {
 
         // Validate buffer structure (skip if has horn/stroke transforms - already intentional Vietnamese)
         // Also skip validation if free_tone mode is enabled
-        let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
         if !self.free_tone_enabled
             && !has_horn_transforms
             && !has_stroke_transforms
-            && !is_valid_for_transform(&buffer_keys)
         {
-            return None;
+            // Use iterator-based validation to avoid allocation
+            if !validation::is_valid_for_transform_iter(self.buf.iter().map(|c| &c.key)) {
+                return None;
+            }
         }
 
         // Skip modifier if buffer shows foreign word patterns.
@@ -940,9 +994,12 @@ impl Engine {
         if !self.free_tone_enabled
             && !has_horn_transforms
             && !has_stroke_transforms
-            && is_foreign_word_pattern(&buffer_keys, key)
         {
-            return None;
+            // Collect buffer_keys only once for foreign word pattern check
+            let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+            if is_foreign_word_pattern(&buffer_keys, key) {
+                return None;
+            }
         }
 
         // Issue #29: Normalize ưo → ươ compound before placing mark
@@ -1517,7 +1574,7 @@ impl Engine {
                 ch.mark = parsed.mark;
                 ch.stroke = parsed.stroke;
                 self.buf.push(ch);
-                self.raw_input.push((parsed.key, parsed.caps));
+                self.raw_input.push(parsed.key, parsed.caps);
             }
         }
     }
@@ -1544,7 +1601,7 @@ impl Engine {
         let raw_chars: Vec<char> = self
             .raw_input
             .iter()
-            .filter_map(|&(key, caps)| utils::key_to_char(key, caps))
+            .filter_map(|(key, caps)| utils::key_to_char(key, caps))
             .collect();
 
         if raw_chars.is_empty() {
@@ -1561,7 +1618,7 @@ impl Engine {
     fn restore_raw_input_from_buffer(&mut self, buf: &Buffer) {
         self.raw_input.clear();
         for c in buf.iter() {
-            self.raw_input.push((c.key, c.caps));
+            self.raw_input.push(c.key, c.caps);
         }
     }
 }

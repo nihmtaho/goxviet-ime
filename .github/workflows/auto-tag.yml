@@ -1,0 +1,114 @@
+# Gõ Việt (GoxViet) - Automatic Version Tagging Workflow
+# Created: 2025-12-21
+# Purpose: Automatically create version tags when version is bumped in main branch
+
+name: Auto Tag
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'platforms/macos/goxviet/goxviet/Info.plist'
+      - 'core/Cargo.toml'
+      - 'VERSION'
+
+env:
+  APP_NAME: GoxViet
+
+jobs:
+  auto-tag:
+    name: Create Version Tag
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from VERSION file
+        id: get_version
+        run: |
+          # Check if VERSION file exists
+          if [ -f "VERSION" ]; then
+            VERSION=$(cat VERSION | tr -d '[:space:]')
+            echo "Found VERSION file: $VERSION"
+          else
+            # Fallback to Cargo.toml if VERSION file doesn't exist
+            VERSION=$(grep '^version = ' core/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            echo "Extracted from Cargo.toml: $VERSION"
+          fi
+          
+          # Validate version format (x.y.z)
+          if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: x.y.z (e.g., 1.0.0)"
+            exit 1
+          fi
+          
+          TAG="v$VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Will create tag: $TAG"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          TAG=${{ steps.get_version.outputs.tag }}
+          
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Tag $TAG already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Tag $TAG does not exist, will create"
+          fi
+
+      - name: Get commit message
+        id: commit
+        run: |
+          MESSAGE=$(git log -1 --pretty=%B)
+          echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+          echo "Commit message: $MESSAGE"
+
+      - name: Create and push tag
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          TAG=${{ steps.get_version.outputs.tag }}
+          VERSION=${{ steps.get_version.outputs.version }}
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create annotated tag
+          git tag -a "$TAG" -m "${{ env.APP_NAME }} $VERSION" \
+            -m "" \
+            -m "Commit: ${{ github.sha }}" \
+            -m "Message: ${{ steps.commit.outputs.message }}"
+          
+          # Push tag
+          git push origin "$TAG"
+          
+          echo "✅ Created and pushed tag: $TAG"
+
+      - name: Tag creation summary
+        run: |
+          echo "## 🏷️ Version Tag Update" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.get_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${{ steps.get_version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ steps.check_tag.outputs.exists == 'false' && 'Created ✅' || 'Already exists ⚠️' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.check_tag.outputs.exists }}" == "false" ]; then
+            echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "The release workflow will automatically trigger to:" >> $GITHUB_STEP_SUMMARY
+            echo "- Build the macOS app" >> $GITHUB_STEP_SUMMARY
+            echo "- Create DMG installer" >> $GITHUB_STEP_SUMMARY
+            echo "- Create GitHub release" >> $GITHUB_STEP_SUMMARY
+            echo "- Upload release assets" >> $GITHUB_STEP_SUMMARY
+          fi
