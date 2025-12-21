@@ -81,20 +81,16 @@ jobs:
           
           echo "✅ macOS app built successfully"
 
-      - name: Create DMG
+      - name: Create unsigned DMG for Homebrew/community
         run: |
-          # Ensure scripts directory exists and script is executable
-          chmod +x scripts/create_dmg.sh
-          
-          # Run DMG creation script
-          ./scripts/create_dmg.sh
-          
+          chmod +x scripts/build-dmg-unsigned.sh
+          ./scripts/build-dmg-unsigned.sh
           # Verify DMG was created
           if [ -f "dist/${{ env.APP_NAME }}.dmg" ]; then
-            echo "✅ DMG created successfully"
+            echo "✅ Unsigned DMG created successfully"
             ls -lh dist/${{ env.APP_NAME }}.dmg
           else
-            echo "❌ DMG creation failed"
+            echo "❌ Unsigned DMG creation failed"
             exit 1
           fi
 
