@@ -24,7 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("GoxViet starting in DEBUG mode")
         #endif
         
-        // Create Status Bar Item
+        // Create Status Bar Item first (before permission check)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         updateStatusIcon()
@@ -32,10 +32,120 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenu()
         setupObservers()
         
-        // Start the Input Manager
-        InputManager.shared.start()
+        // Check and request Accessibility Permission
+        // InputManager will only start if permission is granted
+        checkAccessibilityPermission()
         
         Log.info("Application launched successfully")
+    }
+    
+    // MARK: - Accessibility Permission
+    
+    func checkAccessibilityPermission() {
+        // Check WITHOUT showing system prompt (no duplicate dialogs)
+        let accessEnabled = AXIsProcessTrusted()
+        
+        if !accessEnabled {
+            Log.warning("Accessibility permission not granted")
+            
+            // Show only our custom alert (not system prompt)
+            DispatchQueue.main.async { [weak self] in
+                self?.showAccessibilityAlert()
+            }
+        } else {
+            Log.info("Accessibility permission granted")
+            
+            // Start InputManager only after permission is confirmed
+            InputManager.shared.start()
+        }
+    }
+    
+    func showAccessibilityAlert() {
+        let alert = NSAlert()
+        alert.messageText = "🔐 Accessibility Permission Required"
+        alert.informativeText = """
+        GoxViet needs Accessibility permissions to capture keyboard input for Vietnamese typing.
+        
+        📝 Please follow these steps:
+        
+        1️⃣ Click "Open System Preferences" below
+        2️⃣ Find "GoxViet" in the list
+        3️⃣ Check the box next to "GoxViet"
+        4️⃣ Close System Preferences
+        5️⃣ Click "Check Again" or restart GoxViet
+        
+        ⚠️ Without this permission, Vietnamese input will NOT work.
+        
+        💡 Tip: If you don't see GoxViet in the list, try:
+           • Restart GoxViet
+           • Or manually add it using the + button
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open System Preferences")
+        alert.addButton(withTitle: "Check Again")
+        alert.addButton(withTitle: "Quit")
+        
+        let response = alert.runModal()
+        
+        switch response {
+        case .alertFirstButtonReturn:
+            // Open System Preferences
+            let prefpaneUrl = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+            NSWorkspace.shared.open(prefpaneUrl)
+            
+            // Wait longer for user to grant permission
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                self?.recheckAccessibilityPermission()
+            }
+            
+        case .alertSecondButtonReturn:
+            // Check again immediately
+            recheckAccessibilityPermission()
+            
+        case .alertThirdButtonReturn:
+            // Quit
+            NSApplication.shared.terminate(self)
+            
+        default:
+            break
+        }
+    }
+    
+    func recheckAccessibilityPermission() {
+        let accessEnabled = AXIsProcessTrusted()
+        
+        if !accessEnabled {
+            Log.warning("Accessibility permission still not granted - showing alert again")
+            
+            // Delay before showing alert again to give user time
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showAccessibilityAlert()
+            }
+        } else {
+            Log.info("Accessibility permission now granted")
+            
+            // Start InputManager now that permission is granted
+            InputManager.shared.start()
+            
+            let successAlert = NSAlert()
+            successAlert.messageText = "Permission Granted! ✅"
+            successAlert.informativeText = "GoxViet can now function properly.\n\nYou may need to restart the app if input doesn't work immediately."
+            successAlert.alertStyle = .informational
+            successAlert.addButton(withTitle: "OK")
+            successAlert.addButton(withTitle: "Restart Now")
+            
+            let response = successAlert.runModal()
+            if response == .alertSecondButtonReturn {
+                // Restart app
+                let url = URL(fileURLWithPath: Bundle.main.resourcePath!)
+                let path = url.deletingLastPathComponent().deletingLastPathComponent().absoluteString
+                let task = Process()
+                task.launchPath = "/usr/bin/open"
+                task.arguments = [path]
+                task.launch()
+                NSApplication.shared.terminate(self)
+            }
+        }
     }
     
     func setupMenu() {
@@ -184,6 +294,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.setupMenu()  // Rebuild menu to show new shortcut
+        }
+        
+        // Listen for app becoming active (detect permission changes)
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.checkPermissionOnActivate()
+        }
+    }
+    
+    func checkPermissionOnActivate() {
+        let accessEnabled = AXIsProcessTrusted()
+        
+        // If permission is now granted and InputManager isn't running, start it
+        if accessEnabled && !InputManager.shared.isRunning() {
+            Log.info("Accessibility permission detected on app activation - starting InputManager")
+            InputManager.shared.start()
         }
     }
     

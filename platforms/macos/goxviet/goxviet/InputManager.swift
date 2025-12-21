@@ -24,6 +24,8 @@ class InputManager {
     private var previousKeyCode: UInt16?
     private var previousKeyTimestamp: TimeInterval = 0
     
+
+    
     private init() {
         self.bridge = RustBridge()
         self.bridge.initialize()
@@ -72,26 +74,8 @@ class InputManager {
     // MARK: - Lifecycle
     
     func start() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let accessEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        
-        if !accessEnabled {
-            Log.info("Accessibility permission not granted")
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Accessibility Permission Required"
-                alert.informativeText = "GoxViet needs accessibility access to capture keyboard input.\n\nPlease enable it in System Preferences → Security & Privacy → Privacy → Accessibility."
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "Open System Preferences")
-                alert.addButton(withTitle: "Cancel")
-                
-                let response = alert.runModal()
-                if response == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                }
-            }
-            return
-        }
+        // Note: Accessibility permission is checked in AppDelegate before calling start()
+        // No need to check again here to avoid priority inversion issues
         
         let eventMask = (1 << CGEventType.keyDown.rawValue) | 
                         (1 << CGEventType.keyUp.rawValue) |
@@ -313,8 +297,17 @@ class InputManager {
         
         Log.key(keyCode, "Processing")
         
-        // Special handling for backspace: try to restore word from screen
+        // Special handling for backspace: coalesce rapid deletes to fix flicker
         if keyCode == 51 && !ctrl { // 51 = backspace
+            handleDeleteKey(caps: caps, ctrl: ctrl, proxy: proxy, event: event)
+            return nil // Swallow DELETE key - engine handles it
+        }
+        
+        // Cancel any pending coalesced deletes when non-delete key is pressed
+        // Clear engine buffer on non-DELETE keys
+        
+        // Old backspace handling (kept for reference, now replaced by coalescing)
+        if false && keyCode == 51 && !ctrl { // 51 = backspace
             // First try Rust engine
             let result = ime_key(keyCode, caps, ctrl)
             if let r = result {
@@ -415,6 +408,56 @@ class InputManager {
         return Unmanaged.passUnretained(event)
     }
     
+    // MARK: - DELETE Key Handling
+    
+    /// Handle DELETE key - process immediately through engine (no batching)
+    /// Each DELETE is processed individually to maintain correct state
+    private func handleDeleteKey(caps: Bool, ctrl: Bool, proxy: CGEventTapProxy, event: CGEvent) {
+        // Process DELETE through Rust engine
+        let result = ime_key(51, caps, ctrl)
+        
+        if let r = result {
+            defer { ime_free(r) }
+            
+            // Check action from engine
+            if r.pointee.action == 1 { // Send - engine has content to replace
+                let bs = Int(r.pointee.backspace)
+                let chars = extractChars(from: r.pointee)
+                let text = String(chars)
+                
+                // Detect injection method
+                let (method, delays) = detectMethod()
+                
+                // Inject transformation
+                TextInjector.shared.injectSync(
+                    bs: bs,
+                    text: text,
+                    method: method,
+                    delays: delays,
+                    proxy: proxy
+                )
+                
+                Log.info("DELETE processed: bs=\(bs), text='\(text)'")
+                return
+            } else if r.pointee.action == 0 && r.pointee.backspace > 0 {
+                // Engine wants to delete but has no replacement text
+                // This happens when deleting the last character in buffer
+                guard let src = CGEventSource(stateID: .privateState) else { return }
+                for _ in 0..<r.pointee.backspace {
+                    TextInjector.shared.postKey(51, source: src, proxy: proxy)
+                }
+                Log.info("DELETE: posted \(r.pointee.backspace) raw backspaces")
+                return
+            }
+        }
+        
+        // Engine has no content - pass through single backspace
+        guard let src = CGEventSource(stateID: .privateState) else { return }
+        TextInjector.shared.postKey(51, source: src, proxy: proxy)
+        Log.info("DELETE: passthrough (engine empty)")
+    }
+
+    
     private func getCharFromEvent(event: CGEvent, keyCode: UInt16, caps: Bool) -> Character? {
         // Try to get the character from the event
         var length = 0
@@ -474,8 +517,12 @@ extension InputManager {
         return AppState.shared.isEnabled
     }
     
+    func isRunning() -> Bool {
+        return eventTap != nil
+    }
+    
     func clearComposition() {
-        ime_clear()
+        bridge.clearBuffer()
     }
     
     func getCurrentShortcut() -> KeyboardShortcut {
@@ -489,13 +536,11 @@ extension InputManager {
     
     func setEscRestore(_ enabled: Bool) {
         AppState.shared.escRestoreEnabled = enabled
-        ime_esc_restore(enabled)
-        Log.info("ESC restore: \(enabled ? "enabled" : "disabled")")
+        bridge.setEscRestore(enabled)
     }
     
     func setFreeTone(_ enabled: Bool) {
         AppState.shared.freeToneEnabled = enabled
-        ime_free_tone(enabled)
-        Log.info("Free tone: \(enabled ? "enabled" : "disabled")")
+        bridge.setFreeTone(enabled)
     }
 }

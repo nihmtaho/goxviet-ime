@@ -57,6 +57,14 @@ enum Log {
         write("INFO: \(msg)")
     }
     
+    static func warning(_ msg: String) {
+        write("WARNING: \(msg)")
+    }
+    
+    static func error(_ msg: String) {
+        write("ERROR: \(msg)")
+    }
+    
     static func skip() {
         write("SKIP")
     }
