@@ -84,15 +84,17 @@ jobs:
       - name: Create unsigned DMG for Homebrew/community
         run: |
           chmod +x scripts/build-dmg-unsigned.sh
-          ./scripts/build-dmg-unsigned.sh
-          # Verify DMG was created
-          if [ -f "dist/${{ env.APP_NAME }}.dmg" ]; then
-            echo "✅ Unsigned DMG created successfully"
-            ls -lh dist/${{ env.APP_NAME }}.dmg
+          ./scripts/build-dmg-unsigned.sh ${{ steps.version.outputs.version }}
+          # Find the unsigned DMG
+          DMG_FILE=$(ls dist/GoxViet-*unsigned.dmg | head -1)
+          if [ -f "$DMG_FILE" ]; then
+            echo "✅ Unsigned DMG created successfully: $DMG_FILE"
+            ls -lh "$DMG_FILE"
           else
             echo "❌ Unsigned DMG creation failed"
             exit 1
           fi
+          echo "DMG_FILE=$DMG_FILE" >> $GITHUB_ENV
 
       - name: Prepare release notes from docs/release-note
         id: release_notes
@@ -122,7 +124,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            dist/${{ env.APP_NAME }}.dmg
+            ${{ env.DMG_FILE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -130,7 +132,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: ${{ env.APP_NAME }}-${{ steps.version.outputs.version }}-dmg
-          path: dist/${{ env.APP_NAME }}.dmg
+          path: ${{ env.DMG_FILE }}
           retention-days: 30
 
       - name: Release summary
@@ -139,10 +141,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Version:** ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Release URL:** ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **DMG Size:** $(ls -lh dist/${{ env.APP_NAME }}.dmg | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
+          echo "- **DMG Size:** $(ls -lh ${{ env.DMG_FILE }} | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Assets" >> $GITHUB_STEP_SUMMARY
-          echo "- ${{ env.APP_NAME }}.dmg" >> $GITHUB_STEP_SUMMARY
+          echo "- ${{ env.DMG_FILE }}" >> $GITHUB_STEP_SUMMARY
 
   # Optional: Notify on success/failure
   notify:
