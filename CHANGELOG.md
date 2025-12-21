@@ -1,5 +1,17 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [1.2.2] - 2025-12-21
+
+### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+- 
+
+
 All notable changes to this project will be documented in this file.
 
 ---
@@ -715,4 +727,3 @@ MIT License - See LICENSE file for details
 [Unreleased]: https://github.com/your-repo/goxviet/compare/v1.2.0...HEAD  
 [1.2.0]: https://github.com/your-repo/goxviet/compare/v1.0.2...v1.2.0  
 [1.0.2]: https://github.com/your-repo/goxviet/compare/v1.0.1...v1.0.2  
-[1.0.1]: https://github.com/your-repo/goxviet/releases/tag/v1.0.1

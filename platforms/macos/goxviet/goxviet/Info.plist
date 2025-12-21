@@ -15,18 +15,18 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>1.2.2</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>LSUIElement</key>
-	<string>1</string>
+	<string>1.2.2</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>GoxViet needs access to control your keyboard input for Vietnamese typing.</string>
+	<key>LSUIElement</key>
+	<string>1</string>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>GoxViet requires Accessibility permissions to capture keyboard events and provide Vietnamese input method functionality.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>GoxViet needs access to control your keyboard input for Vietnamese typing.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 </dict>
 </plist>
