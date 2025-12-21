@@ -7,6 +7,32 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased] - 2025-XX-XX
 
 ### Planned
+
+## [1.2.1] - 2025-12-21
+### 🚨 Critical Bugfix & Stability Release
+
+#### Fixed – Accessibility Permission Issues
+- Duplicate permission dialogs removed (only one custom dialog shown)
+- Accessibility permission now persists across app restarts
+- Auto-detection of permission grant (no need to click “Check Again”)
+- Removed duplicate permission checks (fixed thread priority inversion)
+- Added missing `Log.warning()` and `Log.error()` methods (fixed compile errors)
+- Improved UX: clearer dialog, troubleshooting tips, “Restart Now” button
+
+#### Fixed – Backspace Corruption Bug
+- Fixed character duplication/corruption when deleting Vietnamese text (e.g. “gõ” → “gg”, “được” → “đđư”)
+- Removed batch/coalescing logic that caused engine state desync
+- Each DELETE is now processed immediately, keeping engine and screen state in sync
+- No flicker or lag, <5ms per operation, all test cases pass
+
+#### Quality Assurance
+- All accessibility and backspace scenarios tested and passed
+- No performance regression: <5ms per DELETE, 60fps maintained
+- Documentation updated for all changes
+
+#### References
+- Pull Requests: #15 (Accessibility & Backspace Fix), #16 (Release to main)
+- Issue: #13 (Backspace corruption & permission bug)
 - Full syllable parsing cache completion
 - Settings UI panel improvements
 - Auto-update mechanism

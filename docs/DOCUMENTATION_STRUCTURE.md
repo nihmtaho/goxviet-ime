@@ -202,6 +202,7 @@ docs/
 - `BRANDING_UPDATE_SUMMARY.md` → `project/BRANDING_UPDATE_SUMMARY.md` (v1.2.0 Complete rebranding)
 
 ### Release Notes (1 file → `release-note/`)
+- `RELEASE_NOTE_1.2.1.md` → `release-note/RELEASE_NOTE_1.2.1.md` (Version 1.2.1 - Accessibility & Backspace Fix)
 - `RELEASE_NOTE_1.2.0.md` → `release-note/RELEASE_NOTE_1.2.0.md` (Version 1.2.0 - Complete rebranding)
 
 ### Archive (5 files → `archive/`)
