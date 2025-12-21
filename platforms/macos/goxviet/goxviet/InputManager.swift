@@ -498,44 +498,50 @@ class InputManager {
         Log.info("Processing batch delete: \(count) keys")
         
         // Process each delete through engine to update its internal state
-        // Accumulate total backspaces needed from screen
-        var totalBackspace = 0
+        // IMPORTANT: Only use FIRST backspace count (it's relative to initial screen state)
+        // Subsequent backspace counts are relative to intermediate states - DO NOT accumulate!
+        var firstBackspace = 0
         var finalText = ""
-        var lastActionWasSend = false
+        var hasFirstResult = false
         
-        for _ in 0..<count {
+        for i in 0..<count {
             let result = ime_key(51, false, false)
             
             if let r = result {
                 defer { ime_free(r) }
                 
                 if r.pointee.action == 1 { // Send action
-                    // Accumulate backspace counts (total chars to delete from screen)
-                    totalBackspace += Int(r.pointee.backspace)
-                    // Keep the latest text replacement
+                    // Use ONLY the first backspace count (from initial screen state)
+                    if !hasFirstResult {
+                        firstBackspace = Int(r.pointee.backspace)
+                        hasFirstResult = true
+                    }
+                    // Always keep the latest text replacement
                     let chars = extractChars(from: r.pointee)
                     finalText = String(chars)
-                    lastActionWasSend = true
-                } else if r.pointee.action == 0 && lastActionWasSend {
-                    // Buffer became empty, but we had previous content
-                    // Just track that we need to delete more
-                    totalBackspace += 1
+                } else if r.pointee.action == 0 {
+                    // Buffer became empty - track raw deletes
+                    if !hasFirstResult {
+                        // First result is empty, need raw backspace
+                        firstBackspace = count - i
+                        hasFirstResult = true
+                    }
                 }
             }
         }
         
-        // Inject accumulated result once (this eliminates flicker)
-        // Delete all accumulated chars, insert final text
-        if totalBackspace > 0 || !finalText.isEmpty {
+        // Inject result once (this eliminates flicker)
+        // Use FIRST backspace count (relative to initial screen), LAST text (final state)
+        if firstBackspace > 0 || !finalText.isEmpty {
             let (method, delays) = detectMethod()
             TextInjector.shared.injectSync(
-                bs: totalBackspace,
+                bs: firstBackspace,
                 text: finalText,
                 method: method,
                 delays: delays,
                 proxy: proxy
             )
-            Log.info("Batch delete complete: \(count) deletes, bs=\(totalBackspace), text=\(finalText)")
+            Log.info("Batch delete complete: \(count) deletes, bs=\(firstBackspace), text=\(finalText)")
         } else {
             // No engine content - post raw backspace events
             guard let src = CGEventSource(stateID: .privateState) else { return }
