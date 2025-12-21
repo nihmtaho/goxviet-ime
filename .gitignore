@@ -10,7 +10,7 @@ scripts/
 bindings/
 homebrew/
 platforms/macos/goxviet/archive/
-/*.md
+#/*.md
 /*.txt
 
 # ============================================

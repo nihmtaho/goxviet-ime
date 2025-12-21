@@ -119,8 +119,9 @@ docs/
 │   ├── LOG_PATH_MIGRATION.md           # Log path cleanup (GoxViet rebranding)
 │   └── BRANDING_UPDATE_SUMMARY.md      # Complete rebranding summary (v1.2.0)
 │
-├── 📝 release-note/                      # 1 file | 159 lines
-│   └── RELEASE_NOTE_1.2.0.md           # Version 1.2.0 release notes ⭐
+│  └── release-note/                      # 2 files | 265+ lines
+│      ├── RELEASE_NOTE_1.2.0.md           # Version 1.2.0 release notes ⭐
+│      └── RELEASE_NOTE_1.2.1.md           # Version 1.2.1 bugfix & stability notes ⭐
 │
 └── 📦 archive/                           # 5 files | 1,000+ lines
     ├── FIX_SUMMARY.md                   # Initial event handling fix

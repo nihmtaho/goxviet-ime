@@ -458,9 +458,15 @@ docs/
 ## 🆕 Recent Updates
 
 ### Latest (2025-12-21) 🆕🆕🆕
+### Latest (2025-12-21) ���️���️���️
+- ✅ **Release Note 1.2.1** - Accessibility Permission & Backspace Corruption Fixes ⭐⭐⭐
+  - [docs/release-note/RELEASE_NOTE_1.2.1.md](release-note/RELEASE_NOTE_1.2.1.md)
+  - Fixed: Duplicate permission dialogs, permission persistence, auto-detection, log methods, and priority inversion
+  - Fixed: Backspace character duplication/corruption, removed batch logic, immediate processing, <5ms latency
+  - All test cases pass, documentation updated, no performance regression
 - ✅ **Backspace Corruption Fix** - Fixed critical bug causing character duplication ⭐⭐⭐ CRITICAL
   - "gõ " → delete space → "gõ" (not "gg" anymore!)
-  - "được" → delete "c" → "đươ" (not "đđư")
+  - "được" → delete "c" → "đơ" (not "đđư")
   - "đúng" → delete "g" → "đún" (not "đđú")
   - Removed flawed batch processing logic (110 lines)
   - Added simple immediate processing (45 lines)
@@ -473,7 +479,7 @@ docs/
 - ✅ **Priority Inversion Warning** - Fixed by removing duplicate checks
 - ✅ **Missing Log Methods** - Added warning() and error()
 
-### Previous (2025-12-21) 🆕🆕
+### Previous (2025-12-21) ���️���️
 - ✅ **English Auto-Restore Improvements** - Smart detection of English word patterns ⭐ NEW
   - Fixed: "fix" → stays "fix" (not "fĩ"), "test" → stays "test" (not "tét")
   - Pattern detection: -ix, -ex, -ax endings (fix, text, tax)
