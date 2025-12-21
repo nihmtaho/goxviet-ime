@@ -197,6 +197,14 @@ docs/
 ### Backspace Corruption Fix (1 file) 🆕🔥
 - **[BACKSPACE_CORRUPTION_FIX.md](BACKSPACE_CORRUPTION_FIX.md)** - Critical fix for character duplication and corruption (413 lines) ⭐⭐⭐
 
+### Memory Leak Fix (1 file) 🆕
+- **[MEMORY_LEAK_FIX.md](MEMORY_LEAK_FIX.md)** - Fix for NotificationCenter observer memory leaks (439 lines) ⭐
+
+**Fixed Issues:**
+- ✅ Memory growing ~50-200KB per hour during continuous usage
+- ✅ NotificationCenter observers not being removed
+- ✅ Duplicate observers when settings reloaded
+
 ### Backspace Fixes (10 files)
 - **[fixes/backspace/BACKSPACE_FIX.md](fixes/backspace/BACKSPACE_FIX.md)** - Complete fix documentation (500+ lines) ⭐
 - **[fixes/backspace/BACKSPACE_FIX_SUMMARY.md](fixes/backspace/BACKSPACE_FIX_SUMMARY.md)** - Quick summary

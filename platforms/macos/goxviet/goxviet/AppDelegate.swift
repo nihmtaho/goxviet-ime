@@ -13,6 +13,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var toggleView: MenuToggleView?
     var smartModeToggleView: MenuToggleView?
     
+    // NotificationCenter observer tokens for proper cleanup
+    private var observerTokens: [NSObjectProtocol] = []
+    
     var isEnabled: Bool {
         return AppState.shared.isEnabled
     }
@@ -263,8 +266,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func setupObservers() {
+        // Clear any existing observers first to prevent duplicates
+        cleanupObservers()
+        
         // Listen for state changes
-        NotificationCenter.default.addObserver(
+        let stateToken = NotificationCenter.default.addObserver(
             forName: .updateStateChanged,
             object: nil,
             queue: .main
@@ -274,9 +280,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateToggleMenuItem()
             }
         }
+        observerTokens.append(stateToken)
         
         // Listen for toggle requests
-        NotificationCenter.default.addObserver(
+        let toggleToken = NotificationCenter.default.addObserver(
             forName: .toggleVietnamese,
             object: nil,
             queue: .main
@@ -286,24 +293,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateToggleMenuItem()
             }
         }
+        observerTokens.append(toggleToken)
         
         // Listen for shortcut changes
-        NotificationCenter.default.addObserver(
+        let shortcutToken = NotificationCenter.default.addObserver(
             forName: .shortcutChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.setupMenu()  // Rebuild menu to show new shortcut
         }
+        observerTokens.append(shortcutToken)
         
         // Listen for app becoming active (detect permission changes)
-        NotificationCenter.default.addObserver(
+        let activateToken = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.checkPermissionOnActivate()
         }
+        observerTokens.append(activateToken)
+    }
+    
+    private func cleanupObservers() {
+        for token in observerTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        observerTokens.removeAll()
+    }
+    
+    deinit {
+        // Remove all observers to prevent memory leaks
+        cleanupObservers()
     }
     
     func checkPermissionOnActivate() {
@@ -438,9 +460,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func clearPerAppSettings() {
+        let count = AppState.shared.getPerAppModesCount()
+        let capacity = AppState.shared.getPerAppModesCapacity()
+        
         let confirmAlert = NSAlert()
         confirmAlert.messageText = "Clear All Per-App Settings?"
-        confirmAlert.informativeText = "This will reset Gõ Việt input mode to default (enabled) for all applications."
+        
+        var infoText = "This will reset Gõ Việt input mode to default (enabled) for all applications.\n\n"
+        infoText += "Currently stored: \(count) apps (capacity: \(capacity))"
+        
+        if count >= capacity * 80 / 100 {  // Warning at 80% capacity
+            infoText += "\n⚠️ Warning: Approaching capacity limit. Consider clearing to free up space."
+        }
+        
+        confirmAlert.informativeText = infoText
         confirmAlert.alertStyle = .warning
         confirmAlert.addButton(withTitle: "Clear")
         confirmAlert.addButton(withTitle: "Cancel")

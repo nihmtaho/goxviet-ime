@@ -8,6 +8,10 @@
 import Foundation
 import Cocoa
 
+/// Maximum number of per-app settings to store (prevents unbounded memory growth)
+/// This limit is reasonable for most users while preventing memory bloat
+private let MAX_PER_APP_ENTRIES = 100
+
 /// Global application state manager
 class AppState {
     static let shared = AppState()
@@ -133,6 +137,7 @@ class AppState {
     
     /// Save the mode for a specific app
     /// Only stores apps that are disabled (to save space)
+    /// Enforces MAX_PER_APP_ENTRIES limit to prevent unbounded memory growth
     func setPerAppMode(bundleId: String, enabled: Bool) {
         var dict = UserDefaults.standard.dictionary(forKey: Keys.perAppModes) as? [String: Bool] ?? [:]
         
@@ -140,6 +145,13 @@ class AppState {
             // Remove from dictionary if enabled (default state)
             dict.removeValue(forKey: bundleId)
         } else {
+            // Check capacity limit before adding new entry
+            if dict[bundleId] == nil && dict.count >= MAX_PER_APP_ENTRIES {
+                Log.warning("Per-app settings at capacity (\(MAX_PER_APP_ENTRIES)). Not saving new entry for: \(bundleId)")
+                Log.warning("Consider clearing old per-app settings from Preferences.")
+                return
+            }
+            
             // Store only disabled apps
             dict[bundleId] = false
         }
@@ -167,6 +179,22 @@ class AppState {
     func clearAllPerAppModes() {
         UserDefaults.standard.removeObject(forKey: Keys.perAppModes)
         Log.info("All per-app modes cleared")
+    }
+    
+    /// Get count of stored per-app settings
+    func getPerAppModesCount() -> Int {
+        let dict = UserDefaults.standard.dictionary(forKey: Keys.perAppModes) as? [String: Bool] ?? [:]
+        return dict.count
+    }
+    
+    /// Check if per-app settings is at capacity
+    func isPerAppModesAtCapacity() -> Bool {
+        return getPerAppModesCount() >= MAX_PER_APP_ENTRIES
+    }
+    
+    /// Get maximum capacity for per-app settings
+    func getPerAppModesCapacity() -> Int {
+        return MAX_PER_APP_ENTRIES
     }
     
     /// Get human-readable app name from bundle ID
