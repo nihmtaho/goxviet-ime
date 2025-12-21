@@ -1,0 +1,185 @@
+# ============================================
+# VIETNAMESE IME PROJECT - GITIGNORE
+# ============================================
+
+# Documentation & Examples (không track)
+.github/
+#docs/
+example-project/
+scripts/
+bindings/
+homebrew/
+platforms/macos/goxviet/archive/
+/*.md
+/*.txt
+
+# ============================================
+# RUST CORE
+# ============================================
+
+# Build artifacts
+core/target/
+core/Cargo.lock
+**/target/
+**/*.rs.bk
+
+# ============================================
+# MACOS PLATFORM
+# ============================================
+
+# Xcode
+platforms/macos/**/*.xcodeproj/xcuserdata/
+platforms/macos/**/*.xcodeproj/project.xcworkspace/xcuserdata/
+platforms/macos/**/*.xcworkspace/xcuserdata/
+platforms/macos/**/DerivedData/
+platforms/macos/**/.build/
+platforms/macos/**/Build/
+
+# Xcode user settings
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+*.xcscmblueprint
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+.Spotlight-V100
+.Trashes
+
+# App bundles (output)
+platforms/macos/**/*.app
+platforms/macos/**/*.ipa
+
+# SwiftPM
+platforms/macos/**/.swiftpm/
+platforms/macos/**/Package.resolved
+
+# ============================================
+# WINDOWS PLATFORM
+# ============================================
+
+# Visual Studio
+platforms/windows/**/.vs/
+platforms/windows/**/x64/
+platforms/windows/**/Debug/
+platforms/windows/**/Release/
+platforms/windows/**/*.user
+platforms/windows/**/*.suo
+platforms/windows/**/*.vcxproj.filters
+
+# Windows build artifacts
+platforms/windows/**/*.exe
+platforms/windows/**/*.dll
+platforms/windows/**/*.pdb
+platforms/windows/**/*.obj
+platforms/windows/**/*.lib
+
+# ============================================
+# LOGS & TEMPORARY FILES
+# ============================================
+
+# Application logs
+*.log
+logs/
+**/*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# ============================================
+# IDE & EDITORS
+# ============================================
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains (CLion, IntelliJ IDEA)
+.idea/
+*.iml
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+
+# ============================================
+# TESTING & BENCHMARKS
+# ============================================
+
+# Test artifacts
+test-results/
+coverage/
+*.profdata
+*.profraw
+
+# Performance benchmarks output
+benchmark-results/
+perf-*.txt
+
+# ============================================
+# DEPENDENCIES & CACHES
+# ============================================
+
+# Node modules (if any JS tooling used)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Rust cache
+.cargo/
+
+# ============================================
+# SENSITIVE & LOCAL CONFIG
+# ============================================
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Local configuration
+config.local.*
+*.local.json
+
+# API Keys & Secrets
+secrets/
+*.key
+*.pem
+*.p12
+
+# ============================================
+# DISTRIBUTION & RELEASE
+# ============================================
+
+# Distribution packages
+dist/
+release/
+*.dmg
+*.pkg
+*.msi
+*.zip
+*.tar.gz
+
+# Code signing
+*.provisionprofile
+*.mobileprovision
