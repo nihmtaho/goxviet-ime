@@ -1,0 +1,166 @@
+# Gõ Việt (GoxViet) - Automated Release Workflow
+# Created: 2025-12-21
+# Purpose: Automate tag creation, GitHub release, and DMG upload
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags like v1.0.0, v1.2.3, etc.
+
+env:
+  APP_NAME: GoxViet
+  BUNDLE_ID: com.goxviet.ime
+  RUST_BACKTRACE: 1
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog generation
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Rust core library
+        run: |
+          cd core
+          cargo build --release
+          cargo test --release
+          echo "✅ Rust core built successfully"
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build macOS app
+        run: |
+          cd platforms/macos/goxviet
+          
+          # Build for Release configuration
+          xcodebuild \
+            -project goxviet.xcodeproj \
+            -scheme goxviet \
+            -configuration Release \
+            -derivedDataPath ./build \
+            clean build
+          
+          echo "✅ macOS app built successfully"
+
+      - name: Create DMG
+        run: |
+          # Ensure scripts directory exists and script is executable
+          chmod +x scripts/create_dmg.sh
+          
+          # Run DMG creation script
+          ./scripts/create_dmg.sh
+          
+          # Verify DMG was created
+          if [ -f "dist/${{ env.APP_NAME }}.dmg" ]; then
+            echo "✅ DMG created successfully"
+            ls -lh dist/${{ env.APP_NAME }}.dmg
+          else
+            echo "❌ DMG creation failed"
+            exit 1
+          fi
+
+      - name: Prepare release notes from docs/release-note
+        id: release_notes
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          NOTE_FILE="docs/release-note/RELEASE_NOTE_${VERSION}.md"
+          if [ -f "$NOTE_FILE" ]; then
+            cp "$NOTE_FILE" release_notes.md
+            echo "✅ Found release note: $NOTE_FILE"
+          else
+            echo "⚠️ Release note for version $VERSION not found. Please add docs/release-note/RELEASE_NOTE_${VERSION}.md" > release_notes.md
+            echo "" >> release_notes.md
+            echo "# Gõ Việt (GoxViet) v$VERSION" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "No detailed release note was provided for this version." >> release_notes.md
+            echo "Please update docs/release-note/RELEASE_NOTE_${VERSION}.md for better release documentation." >> release_notes.md
+          fi
+          echo "release_notes_file=release_notes.md" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ env.APP_NAME }} ${{ steps.version.outputs.tag }}
+          body_path: ${{ steps.release_notes.outputs.release_notes_file }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/${{ env.APP_NAME }}.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.APP_NAME }}-${{ steps.version.outputs.version }}-dmg
+          path: dist/${{ env.APP_NAME }}.dmg
+          retention-days: 30
+
+      - name: Release summary
+        run: |
+          echo "## 🎉 Release Created Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release URL:** ${{ steps.create_release.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **DMG Size:** $(ls -lh dist/${{ env.APP_NAME }}.dmg | awk '{print $5}')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Assets" >> $GITHUB_STEP_SUMMARY
+          echo "- ${{ env.APP_NAME }}.dmg" >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Notify on success/failure
+  notify:
+    name: Notification
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: always()
+    
+    steps:
+      - name: Release status
+        run: |
+          if [ "${{ needs.create-release.result }}" == "success" ]; then
+            echo "✅ Release workflow completed successfully!"
+          else
+            echo "❌ Release workflow failed!"
+            exit 1
+          fi
