@@ -1,8 +1,8 @@
 //
 //  PerAppModeManager.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
-//  Manages per-app Vietnamese input mode settings
+//  Manages per-app Gõ Việt input mode settings
 //  Tracks active application and restores saved mode for each app
 //
 

@@ -1,6 +1,6 @@
 //
 //  TextInjectionHelper.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
 //  Text injection utility with app-specific optimization strategies
 //  Based on reference implementation

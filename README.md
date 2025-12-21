@@ -1,4 +1,4 @@
-# Vietnamese IME
+# Gõ Việt (GoxViet)
 
 Bộ gõ tiếng Việt hiệu suất cao với Core engine bằng Rust, hỗ trợ đa nền tảng (macOS/Windows).
 
@@ -34,13 +34,13 @@ cd core
 cargo build --release
 
 # 2. Build macOS App
-cd ../platforms/macos/VietnameseIMEFast
-open VietnameseIMEFast.xcodeproj
+cd ../platforms/macos/goxviet
+open goxviet.xcodeproj
 # Nhấn ⌘R để Build & Run
 
 # 3. Cấp quyền Accessibility
 # System Settings → Privacy & Security → Accessibility
-# Bật "VietnameseIMEFast"
+# Bật "GoxViet"
 ```
 
 📖 **Hướng dẫn chi tiết:** [`docs/QUICK_START.md`](docs/QUICK_START.md)
@@ -50,15 +50,15 @@ open VietnameseIMEFast.xcodeproj
 ## 📁 Cấu trúc dự án
 
 ```
-vietnamese-ime/
+goxviet/
 ├── core/                     # Rust Engine (IME logic)
 │   ├── src/engine/          # Core processing
 │   ├── src/input/           # Input method handlers
 │   └── tests/               # Unit & integration tests
 │
 ├── platforms/                # Platform implementations
-│   ├── macos/               # Swift/IMKit
-│   └── windows/             # C++/TSF (in development)
+│   ├── macos/goxviet/       # Swift/CGEvent & Accessibility API
+│   └── windows/goxviet/     # C++/TSF (in development)
 │
 ├── docs/                     # 📚 Tài liệu (25 files, 6,500+ dòng)
 │   ├── README.md            # Danh mục tài liệu
@@ -184,13 +184,13 @@ cargo test
 cargo clippy
 
 # macOS
-cd platforms/macos/VietnameseIMEFast
-xcodebuild -scheme VietnameseIMEFast build
-# Hoặc: open VietnameseIMEFast.xcodeproj
+cd platforms/macos/goxviet
+xcodebuild -scheme goxviet build
+# Hoặc: open goxviet.xcodeproj
 
 # Windows (in development)
-cd platforms/windows
-msbuild VietnameseIME.sln /p:Configuration=Release
+cd platforms/windows/goxviet
+msbuild goxviet.sln /p:Configuration=Release
 ```
 
 ---
@@ -271,7 +271,7 @@ Chúng tôi hoan nghênh mọi đóng góp! Vui lòng:
 
 ## 🙏 Acknowledgments
 
-Cảm ơn cộng đồng Vietnamese IME development đã đóng góp kiến thức và kinh nghiệm!
+Cảm ơn cộng đồng phát triển bộ gõ tiếng Việt đã đóng góp kiến thức và kinh nghiệm!
 
 ---
 
@@ -283,4 +283,6 @@ Cảm ơn cộng đồng Vietnamese IME development đã đóng góp kiến th�
 
 ---
 
-**Made with ❤️ for the Vietnamese community**
+---
+
+**Gõ Việt (GoxViet)** - Made with ❤️ for the Vietnamese community

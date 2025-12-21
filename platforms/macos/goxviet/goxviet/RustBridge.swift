@@ -1,6 +1,6 @@
 //
 //  RustBridge.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
 //  Swift bridge to Rust core IME engine
 //  Provides FFI interface and helper functions

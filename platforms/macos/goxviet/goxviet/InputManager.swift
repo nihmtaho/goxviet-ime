@@ -1,6 +1,6 @@
 //
 //  InputManager.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
 //  Updated to use new Rust core API (ime_init, ime_key, etc.)
 //
@@ -62,7 +62,7 @@ class InputManager {
         
         // Set initial enabled state (will be overridden by per-app mode if enabled)
         ime_enabled(AppState.shared.isEnabled)
-        Log.info("Initial Vietnamese input state: \(AppState.shared.isEnabled ? "enabled" : "disabled")")
+        Log.info("Initial Gõ Việt input state: \(AppState.shared.isEnabled ? "enabled" : "disabled")")
     }
     
     deinit {
@@ -80,7 +80,7 @@ class InputManager {
             DispatchQueue.main.async {
                 let alert = NSAlert()
                 alert.messageText = "Accessibility Permission Required"
-                alert.informativeText = "VietnameseIMEFast needs accessibility access to capture keyboard input.\n\nPlease enable it in System Preferences → Security & Privacy → Privacy → Accessibility."
+                alert.informativeText = "GoxViet needs accessibility access to capture keyboard input.\n\nPlease enable it in System Preferences → Security & Privacy → Privacy → Accessibility."
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "Open System Preferences")
                 alert.addButton(withTitle: "Cancel")

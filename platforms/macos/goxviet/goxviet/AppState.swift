@@ -1,6 +1,6 @@
 //
 //  AppState.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
 //  Manages application state and per-app Vietnamese input mode settings
 //
@@ -71,12 +71,12 @@ class AppState {
     // MARK: - Storage Keys
     
     private enum Keys {
-        static let smartModeEnabled = "com.vietnamese.ime.smartMode"
-        static let inputMethod = "com.vietnamese.ime.method"
-        static let modernToneStyle = "com.vietnamese.ime.modernTone"
-        static let escRestore = "com.vietnamese.ime.escRestore"
-        static let freeTone = "com.vietnamese.ime.freeTone"
-        static let perAppModes = "com.vietnamese.ime.perAppModes"
+        static let smartModeEnabled = "com.goxviet.ime.smartMode"
+        static let inputMethod = "com.goxviet.ime.method"
+        static let modernToneStyle = "com.goxviet.ime.modernTone"
+        static let escRestore = "com.goxviet.ime.escRestore"
+        static let freeTone = "com.goxviet.ime.freeTone"
+        static let perAppModes = "com.goxviet.ime.perAppModes"
     }
     
     // MARK: - Initialization
@@ -110,7 +110,7 @@ class AppState {
             object: enabled
         )
         
-        Log.info("Vietnamese input: \(enabled ? "enabled" : "disabled")")
+        Log.info("Gõ Việt input: \(enabled ? "enabled" : "disabled")")
     }
     
     /// Set enabled state without posting notification (used during app switching)

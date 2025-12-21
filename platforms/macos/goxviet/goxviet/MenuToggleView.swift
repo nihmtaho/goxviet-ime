@@ -1,6 +1,6 @@
 //
 //  MenuToggleView.swift
-//  VietnameseIMEFast
+//  GoxViet
 //
 //  Custom view for menu item with SwiftUI Toggle
 //  Simple implementation following reference architecture
