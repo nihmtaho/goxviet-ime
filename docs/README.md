@@ -2,7 +2,7 @@
 
 Comprehensive documentation for Gõ Việt (GoxViet) project, organized by topic for easy navigation.
 
-**Total Documentation:** 64 files | **Lines:** 19,100+ | **Last Updated:** 2025-12-21
+**Total Documentation:** 71 files | **Lines:** 20,100+ | **Last Updated:** 2025-12-22
 
 ---
 
@@ -103,6 +103,33 @@ docs/
 ## 🎯 Features
 
 **Advanced features for seamless workflow**
+
+### Settings UI
+- **[SIDEBAR_NAVIGATION_VISUAL_GUIDE.md](SIDEBAR_NAVIGATION_VISUAL_GUIDE.md)** - Visual reference for hidden titlebar design (588 lines) ⭐ QUICK START
+- **[SIDEBAR_NAVIGATION_SUMMARY.md](SIDEBAR_NAVIGATION_SUMMARY.md)** - Quick summary of sidebar navigation migration (480+ lines) ⭐ OVERVIEW
+- **[SIDEBAR_NAVIGATION_DESIGN.md](SIDEBAR_NAVIGATION_DESIGN.md)** - Complete sidebar navigation technical design (580+ lines) ⭐ DETAILED
+- **[SIDEBAR_NAVIGATION_COMPARISON.md](SIDEBAR_NAVIGATION_COMPARISON.md)** - Before/after visual comparison (536 lines) ⭐ ANALYSIS
+- **[SETTINGS_UI_LIQUID_GLASS_FINAL.md](SETTINGS_UI_LIQUID_GLASS_FINAL.md)** - True liquid glass implementation (470 lines) ⭐ NEW
+- **[SETTINGS_UI_TESTING_GUIDE.md](SETTINGS_UI_TESTING_GUIDE.md)** - Visual verification guide (557 lines) ⭐ NEW
+- **[SETTINGS_UI_LIQUID_GLASS.md](SETTINGS_UI_LIQUID_GLASS.md)** - Initial liquid glass design documentation
+- **[SETTINGS_UI_IMPLEMENTATION.md](SETTINGS_UI_IMPLEMENTATION.md)** - Complete implementation guide
+- **[SETTINGS_UI_TABVIEW_REFACTOR.md](SETTINGS_UI_TABVIEW_REFACTOR.md)** - TabView migration analysis
+- **[SETTINGS_UI_MOCKUP.md](SETTINGS_UI_MOCKUP.md)** - Visual mockups
+- **[SETTINGS_UI_SUMMARY.md](SETTINGS_UI_SUMMARY.md)** - Quick summary
+
+**Key Features:**
+- ✅ **Hidden Titlebar** - Modern macOS Sequoia design with floating traffic lights
+- ✅ **App Icon Header** - 72×72pt app icon with "GoxViet Settings" branding in sidebar
+- ✅ **Sidebar Navigation** - NavigationSplitView following System Settings pattern
+- ✅ **Draggable Background** - Click anywhere to move window (isMovableByWindowBackground)
+- ✅ **True Liquid Glass** - Translucent materials with desktop blur throughout
+- ✅ **Resizable Window** - 700-1200pt width, 550-800pt height (default 800×550)
+- ✅ **4 Panels** - General, Per-App, Advanced, About (unchanged from TabView)
+- ✅ **Safe Area Padding** - 52pt top padding for traffic lights clearance
+- ✅ **Ultra-Thin Materials** - Layered blur effects on header and sections
+- ✅ **Dark Mode** - Automatic adaptation to system appearance
+- ✅ **Accessibility** - VoiceOver, Reduce Transparency, Increase Contrast
+- ✅ **Performance** - 60fps animations, ~18ms initial render, ~6ms panel switch
 
 ### Smart Per-App Mode
 - **[SMART_PER_APP_MODE.md](SMART_PER_APP_MODE.md)** - Automatic per-app Vietnamese input memory (436 lines) ⭐ NEW
