@@ -1295,6 +1295,7 @@ dependencies = { wasm-bindgen = "0.2" }
 - `docs/ARROW_KEY_FIX_SUMMARY.md` - Summary of Swift layer improvements
 - `docs/BUILD_AND_TEST_ARROW_FIX.md` - Testing procedures với test cases
 - `docs/ARROW_KEY_FIX_CHECKLIST.md` - Quick checklist cho developers
+- **2025-12-22**: Đã hoàn thành refactor UI Settings (macOS): Chuẩn hóa NavigationSplitView, sửa lỗi icon sidebar, giảm bán kính bo góc/padding panel, loại bỏ animation, tối ưu UX toggle sidebar.
 
 ### Internal Documentation
 - `docs/PERFORMANCE_INDEX.md` - Performance baseline
