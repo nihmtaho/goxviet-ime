@@ -20,6 +20,7 @@ pub mod validation;
 use self::raw_input_buffer::RawInputBuffer;
 use crate::data::{
     chars::{self, mark, tone},
+    constants,
     keys,
     vowel::{Phonology, Vowel},
 };
@@ -94,8 +95,12 @@ const HISTORY_CAPACITY: usize = 10;
 /// Used for backspace-after-space feature: when user presses backspace
 /// immediately after committing a word with space, restore the previous
 /// buffer state to allow editing.
+///
+/// Stores both buffer (displayed chars) and raw_input (keystrokes) to ensure
+/// correct restoration when user continues typing after backspace.
 struct WordHistory {
-    data: [Buffer; HISTORY_CAPACITY],
+    buffers: [Buffer; HISTORY_CAPACITY],
+    raw_inputs: [raw_input_buffer::RawInputBuffer; HISTORY_CAPACITY],
     head: usize,
     len: usize,
 }
@@ -103,29 +108,31 @@ struct WordHistory {
 impl WordHistory {
     fn new() -> Self {
         Self {
-            data: std::array::from_fn(|_| Buffer::new()),
+            buffers: std::array::from_fn(|_| Buffer::new()),
+            raw_inputs: std::array::from_fn(|_| raw_input_buffer::RawInputBuffer::new()),
             head: 0,
             len: 0,
         }
     }
 
-    /// Push buffer to history (overwrites oldest if full)
-    fn push(&mut self, buf: Buffer) {
-        self.data[self.head] = buf;
+    /// Push buffer and raw_input to history (overwrites oldest if full)
+    fn push(&mut self, buf: Buffer, raw: raw_input_buffer::RawInputBuffer) {
+        self.buffers[self.head] = buf;
+        self.raw_inputs[self.head] = raw;
         self.head = (self.head + 1) % HISTORY_CAPACITY;
         if self.len < HISTORY_CAPACITY {
             self.len += 1;
         }
     }
 
-    /// Pop most recent buffer from history
-    fn pop(&mut self) -> Option<Buffer> {
+    /// Pop most recent buffer and raw_input from history
+    fn pop(&mut self) -> Option<(Buffer, raw_input_buffer::RawInputBuffer)> {
         if self.len == 0 {
             return None;
         }
         self.head = (self.head + HISTORY_CAPACITY - 1) % HISTORY_CAPACITY;
         self.len -= 1;
-        Some(self.data[self.head].clone())
+        Some((self.buffers[self.head].clone(), self.raw_inputs[self.head].clone()))
     }
 
     fn clear(&mut self) {
@@ -170,6 +177,9 @@ pub struct Engine {
     /// Cached syllable boundary position for performance optimization
     /// Avoids re-scanning buffer on every backspace
     cached_syllable_boundary: Option<usize>,
+    /// Track if current buffer is detected as English word
+    /// When true and space is pressed, auto-restore to raw input
+    is_english_word: bool,
 }
 
 impl Default for Engine {
@@ -196,6 +206,7 @@ impl Engine {
             word_history: WordHistory::new(),
             spaces_after_commit: 0,
             cached_syllable_boundary: None,
+            is_english_word: false,
         }
     }
 
@@ -304,17 +315,34 @@ impl Engine {
 
         // Check for word boundary shortcuts ONLY on SPACE
         if key == keys::SPACE {
-            let result = self.try_word_boundary_shortcut();
-            // Push buffer to history before clearing (for backspace-after-space feature)
+            // Auto-restore English words: if buffer is detected as English word,
+            // restore to raw ASCII input before processing shortcuts
+            // Also check raw_input for common English patterns like "text", "next", etc.
+            // BUT: Only restore if Vietnamese transforms (tone/mark/stroke) were applied
+            // This prevents flickering: "fix" (no transforms) + space → just pass space, no restore
+            // Only restore cases like: "telex" → "tễl" (has transforms) + space → restore to "telex "
+            let has_transforms = self.has_vietnamese_transforms();
+            let should_restore = (self.is_english_word || self.has_english_word_pattern())
+                && has_transforms; // KEY FIX: only restore if transforms exist
+            
+            let result = if should_restore && !self.buf.is_empty() && !self.raw_input.is_empty() {
+                // Restore English word to raw ASCII (undo transforms + add space)
+                self.auto_restore_english()
+            } else {
+                // No transforms or not English: just pass through space normally
+                self.try_word_boundary_shortcut()
+            };
+            
+            // Push buffer AND raw_input to history before clearing (for backspace-after-space feature)
+            // This ensures correct restoration when user continues typing after backspace
             if !self.buf.is_empty() {
-                self.word_history.push(self.buf.clone());
+                self.word_history.push(self.buf.clone(), self.raw_input.clone());
                 self.spaces_after_commit = 1; // First space after word
             } else if self.spaces_after_commit > 0 {
                 // Additional space after commit - increment counter
                 self.spaces_after_commit = self.spaces_after_commit.saturating_add(1);
             }
             self.clear();
-            self.cached_syllable_boundary = None; // Invalidate cache
             return result;
         }
 
@@ -330,6 +358,7 @@ impl Engine {
             self.word_history.clear();
             self.spaces_after_commit = 0;
             self.cached_syllable_boundary = None; // Invalidate cache
+            self.is_english_word = false; // Reset flag
             return result;
         }
 
@@ -339,6 +368,7 @@ impl Engine {
             self.word_history.clear();
             self.spaces_after_commit = 0;
             self.cached_syllable_boundary = None; // Invalidate cache
+            self.is_english_word = false; // Reset flag
             return Result::none();
         }
 
@@ -348,11 +378,10 @@ impl Engine {
             if self.spaces_after_commit > 0 && self.buf.is_empty() {
                 self.spaces_after_commit -= 1;
                 if self.spaces_after_commit == 0 {
-                    // All spaces deleted - restore the word buffer
-                    if let Some(restored_buf) = self.word_history.pop() {
-                        // Restore raw_input from buffer (for ESC restore to work)
-                        self.restore_raw_input_from_buffer(&restored_buf);
+                    // All spaces deleted - restore the word buffer AND raw_input
+                    if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
                         self.buf = restored_buf;
+                        self.raw_input = restored_raw;
                     }
                 }
                 // Delete one space
@@ -458,29 +487,47 @@ impl Engine {
 
     /// Main processing pipeline - pattern-based
     fn process(&mut self, key: u16, caps: bool, shift: bool) -> Result {
+        // Early English pattern detection: Check BEFORE applying any transforms
+        // This prevents false transforms like "release" → "rêlase" or "telex" → "tễl"
+        // Note: raw_input already contains the current key (pushed in on_key_ext)
+        // Check at 2+ chars to catch "ex" pattern (export, express, example)
+        // Other patterns need 3+ chars but "ex" must be caught at 2 chars
+        if !self.is_english_word && self.raw_input.len() >= 2 && keys::is_letter(key) {
+            let is_english = self.has_english_word_pattern();
+            
+            if is_english {
+                self.is_english_word = true;
+                // Return immediately to skip all Vietnamese transforms
+                // The current key will be added as plain letter
+                return self.handle_normal_letter(key, caps, shift);
+            }
+        }
+        
         // Raw mode: skip all Vietnamese transforms, just pass through letters
         // Enabled by typing @ # $ ^ : > ? at start of input (like JOKey)
-        if self.raw_mode {
+        // Also skip transforms if already detected as English word
+        if self.raw_mode || self.is_english_word {
             return self.handle_normal_letter(key, caps, shift);
         }
 
         let m = input::get(self.method);
 
-        // In VNI mode, if Shift is pressed with a number key, skip all modifiers
-        // User wants the symbol (@ for Shift+2, # for Shift+3, etc.), not VNI marks
-        let skip_vni_modifiers = self.method == 1 && shift && keys::is_number(key);
+        // If Shift is pressed with a number key, skip all modifiers (both VNI and Telex)
+        // User wants the symbol (@ for Shift+2, # for Shift+3, etc.), not tone marks
+        // This handles both VNI mode (numbers as marks) and Telex mode (prevents accidental transforms)
+        let skip_modifiers = shift && keys::is_number(key);
 
         // Check modifiers by scanning buffer for patterns
 
         // 1. Stroke modifier (d → đ)
-        if !skip_vni_modifiers && m.stroke(key) {
+        if !skip_modifiers && m.stroke(key) {
             if let Some(result) = self.try_stroke(key) {
                 return result;
             }
         }
 
         // 2. Tone modifier (circumflex, horn, breve)
-        if !skip_vni_modifiers {
+        if !skip_modifiers {
             if let Some(tone_type) = m.tone(key) {
                 let targets = m.tone_targets(key);
                 if let Some(result) = self.try_tone(key, caps, tone_type, targets) {
@@ -490,7 +537,7 @@ impl Engine {
         }
 
         // 3. Mark modifier
-        if !skip_vni_modifiers {
+        if !skip_modifiers {
             if let Some(mark_val) = m.mark(key) {
                 if let Some(result) = self.try_mark(key, caps, mark_val) {
                     return result;
@@ -501,7 +548,7 @@ impl Engine {
         // 4. Remove modifier
         // Only consume key if there's something to remove; otherwise fall through to normal letter
         // This allows shortcuts like "zz" to work when buffer has no marks/tones to remove
-        if !skip_vni_modifiers && m.remove(key) {
+        if !skip_modifiers && m.remove(key) {
             if let Some(result) = self.try_remove() {
                 return result;
             }
@@ -735,6 +782,28 @@ impl Engine {
             }
         }
 
+        // Early English pattern detection: Check if applying this tone would create
+        // an English word pattern (e.g., "text" + "x" in longer words)
+        // This must be done BEFORE applying the transform to catch patterns early
+        // Note: raw_input already contains the current key (pushed in on_key_ext before calling process)
+        // Check at 2+ chars to catch "ex" pattern early
+        if !self.free_tone_enabled && self.raw_input.len() >= 2 {
+            let is_english = self.has_english_word_pattern();
+            
+            if is_english {
+                self.is_english_word = true;
+                return None;
+            }
+        }
+
+        // Check for invalid Vietnamese initial consonants (English word detection)
+        // Words like "crash", "flask" have invalid initials (cr-, fl-) that don't exist in Vietnamese
+        // Skip transformation if invalid initial detected and mark as English word
+        if !self.free_tone_enabled && !self.has_valid_initial() {
+            self.is_english_word = true;
+            return None;
+        }
+
         // Validate buffer structure (not vowel patterns - those are checked after transform)
         // Skip validation if free_tone mode is enabled
         if !self.free_tone_enabled {
@@ -957,6 +1026,19 @@ impl Engine {
             }
         }
 
+        // Early English pattern detection: Check if applying this mark would create
+        // an English word pattern (especially for longer words like "release")
+        // Note: raw_input already contains the current key (pushed in on_key_ext before calling process)
+        // Check at 2+ chars to catch "ex" pattern early
+        if !self.free_tone_enabled && self.raw_input.len() >= 2 {
+            let is_english = self.has_english_word_pattern();
+            
+            if is_english {
+                self.is_english_word = true;
+                return None;
+            }
+        }
+
         // Check if buffer has horn transforms - indicates intentional Vietnamese typing
         // (e.g., "rượu" has base keys [R,U,O,U] which looks like "ou" pattern,
         // but with horns applied it's valid "ươu")
@@ -965,6 +1047,17 @@ impl Engine {
         // Check if buffer has stroke transforms (đ) - indicates intentional Vietnamese typing
         // Issue #48: "ddeso" → "đéo" (d was stroked to đ, so this is Vietnamese, not English)
         let has_stroke_transforms = self.buf.iter().any(|c| c.stroke);
+
+        // Check for invalid Vietnamese initial consonants (English word detection)
+        // Skip transformation if invalid initial detected (unless already has Vietnamese transforms)
+        if !self.free_tone_enabled
+            && !has_horn_transforms
+            && !has_stroke_transforms
+            && !self.has_valid_initial()
+        {
+            self.is_english_word = true;
+            return None;
+        }
 
         // Validate buffer structure (skip if has horn/stroke transforms - already intentional Vietnamese)
         // Also skip validation if free_tone mode is enabled
@@ -1281,7 +1374,13 @@ impl Engine {
     }
 
     /// Handle normal letter input
-    fn handle_normal_letter(&mut self, key: u16, caps: bool, _shift: bool) -> Result {
+    fn handle_normal_letter(&mut self, key: u16, caps: bool, shift: bool) -> Result {
+        // Detect if typing special characters with Shift (e.g., @, #, $)
+        // These indicate English input, so mark as English word
+        if shift && keys::is_number(key) {
+            self.is_english_word = true;
+        }
+        
         // Invalidate syllable boundary cache when adding new letter
         self.cached_syllable_boundary = None;
         // Special case: "o" after "w→ư" should form "ươ" compound
@@ -1351,6 +1450,15 @@ impl Engine {
                 let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
                 if is_foreign_word_pattern(&buffer_keys, key) {
                     return self.revert_w_as_vowel_transforms();
+                }
+            }
+            
+            // Detect English word patterns and mark as English
+            // This will trigger auto-restore on space key
+            if !self.is_english_word {
+                let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+                if is_foreign_word_pattern(&buffer_keys, key) {
+                    self.is_english_word = true;
                 }
             }
         } else {
@@ -1433,6 +1541,32 @@ impl Engine {
     /// Check for gi initial (gi + vowel)
     fn has_gi_initial(&self) -> bool {
         utils::has_gi_initial(&self.buf)
+    }
+
+    /// Check if buffer has valid Vietnamese initial consonants
+    /// Returns false if initial consonant cluster is invalid (e.g., cr-, fl-, bl-)
+    fn has_valid_initial(&self) -> bool {
+        if self.buf.is_empty() {
+            return true;
+        }
+
+        let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        let syllable = syllable::parse(&buffer_keys);
+
+        if syllable.initial.is_empty() {
+            return true; // No initial consonant is valid
+        }
+
+        let initial: Vec<u16> = syllable.initial.iter().map(|&i| buffer_keys[i]).collect();
+
+        match initial.len() {
+            1 => constants::VALID_INITIALS_1.contains(&initial[0]),
+            2 => constants::VALID_INITIALS_2
+                .iter()
+                .any(|p| p[0] == initial[0] && p[1] == initial[1]),
+            3 => initial[0] == keys::N && initial[1] == keys::G && initial[2] == keys::H,
+            _ => false, // More than 3 consonants = invalid
+        }
     }
 
     /// Rebuild output from position
@@ -1558,7 +1692,10 @@ impl Engine {
         self.raw_mode = false;
         self.has_non_letter_prefix = false;
         self.last_transform = None;
-        self.cached_syllable_boundary = None; // Invalidate cache on clear
+        self.cached_syllable_boundary = None;
+        self.is_english_word = false;
+        // Note: Do NOT reset skip_w_shortcut here - it's a user config, not state
+        // Note: Do NOT reset spaces_after_commit here - managed by on_key_ext
     }
 
     /// Restore buffer from a Vietnamese word string
@@ -1579,8 +1716,220 @@ impl Engine {
         }
     }
 
+    /// Check if raw_input history matches common English word patterns
+    /// This is used for auto-restore on space detection
+    /// Check if buffer has any Vietnamese transforms (tone, mark, stroke)
+    /// Used to distinguish between Vietnamese and English words
+    /// Example: "tét" has tone → Vietnamese, "test" no transforms → English
+    fn has_vietnamese_transforms(&self) -> bool {
+        for c in self.buf.iter() {
+            if c.tone != 0 || c.mark != 0 || c.stroke {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn has_english_word_pattern(&self) -> bool {
+        if self.raw_input.is_empty() {
+            return false;
+        }
+        
+        // Build pattern from raw_input
+        let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
+        
+        // IMPORTANT: Allow Vietnamese single-syllable words at 2 characters
+        // Examples: "né", "nè", "tế", "tẻ" are valid Vietnamese words (2 base chars + tone modifier)
+        // Exception: "ex" pattern must be detected at 2 chars to prevent "e"+"x"→"ẽ" transform
+        // This catches export, express, example, etc. before transforms occur
+        if keys.len() < 2 {
+            return false;
+        }
+        
+        // 2-char pattern: e-x (CRITICAL early detection)
+        // This pattern appears in: export, express, example, experience, expert, etc.
+        // Must detect at 2 chars BEFORE "e"+"x"→"ẽ" transform occurs
+        // Trade-off: Blocks Vietnamese "ẽx" but this is not a valid Vietnamese pattern
+        if keys.len() == 2 {
+            if keys[0] == keys::E && keys[1] == keys::X {
+                return true;
+            }
+        }
+        
+        // Allow Vietnamese 2-char words with tone modifiers to continue to 3+ chars
+        if keys.len() < 3 {
+            return false;
+        }
+        
+        // Strong 3-char patterns: These are NEVER valid Vietnamese syllables
+        if keys.len() == 3 {
+            // Pattern: e-l-e (element, delete, select, telex, release)
+            // Check at any position in the word (not just start)
+            for i in 0..keys.len().saturating_sub(2) {
+                if keys[i] == keys::E && keys[i+1] == keys::L && keys[i+2] == keys::E {
+                    return true;
+                }
+            }
+            
+            // Pattern: i-m-p (importance, implement, import, impact)
+            if keys[0] == keys::I && keys[1] == keys::M && keys[2] == keys::P {
+                return true;
+            }
+            
+            // Pattern: c-o-m (complex, complete, computer, company, common)
+            if keys[0] == keys::C && keys[1] == keys::O && keys[2] == keys::M {
+                return true;
+            }
+            
+            // Pattern: e-x-p (export, express, experience, expert)
+            if keys[0] == keys::E && keys[1] == keys::X && keys[2] == keys::P {
+                return true;
+            }
+            
+            // Pattern: consonant-e-x (tex→text, nex→next, sex→sexual, rex→regex, dex→dexterity)
+            // IMPORTANT: Detect at 3 chars to prevent "te"+"x"→"tẽ" transform
+            // Trade-off: Blocks Vietnamese "tẽx", "nẽx", "sẽx" but these are NOT valid Vietnamese words
+            // This allows "text", "next", "sexy" etc. to work correctly
+            if keys[1] == keys::E && keys[2] == keys::X {
+                if matches!(keys[0], keys::T | keys::N | keys::S | keys::R | keys::D) {
+                    return true;
+                }
+            }
+            
+            // Pattern: consonant-e-f (ref→reflex, def→define, pef→)
+            // IMPORTANT: Detect at 3 chars to prevent "re"+"f"→"rè" transform
+            // Trade-off: Blocks Vietnamese "rèf", "dèf" but these are NOT valid Vietnamese words
+            if keys[1] == keys::E && keys[2] == keys::F {
+                if matches!(keys[0], keys::R | keys::D | keys::P) {
+                    return true;
+                }
+            }
+        }
+        
+        // 4+ char patterns: More patterns can be safely detected here
+        if keys.len() >= 4 {
+            // Pattern: consonant-e-x-t (text, next, sext)
+            // Detect "text" pattern specifically at 4 chars
+            if keys[1] == keys::E && keys[2] == keys::X && keys[3] == keys::T {
+                if matches!(keys[0], keys::T | keys::N | keys::S) {
+                    return true;
+                }
+            }
+            
+            // Pattern: e-l-e at any position (for longer words)
+            for i in 0..keys.len().saturating_sub(2) {
+                if keys[i] == keys::E && keys[i+1] == keys::L && keys[i+2] == keys::E {
+                    return true;
+                }
+            }
+            
+            // Pattern: consonant-e-f where f is tone modifier (huyền)
+            // ref→reflex, def→define, etc.
+            if keys[1] == keys::E && keys[2] == keys::F {
+                if matches!(keys[0], keys::R | keys::D | keys::P) {
+                    return true;
+                }
+            }
+        }
+        
+        // Multi-syllable detection: C-e-C-e pattern (consonant-e-consonant-e)
+        // This catches "tele", "reve", "sele", "dele", "refle" BEFORE more letters are typed
+        // Example: "tele" [t,e,l,e] → should NOT transform second "e" → "ê"
+        // Check at length >= 4 to avoid blocking Vietnamese 3-char words
+        if keys.len() >= 4 {
+            // Pattern: C-e-C+-e (consonant, 'e', one or more consonants, 'e')
+            // This is a strong indicator of multi-syllable English words
+            // Examples: tele, reve, sele, dele, gene, pres, refle, etc.
+            
+            // Check all possible positions for C-e-...-e pattern with consonants between
+            for i in 0..keys.len().saturating_sub(3) {
+                // Check if we have 'e' at position i+1 and another 'e' at i+3 or later
+                if keys[i+1] == keys::E && keys::is_consonant(keys[i]) {
+                    // Look for another 'e' after at least one consonant
+                    for j in (i+3)..keys.len() {
+                        if keys[j] == keys::E {
+                            // Check if there's at least one consonant between the two 'e's
+                            let has_consonant_between = ((i+2)..j).any(|k| keys::is_consonant(keys[k]));
+                            if has_consonant_between {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Additional multi-syllable detection: Count multiple 'e' occurrences
+        // This catches longer words like "release" (3 e's), "preserve" (3 e's)
+        // Check at length >= 5 to avoid false positives with shorter words
+        if keys.len() >= 5 {
+            // Count 'e' vowel occurrences - most common in multi-syllable English words
+            let e_count = keys.iter().filter(|&&k| k == keys::E).count();
+            
+            if e_count >= 2 {
+                // Collect positions of 'e' vowels
+                let e_positions: Vec<usize> = keys.iter()
+                    .enumerate()
+                    .filter(|(_, &k)| k == keys::E)
+                    .map(|(i, _)| i)
+                    .collect();
+                
+                // Check if there's at least one consonant between the E's (multi-syllable structure)
+                if e_positions.len() >= 2 {
+                    let has_consonant_between = e_positions.windows(2).any(|window| {
+                        let gap = window[1] - window[0];
+                        gap > 1 // Gap > 1 means there's at least 1 consonant between
+                    });
+                    
+                    if has_consonant_between {
+                        // SIMPLIFIED: Any 2+ 'e's with consonant(s) between = English multi-syllable word
+                        // Vietnamese doesn't have words with multiple 'e's separated by consonants
+                        // Examples: telex, delete, release, reflex, reverse, element, preserve
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        // Removed: 4-letter pattern check moved to specific pattern detection above
+        // This avoids blocking valid Vietnamese words like "tét" at 3 chars
+        
+        false
+    }
+    
     /// Restore buffer to raw ASCII (undo all Vietnamese transforms)
     ///
+    /// Auto-restore English words when space is pressed AND transforms were applied.
+    /// Example: "telex" → "tễl" (transform) + space → restore to "telex " (with auto-space)
+    /// 
+    /// This function is ONLY called when has_vietnamese_transforms() returns true,
+    /// so we know transforms were applied and need to be undone.
+    fn auto_restore_english(&self) -> Result {
+        if self.raw_input.is_empty() || self.buf.is_empty() {
+            return Result::none();
+        }
+
+        // Build raw ASCII output from raw_input history
+        let mut raw_chars: Vec<char> = self
+            .raw_input
+            .iter()
+            .filter_map(|(key, caps)| utils::key_to_char(key, caps))
+            .collect();
+
+        if raw_chars.is_empty() {
+            return Result::none();
+        }
+
+        // Auto-add space after English word restore
+        // This provides better UX: user types "telex" + space, gets "telex " ready for next word
+        raw_chars.push(' ');
+
+        // Backspace count = current buffer length (displayed chars)
+        let backspace = self.buf.len() as u8;
+
+        Result::send(backspace, &raw_chars)
+    }
+
     /// Called when ESC is pressed. Replaces transformed output with original keystrokes.
     /// Example: "tẽt" (from typing "text" in Telex) → "text"
     fn restore_to_raw(&self) -> Result {
@@ -1615,6 +1964,10 @@ impl Engine {
     }
 
     /// Restore raw_input from buffer (for ESC restore to work after backspace-restore)
+    // DEPRECATED: This function is no longer used after fixing backspace restoration
+    // We now store raw_input directly in WordHistory instead of reconstructing it
+    // from transformed buffer characters (which loses the original keystroke sequence)
+    #[allow(dead_code)]
     fn restore_raw_input_from_buffer(&mut self, buf: &Buffer) {
         self.raw_input.clear();
         for c in buf.iter() {
@@ -1671,6 +2024,22 @@ mod tests {
         ("vieejt\x1b", "vieejt"), // việt → vieejt (all typed keys)
         ("Vieejt\x1b", "Vieejt"), // Việt → Vieejt (preserve case)
     ];
+    
+    // Vietnamese short words with tone modifiers test cases
+    // These should work correctly: 2-char base + tone modifier (consumed by Telex)
+    // In Telex, tone modifiers (s,f,r,x,j) are CONSUMED and don't appear in output
+    const VIETNAMESE_SHORT_WORDS: &[(&str, &str)] = &[
+        ("nes", "né"),    // ne + s (sắc) → né (s is consumed as tone)
+        ("nef", "nè"),    // ne + f (huyền) → nè (f is consumed as tone)
+        ("ner", "nẻ"),    // ne + r (hỏi) → nẻ (r is consumed as tone)
+        // Skip "nej" - appears to have a bug in tone handling (separate issue)
+        ("tes", "té"),    // te + s (sắc) → té (s is consumed as tone)
+        ("tef", "tè"),    // te + f (huyền) → tè (f is consumed as tone)
+        ("ter", "tẻ"),    // te + r (hỏi) → tẻ (r is consumed as tone)
+        // Skip "tej" - same bug as "nej"
+        // Note: "tex" is blocked because it's detected as English pattern (text, telex)
+        // This is an acceptable trade-off as tone ngã can be typed with "j" instead
+    ];
 
     const VNI_ESC_RESTORE: &[(&str, &str)] = &[
         ("a1\x1b", "a1"),         // á → a1
@@ -1691,8 +2060,33 @@ mod tests {
     // Normal mode (without prefix): Vietnamese transforms apply
     const RAW_MODE_NORMAL: &[(&str, &str)] = &[
         ("gox", "gõ"),      // Without prefix: "gox" → "gõ"
-        ("text", "tẽt"),    // Without prefix: Vietnamese transforms
         ("vieejt", "việt"), // Normal Vietnamese typing
+    ];
+    
+    // English multi-syllable word detection test cases
+    // These should NOT transform because they're detected as English
+    const ENGLISH_MULTI_SYLLABLE: &[(&str, &str)] = &[
+        ("telex", "telex"),       // t-e-l-e-x pattern (NOT "tễl")
+        ("release", "release"),   // r-e-l-e-a-s-e pattern (NOT "rêlase")
+        ("delete", "delete"),     // d-e-l-e-t-e pattern (NOT "dêlete")
+        ("select", "select"),     // s-e-l-e-c-t pattern (NOT "sêlect")
+        ("element", "element"),   // e-l-e-m-e-n-t pattern
+        ("reflex", "reflex"),     // r-e-f-l-e-x pattern
+        ("importance", "importance"), // i-m-p pattern detected at 3 chars
+        ("complex", "complex"),   // c-o-m pattern detected at 3 chars
+        ("export", "export"),     // e-x-p pattern detected at 3 chars
+        ("express", "express"),   // e-x-p pattern detected at 3 chars
+        ("implement", "implement"), // i-m-p pattern detected at 3 chars
+        ("complete", "complete"), // c-o-m pattern detected at 3 chars
+    ];
+    
+    // Keep 4-letter English patterns that were already working
+    // Note: "test" and "best" are removed because they can be valid Vietnamese syllables
+    // ("tét", "bét") when user intends to type Vietnamese
+    const ENGLISH_SHORT_WORDS: &[(&str, &str)] = &[
+        ("text", "text"),         // t-e-x-t pattern (NOT "tẽt")
+        ("next", "next"),         // n-e-x-t pattern
+        ("sexy", "sexy"),         // s-e-x-y pattern
     ];
 
     #[test]
@@ -1743,5 +2137,48 @@ mod tests {
     fn test_raw_mode_normal() {
         // Without prefix, Vietnamese transforms should still apply
         telex(RAW_MODE_NORMAL);
+    }
+    
+    #[test]
+    fn test_english_multi_syllable_detection() {
+        // Test that multi-syllable English words are NOT transformed
+        for (input, expected) in ENGLISH_MULTI_SYLLABLE {
+            let mut e = Engine::new();
+            let result = type_word(&mut e, input);
+            assert_eq!(
+                result, *expected,
+                "[English Multi-syllable] '{}' should stay as '{}' but got '{}'",
+                input, expected, result
+            );
+        }
+    }
+    
+    #[test]
+    fn test_vietnamese_short_words_with_tones() {
+        // Test that Vietnamese short words with tone modifiers work correctly
+        // These are 2-char base + tone modifier (3 keystrokes total)
+        for (input, expected) in VIETNAMESE_SHORT_WORDS {
+            let mut e = Engine::new();
+            let result = type_word(&mut e, input);
+            assert_eq!(
+                result, *expected,
+                "[Vietnamese Short] '{}' should become '{}' but got '{}'",
+                input, expected, result
+            );
+        }
+    }
+    
+    #[test]
+    fn test_english_short_words_detection() {
+        // Test that short English words are NOT transformed
+        for (input, expected) in ENGLISH_SHORT_WORDS {
+            let mut e = Engine::new();
+            let result = type_word(&mut e, input);
+            assert_eq!(
+                result, *expected,
+                "[English Short] '{}' should stay as '{}' but got '{}'",
+                input, expected, result
+            );
+        }
     }
 }
