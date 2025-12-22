@@ -24,7 +24,8 @@ class InputManager {
     private var previousKeyCode: UInt16?
     private var previousKeyTimestamp: TimeInterval = 0
     
-
+    // NotificationCenter observer tokens for proper cleanup
+    private var observerTokens: [NSObjectProtocol] = []
     
     private init() {
         self.bridge = RustBridge()
@@ -68,7 +69,16 @@ class InputManager {
     }
     
     deinit {
+        // Remove all observers to prevent memory leaks
+        cleanupObservers()
         // Rust engine uses global singleton, no need to destroy
+    }
+    
+    private func cleanupObservers() {
+        for token in observerTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        observerTokens.removeAll()
     }
     
     // MARK: - Lifecycle
@@ -121,6 +131,9 @@ class InputManager {
             self.eventTap = nil
         }
         
+        // Clean up observers
+        cleanupObservers()
+        
         PerAppModeManager.shared.stop()
         Log.info("InputManager stopped")
     }
@@ -128,7 +141,11 @@ class InputManager {
     // MARK: - Configuration
     
     private func setupObservers() {
-        NotificationCenter.default.addObserver(
+        // Clear any existing observers first to prevent duplicates
+        cleanupObservers()
+        
+        // Add observer for Vietnamese toggle and store token
+        let toggleToken = NotificationCenter.default.addObserver(
             forName: .toggleVietnamese,
             object: nil,
             queue: .main
@@ -139,8 +156,10 @@ class InputManager {
                 self?.toggleEnabled()
             }
         }
+        observerTokens.append(toggleToken)
         
-        NotificationCenter.default.addObserver(
+        // Add observer for shortcut changes and store token
+        let shortcutToken = NotificationCenter.default.addObserver(
             forName: .shortcutChanged,
             object: nil,
             queue: .main
@@ -157,6 +176,7 @@ class InputManager {
             // Also reload text expansion shortcuts
             self?.reloadShortcuts()
         }
+        observerTokens.append(shortcutToken)
     }
     
     func setEnabled(_ enabled: Bool) {
