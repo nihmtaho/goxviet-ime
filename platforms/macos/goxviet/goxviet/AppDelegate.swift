@@ -423,72 +423,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showSettings() {
-        let alert = NSAlert()
-        alert.messageText = "Settings"
-        
-        let currentApp = PerAppModeManager.shared.getCurrentAppName() ?? "Unknown"
-        let smartModeStatus = AppState.shared.isSmartModeEnabled ? "Enabled" : "Disabled"
-        let perAppCount = AppState.shared.getAllPerAppModes().count
-        
-        alert.informativeText = """
-        Current Configuration:
-        
-        • Input Method: \(AppState.shared.inputMethod == 0 ? "Telex" : "VNI")
-        • Tone Style: \(AppState.shared.modernToneStyle ? "Modern" : "Traditional")
-        • ESC Restore: \(AppState.shared.escRestoreEnabled ? "Enabled" : "Disabled")
-        • Free Tone: \(AppState.shared.freeToneEnabled ? "Enabled" : "Disabled")
-        
-        Smart Per-App Mode: \(smartModeStatus)
-        • Current App: \(currentApp)
-        • Apps with custom settings: \(perAppCount)
-        
-        Use the menu to configure settings.
-        """
-        
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        
-        if perAppCount > 0 {
-            alert.addButton(withTitle: "Clear Per-App Settings")
-            let response = alert.runModal()
-            if response == .alertSecondButtonReturn {
-                clearPerAppSettings()
-            }
-        } else {
-            alert.runModal()
-        }
+        // Use the shared settings window controller
+        SettingsWindowController.shared.show()
     }
     
-    func clearPerAppSettings() {
-        let count = AppState.shared.getPerAppModesCount()
-        let capacity = AppState.shared.getPerAppModesCapacity()
-        
-        let confirmAlert = NSAlert()
-        confirmAlert.messageText = "Clear All Per-App Settings?"
-        
-        var infoText = "This will reset Gõ Việt input mode to default (enabled) for all applications.\n\n"
-        infoText += "Currently stored: \(count) apps (capacity: \(capacity))"
-        
-        if count >= capacity * 80 / 100 {  // Warning at 80% capacity
-            infoText += "\n⚠️ Warning: Approaching capacity limit. Consider clearing to free up space."
-        }
-        
-        confirmAlert.informativeText = infoText
-        confirmAlert.alertStyle = .warning
-        confirmAlert.addButton(withTitle: "Clear")
-        confirmAlert.addButton(withTitle: "Cancel")
-        
-        if confirmAlert.runModal() == .alertFirstButtonReturn {
-            AppState.shared.clearAllPerAppModes()
-            
-            let successAlert = NSAlert()
-            successAlert.messageText = "Settings Cleared"
-            successAlert.informativeText = "All per-app settings have been reset."
-            successAlert.alertStyle = .informational
-            successAlert.addButton(withTitle: "OK")
-            successAlert.runModal()
-        }
-    }
+    // Removed clearPerAppSettings() - now handled in SettingsView
     
     @objc func viewLog() {
         if FileManager.default.fileExists(atPath: Log.logPath.path) {
