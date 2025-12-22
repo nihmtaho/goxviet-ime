@@ -225,8 +225,12 @@ pub unsafe extern "C" fn ime_free(r: *mut Result) {
 /// Add a shortcut to the engine.
 ///
 /// # Arguments
-/// * `trigger` - C string for trigger (e.g., "vn")
-/// * `replacement` - C string for replacement (e.g., "Việt Nam")
+/// * `trigger` - C string for trigger text
+/// * `replacement` - C string for replacement text
+///
+/// # Returns
+/// * `true` if shortcut was added successfully
+/// * `false` if capacity limit reached or invalid input
 ///
 /// # Safety
 /// Both pointers must be valid null-terminated UTF-8 strings.
@@ -234,18 +238,18 @@ pub unsafe extern "C" fn ime_free(r: *mut Result) {
 pub unsafe extern "C" fn ime_add_shortcut(
     trigger: *const std::os::raw::c_char,
     replacement: *const std::os::raw::c_char,
-) {
+) -> bool {
     if trigger.is_null() || replacement.is_null() {
-        return;
+        return false;
     }
 
     let trigger_str = match std::ffi::CStr::from_ptr(trigger).to_str() {
         Ok(s) => s,
-        Err(_) => return,
+        Err(_) => return false,
     };
     let replacement_str = match std::ffi::CStr::from_ptr(replacement).to_str() {
         Ok(s) => s,
-        Err(_) => return,
+        Err(_) => return false,
     };
 
     let mut guard = lock_engine();
@@ -253,7 +257,9 @@ pub unsafe extern "C" fn ime_add_shortcut(
         e.shortcuts_mut().add(engine::shortcut::Shortcut::new(
             trigger_str,
             replacement_str,
-        ));
+        ))
+    } else {
+        false
     }
 }
 
@@ -287,6 +293,48 @@ pub extern "C" fn ime_clear_shortcuts() {
     let mut guard = lock_engine();
     if let Some(ref mut e) = *guard {
         e.shortcuts_mut().clear();
+    }
+}
+
+/// Get current number of shortcuts.
+///
+/// # Returns
+/// Number of shortcuts currently stored
+#[no_mangle]
+pub extern "C" fn ime_shortcuts_count() -> usize {
+    let guard = lock_engine();
+    if let Some(ref e) = *guard {
+        e.shortcuts().len()
+    } else {
+        0
+    }
+}
+
+/// Get maximum shortcuts capacity.
+///
+/// # Returns
+/// Maximum number of shortcuts allowed
+#[no_mangle]
+pub extern "C" fn ime_shortcuts_capacity() -> usize {
+    let guard = lock_engine();
+    if let Some(ref e) = *guard {
+        e.shortcuts().capacity()
+    } else {
+        0
+    }
+}
+
+/// Check if shortcuts table is at capacity.
+///
+/// # Returns
+/// `true` if at capacity, `false` otherwise
+#[no_mangle]
+pub extern "C" fn ime_shortcuts_is_at_capacity() -> bool {
+    let guard = lock_engine();
+    if let Some(ref e) = *guard {
+        e.shortcuts().is_at_capacity()
+    } else {
+        false
     }
 }
 
