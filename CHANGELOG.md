@@ -1,5 +1,28 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [1.2.3] - 2025-12-22
+
+### Added
+- Hard limit for ShortcutTable (`MAX_SHORTCUTS = 200`) in Rust core to prevent unbounded memory growth
+- Hard limit for per-app settings (`MAX_PER_APP_ENTRIES = 100`) in Swift/macOS layer
+- UI warning when approaching per-app settings limit, with option to clear old entries
+- Documentation: `MEMORY_LEAK_FIX.md`, `MEMORY_BLOAT_PREVENTION.md` (memory safety, prevention, and test results)
+- Unit tests for shortcut and per-app settings limits
+- 
+
+### Changed
+- Standardized and updated documentation structure and release notes for v1.2.3
+- Updated documentation indexes: `README.md`, `DOCUMENTATION_STRUCTURE.md`, `STRUCTURE_VISUAL.md`
+- 
+
+### Fixed
+- Memory leak in Swift/macOS layer: NotificationCenter observers are now tracked and properly removed in `InputManager.swift` and `AppDelegate.swift`
+- Memory bloat: all core buffers (Buffer, RawInputBuffer, WordHistory) are now strictly bounded
+- No more unbounded growth in any data structure (Rust or Swift)
+- Memory usage now stable at ~25-30MB regardless of session length
+- 
+
+
 ## [1.2.2] - 2025-12-21
 
 ### Added
