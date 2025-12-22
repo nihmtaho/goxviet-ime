@@ -38,6 +38,12 @@ docs/
 ├── shortcuts/           # ⌨️ Keyboard shortcut features
 ├── fixes/               # 🔧 Bug fixes and solutions
 ├── performance/         # ⚡ Performance optimization
+├── release-note/        # 📄 Release notes (v1.2.3 mới nhất)
+│   ├── RELEASE_NOTE_1.2.3.md   # v1.2.3 – Memory Leak & Bloat Fix (2025-12-22)
+│   ├── RELEASE_NOTE_1.2.2.md   # v1.2.2 – Minor improvements
+│   ├── RELEASE_NOTE_1.2.0.md   # v1.2.0 – Rebranding
+│   └── RELEASE_NOTE_1.0.1.md   # v1.0.1 – Initial release
+```
 ├── project/             # 📋 Project management
 ├── release-note/        # 📝 Release notes for versions
 └── archive/             # 📦 Historical documents
@@ -204,6 +210,15 @@ docs/
 - ✅ Memory growing ~50-200KB per hour during continuous usage
 - ✅ NotificationCenter observers not being removed
 - ✅ Duplicate observers when settings reloaded
+
+### Memory Bloat Prevention (1 file) 🆕⭐
+- **[MEMORY_BLOAT_PREVENTION.md](MEMORY_BLOAT_PREVENTION.md)** - Comprehensive memory bloat prevention measures (558 lines) ⭐⭐
+
+**Fixed Issues:**
+- ✅ Unbounded ShortcutTable growth (now limited to 200 entries)
+- ✅ Unbounded Per-App Settings growth (now limited to 100 apps)
+- ✅ All data structures now bounded with capacity limits
+- ✅ Memory stable at ~25-30MB regardless of session length
 
 ### Backspace Fixes (10 files)
 - **[fixes/backspace/BACKSPACE_FIX.md](fixes/backspace/BACKSPACE_FIX.md)** - Complete fix documentation (500+ lines) ⭐
