@@ -8,8 +8,8 @@ Visual representation of the reorganized documentation structure.
 
 ```
 📚 Vietnamese IME Documentation
-├── 55 files
-├── 15,000+ lines
+├── 64 files
+├── 19,100+ lines
 ├── 7 main categories
 └── 10 subcategories
 ```
@@ -78,6 +78,7 @@ docs/
 │   │
 │   ├── ⬅️ arrow-keys/                    # 4 files | 800+ lines
 │   │   ├── ARROW_KEY_FIX.md             # Complete fix (202 lines)
+```
 │   │   ├── ARROW_KEY_FIX_SUMMARY.md     # Summary (102 lines)
 │   │   ├── ARROW_KEY_FIX_CHECKLIST.md   # Checklist (119 lines)
 │   │   └── BUILD_AND_TEST_ARROW_FIX.md  # Build guide (297 lines)
