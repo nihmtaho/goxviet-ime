@@ -2,7 +2,7 @@
 
 Comprehensive documentation for Gõ Việt (GoxViet) project, organized by topic for easy navigation.
 
-**Total Documentation:** 71 files | **Lines:** 20,100+ | **Last Updated:** 2025-12-22
+**Total Documentation:** 72 files | **Lines:** 20,400+ | **Last Updated:** 2025-12-23
 
 ---
 
@@ -17,7 +17,7 @@ Comprehensive documentation for Gõ Việt (GoxViet) project, organized by topic
 - Mục tiêu: Giúp người dùng và lập trình viên hiểu rõ cách sử dụng, cấu hình, mở rộng các tính năng.
 
 #### 2. **Tài liệu IMPROVEMENT** (Performance, Optimization, Auto-Restore...)
-- Tập trung tối ưu hiệu năng, cải thiện thuật toán, nâng cấp trải nghiệm: Smart Backspace, English Auto-Restore, Memory Optimization, Benchmark.
+- Tập trung tối ưu hiệu năng, cải thiện thuật toán, nâng cấp trải nghiệm: Smart Backspace, English Auto-Restore, English Detection V2, Memory Optimization, Benchmark.
 - Mục tiêu: Đảm bảo bộ gõ luôn đạt hiệu năng cao nhất, trải nghiệm mượt mà, cập nhật cải tiến mới.
 
 #### 3. **Tài liệu FIX BUGS** (Fixes, Patch, Solution...)
