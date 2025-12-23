@@ -4,108 +4,28 @@
 
 Documentation has been reorganized into logical folders for easier management and navigation.
 
-**Date:** 2025-12-21  
-**Total Files:** 73 files | **Total Lines:** 23,000+  
-**Status:** ✅ Reorganization Complete
+**Date:** 2025-12-23  
+**Total Files:** 7 master files | **Total Lines:** ~7,000+  
+**Status:** ✅ Consolidation Complete
 
 ---
 
-## 📁 New Structure
+## 📁 New Structure (Master Files)
 
 ```
 docs/
-├── README.md                    # Main documentation index
-│
-├── getting-started/             # 🚀 Quick setup guides
-│   ├── QUICK_START.md          # 5-minute setup
-│   └── TESTING_GUIDE.md        # Testing procedures
-│
-├── DEPLOYMENT_GUIDE.md          # 📦 Production deployment (root level)
-├── DEPLOYMENT_CHECKLIST.md      # ✅ Quick deployment checklist
-│
-├── shortcuts/                   # ⌨️ Keyboard shortcuts
-│   ├── SHORTCUT_GUIDE.md       # Main guide
-│   ├── SHORTCUT_QUICK_START.md # Quick start
-│   ├── implementation/
-│   │   └── SHORTCUT_IMPLEMENTATION_SUMMARY.md
-│   ├── testing/
-│   │   ├── TEST_SHORTCUT.md
-│   │   └── SHORTCUT_VERIFICATION_CHECKLIST.md
-│   └── roadmap/
-│       ├── SHORTCUT_CUSTOMIZATION_ROADMAP.md
-│       └── SHORTCUT_ROADMAP_SUMMARY.md
-│
-├── ACCESSIBILITY_PERMISSION_FIX.md # 🔧 Accessibility permission fix (430+ lines) 🆕 ⭐
-│
-├── fixes/                       # 🔧 Bug fixes
-│   ├── backspace/              # Backspace-related fixes (10 files)
-│   │   ├── BACKSPACE_FIX.md
-│   │   ├── BACKSPACE_FIX_SUMMARY.md
-│   │   ├── TEST_BACKSPACE.md
-│   │   └── ... (7 more files)
-│   ├── arrow-keys/             # Arrow key fixes (4 files)
-│   │   ├── ARROW_KEY_FIX.md
-│   │   ├── ARROW_KEY_FIX_SUMMARY.md
-│   │   └── ...
-│   ├── menubar-toggle/         # Menu bar toggle/focus/dimming fixes (9 files)
-│   │   ├── README.md
-│   │   ├── CHANGELOG_TOGGLE_FIX.md
-│   │   ├── MENUBAR_APPEARANCE_FIX.md
-│   │   ├── MENUBAR_TOGGLE_CUSTOM_CONTROL.md
-│   │   ├── MENUBAR_TOGGLE_SWIFTUI_DECISION.md
-│   │   ├── TOGGLE_FIX_SUMMARY.md
-│   │   ├── TOGGLE_TESTING_CHECKLIST.md
-│   │   ├── TOGGLE_V2_SUMMARY.md
-│   │   ├── TOGGLE_V2.1_SUMMARY.md
-│   │   └── TESTING_V2_FOCUS_FIX.md
-│   └── telex/                  # Telex conversion fixes (3 files)
-│       ├── TELEX_FIX_FINAL.md
-│       └── ...
-│
-├── performance/                 # ⚡ Performance optimization
-│   ├── PERFORMANCE_INDEX.md    # Master index
-│   ├── PERFORMANCE_README.md   # Overview
-│   ├── OPTIMIZATION_README.md  # Quick start
-│   ├── QUICK_REFERENCE_OPTIMIZATION.md
-│   ├── guides/                 # Detailed guides (3 files)
-│   │   ├── PERFORMANCE_OPTIMIZATION_GUIDE.md
-│   │   ├── EDITOR_PERFORMANCE_OPTIMIZATION.md
-│   │   └── PERFORMANCE_FIX.md
-│   └── summaries/              # Summaries & benchmarks (5 files)
-│       ├── PERFORMANCE_SUMMARY.md
-│       ├── PERFORMANCE_COMPARISON.md
-│       └── ...
-│
-├── project/                     # 📋 Project management
-│   ├── PROJECT_STATUS.md       # Current status
-│   ├── CHANGELOG.md            # Change history
-│   ├── RUST_CORE_ROADMAP.md   # Roadmap
-│   ├── LOG_PATH_MIGRATION.md  # Log path cleanup (GoxViet rebranding)
-│   ├── BRANDING_UPDATE_SUMMARY.md # Complete rebranding summary
-│   └── ...
-│
-├── release-note/                # 📝 Release notes for versions
-│   ├── RELEASE_NOTE_1.2.0.md  # Version 1.2.0 (Complete rebranding)
-│   └── ...
-│
-├── DEPLOYMENT_GUIDE.md          # 📦 Production deployment guide
-├── DEPLOYMENT_CHECKLIST.md      # ✅ Deployment checklist
-│
-├── ACCESSIBILITY_QUICK_REFERENCE.md # ⚡ Quick reference (265 lines) 🆕 ⭐ START HERE
-├── ACCESSIBILITY_API_SUPPORT.md # 🌐 Accessibility API implementation (691 lines) 🆕
-├── BROWSER_SUPPORT.md           # 🌐 Browser support (38 browsers) (422 lines) 🆕
-├── BROWSER_AUTOCOMPLETE_FIX.md  # 🔧 Browser placeholder fix & performance (713 lines) 🆕 v1.1.0
-├── TEST_ACCESSIBILITY_API.md    # 🧪 Accessibility API testing (16 test cases, 637 lines) 🆕
-├── CHANGELOG_ACCESSIBILITY_API.md # 📝 Accessibility API changelog (v1.1.0, 550+ lines) 🆕
-│
-└── archive/                     # 📦 Historical documents
-    ├── FIX_SUMMARY.md
-    ├── IMPLEMENTATION_COMPLETE.md
-    └── ...
+├── GETTING_STARTED.md      # Quick start & onboarding (merged)
+├── SHORTCUTS.md            # Keyboard shortcuts (merged)
+├── FIXES.md                # Bug fixes & troubleshooting (merged)
+├── PERFORMANCE.md          # Performance optimization (merged)
+├── PROJECT.md              # Project management & roadmap (merged)
+├── RELEASE_NOTES.md        # Release notes (merged)
+├── ARCHIVE.md              # Historical docs (merged)
 ```
 
----
-
+- All previous topic files are merged into these master files.
+- Each master file contains a clear table of contents and up-to-date content.
+- See `README.md` for navigation and usage instructions.
 ## 🔄 File Migration Map
 
 ### Getting Started (2 files → `getting-started/`)
@@ -153,10 +73,11 @@ docs/
 - `EDITOR_OPTIMIZATION_SUMMARY.md` → `performance/summaries/`
 - `OPTIMIZATION_STATUS_SUMMARY.md` → `performance/summaries/`
 
-**Core Optimizations (3 files → root `docs/`):** 🆕
+**Core Optimizations (4 files → root `docs/`):** 🆕
 - `STROKE_OPTIMIZATION.md` → `docs/STROKE_OPTIMIZATION.md`
 - `RAPID_KEYSTROKE_HANDLING.md` → `docs/RAPID_KEYSTROKE_HANDLING.md`
 - `MEMORY_OPTIMIZATION.md` → `docs/MEMORY_OPTIMIZATION.md`
+- `ULTIMATE_ENGLISH_DETECTION_GUIDE.md` → `docs/ULTIMATE_ENGLISH_DETECTION_GUIDE.md` ⭐⭐⭐ NEW (1000+ lines)
 
 ### Fixes - Backspace (10 files → `fixes/backspace/`)
 - `BACKSPACE_FIX.md` → `fixes/backspace/`
@@ -341,27 +262,36 @@ docs/
 
 ### Internal Links
 
-When referencing docs in other docs, use relative paths:
+When referencing docs in other docs, use relative paths and always point to the new master files:
 
 **From root README:**
 ```markdown
-[QUICK_START](docs/getting-started/QUICK_START.md)
-[SHORTCUT_GUIDE](docs/shortcuts/SHORTCUT_GUIDE.md)
+[GETTING_STARTED](docs/GETTING_STARTED.md)
+[SHORTCUTS](docs/SHORTCUTS.md)
+[FIXES](docs/FIXES.md)
+[PERFORMANCE](docs/PERFORMANCE.md)
+[PROJECT](docs/PROJECT.md)
+[RELEASE_NOTES](docs/RELEASE_NOTES.md)
+[ARCHIVE](docs/ARCHIVE.md)
 ```
 
-**From docs/README.md:**
+**From within docs/:**
 ```markdown
-[QUICK_START](getting-started/QUICK_START.md)
-[SHORTCUT_GUIDE](shortcuts/SHORTCUT_GUIDE.md)
+[GETTING_STARTED](GETTING_STARTED.md)
+[SHORTCUTS](SHORTCUTS.md)
+...
 ```
 
-**From within docs/ subdirectories:**
+**From within docs/ subdirectories (if any remain):**
 ```markdown
-# From shortcuts/ to performance/
-[Performance Guide](../performance/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md)
+[PERFORMANCE](../PERFORMANCE.md)
+[GETTING_STARTED](../GETTING_STARTED.md)
+```
 
-# From fixes/backspace/ to getting-started/
-[Quick Start](../../getting-started/QUICK_START.md)
+- Remove or update all links to old sub-files (e.g. `shortcuts/SHORTCUT_GUIDE.md`) to point to the relevant master file.
+- Update navigation tables and quick references accordingly.
+
+---
 ```
 
 ### External References
@@ -383,6 +313,16 @@ See [PERFORMANCE_OPTIMIZATION_GUIDE.md](docs/performance/guides/PERFORMANCE_OPTI
 ## ✅ Migration Checklist
 
 ### For Contributors
+
+- Always add new documentation as a section in the relevant master file.
+- Update the table of contents in the master file if you add a new section.
+- If a new topic is large and justified, create a new master file and update this structure.
+- Keep all documentation in English or Vietnamese (no mixed/auto-translated sections).
+- Use clear, descriptive section headers for each topic.
+- Follow naming conventions: ALL CAPS for master files, no spaces, use underscores.
+- Update this structure file and the main README if you reorganize or add docs.
+
+---
 
 When adding new documentation:
 
