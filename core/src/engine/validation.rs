@@ -374,6 +374,10 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
             if pair == [keys::O, keys::U] || pair == [keys::Y, keys::O] {
                 return true;
             }
+            // "oo" is common in English (look, book, took) but never valid in Vietnamese
+            if pair == [keys::O, keys::O] {
+                return true;
+            }
         }
 
         let is_valid_pattern = match vowels.len() {
@@ -420,12 +424,14 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
     // Note: 'x' in Telex is BOTH a final consonant AND a tone modifier (ngã mark).
     // 
     // MUST BE SPECIFIC: Only block known English patterns, not Vietnamese!
-    // - Block: "fix" (f+i+x), "six" (s+i+x doubles as final s), "hex" (h+e+x)
+    // - Block: "fix" (f+i+x), "hex" (h+e+x)
     // - Allow: "mix" (m+i+x) → "mĩ" is valid Vietnamese
-    // - Allow: "six" when 's' is initial → "sĩ" is valid Vietnamese
-    // - Allow: "tax" → "tã" is valid Vietnamese with 't' initial
+    // - Allow: "six" (s+i+x) → "sĩ" is valid Vietnamese
+    // - Allow: "tax" (t+a+x) → "tã" is valid Vietnamese
+    // - Allow: "tex" (t+e+x) → "tẽ" is valid Vietnamese (will be detected as English later if "text" typed)
+    // - Allow: "sex" (s+e+x) → "sẽ" is valid Vietnamese
     //
-    // Strategy: Only block initials that are RARE in Vietnamese before i/e/a
+    // Strategy: Only block very specific English patterns that are NEVER Vietnamese
     if matches!(modifier_key, keys::X | keys::J) 
         && syllable.vowel.len() == 1 
         && syllable.final_c.is_empty()
@@ -446,12 +452,23 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
         // - m+i+x → "mĩ" is valid (mì, mĩ)
         // - s+i+x → "sĩ" is valid (sĩ, sì)
         // - t+a+x → "tã" is valid (tã, tà)
-        // - s+e+x → "sé" is valid (sẻ, sẹ)
+        // - t+e+x → "tẽ" is valid (will detect "text" pattern later)
+        // - s+e+x → "sẽ" is valid (will detect "sex" as English in full context)
     }
 
-    // Check 5: English words with 'x' final + additional tone modifier
-    // This catches cases like "texts" where buffer is [t,e,x,t] and user types 's'
-    // ONLY for words that already have X as final consonant
+    // Check 5: English words like "text", "next", "sexy" - detect after tone mark applied
+    // Pattern: buffer has tone mark on vowel (e.g., tẽ) and user types additional letter
+    // This catches "text" where "tex" → "tẽ" transform happened, then 't' is typed
+    // 
+    // Strategy: Detect when buffer has transformed syllable + additional letter that makes it English
+    // Common patterns:
+    // - tẽ + t → text
+    // - sẽ + x → sexy  
+    // - nẽ + x → next
+    // - rẽ + x → relax (partial)
+    //
+    // Note: We check this in handle_normal_letter when the additional letter is typed,
+    // not here in try_mark. This check is for old logic compatibility.
     if syllable.final_c.len() == 1 {
         let final_key = buffer_keys[syllable.final_c[0]];
         
@@ -501,7 +518,43 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
         }
     }
 
-    // Check 8: REMOVED - Too broad, blocks valid Vietnamese
+    // Check 8: English words ending with -isk, -usk patterns (risk, disk, dusk, tusk)
+    // Pattern: consonant + i/u + s + k modifier
+    if modifier_key == keys::K 
+        && syllable.final_c.len() == 1 
+        && syllable.vowel.len() == 1
+        && !syllable.initial.is_empty()
+    {
+        let final_key = buffer_keys[syllable.final_c[0]];
+        let vowel = buffer_keys[syllable.vowel[0]];
+        
+        // -isk pattern (risk, disk, brisk)
+        if final_key == keys::S && vowel == keys::I {
+            return true;
+        }
+        // -usk pattern (dusk, tusk, musk, husk)
+        if final_key == keys::S && vowel == keys::U {
+            return true;
+        }
+    }
+
+    // Check 9: Double vowel + K patterns (look, book, took, cook, hook)
+    // Pattern: consonant + oo + k modifier
+    if modifier_key == keys::K 
+        && syllable.vowel.len() == 2
+        && !syllable.initial.is_empty()
+        && syllable.final_c.is_empty()
+    {
+        let vowel1 = buffer_keys[syllable.vowel[0]];
+        let vowel2 = buffer_keys[syllable.vowel[1]];
+        
+        // oo + k pattern (common English, never Vietnamese)
+        if vowel1 == keys::O && vowel2 == keys::O {
+            return true;
+        }
+    }
+
+    // Check 10: REMOVED - Too broad, blocks valid Vietnamese
     // Vietnamese has many valid C+E+tone patterns: te, de, le, me, ne, etc.
     // Only specific multi-word English patterns should be blocked, handled by other checks
 
