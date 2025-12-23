@@ -47,50 +47,69 @@ open goxviet.xcodeproj
 
 ---
 
-## 📁 Cấu trúc dự án
+## 📁 Cấu trúc dự án & tài liệu
 
 ```
 goxviet/
 ├── core/                     # Rust Engine (IME logic)
-│   ├── src/engine/          # Core processing
-│   ├── src/input/           # Input method handlers
-│   └── tests/               # Unit & integration tests
+│   ├── src/engine/           # Core processing
+│   ├── src/input/            # Input method handlers
+│   └── tests/                # Unit & integration tests
 │
 ├── platforms/                # Platform implementations
-│   ├── macos/goxviet/       # Swift/CGEvent & Accessibility API
-│   └── windows/goxviet/     # C++/TSF (in development)
+│   ├── macos/goxviet/        # Swift/CGEvent & Accessibility API
+│   └── windows/goxviet/      # C++/TSF (in development)
 │
-├── docs/                     # 📚 Tài liệu (25 files, 6,500+ dòng)
-│   ├── README.md            # Danh mục tài liệu
-│   ├── QUICK_START.md       # Hướng dẫn bắt đầu
-│   ├── TESTING_GUIDE.md     # Hướng dẫn testing
-│   └── PERFORMANCE_*.md     # Performance docs
+├── docs/                     # 📚 Tài liệu (theo chủ đề, master file)
+│   ├── README.md                 # Danh mục tài liệu & hướng dẫn tra cứu
+│   ├── STRUCTURE_VISUAL.md       # Sơ đồ visual cấu trúc docs
+│   ├── DOCUMENTATION_STRUCTURE.md# Hướng dẫn cấu trúc & migration
+│   ├── getting-started/          # Hướng dẫn bắt đầu, testing
+│   ├── shortcuts/                # Phím tắt, roadmap, testing shortcut
+│   ├── fixes/                    # Tổng hợp fix (backspace, arrow, telex, menubar, ...)
+│   ├── performance/              # Tối ưu hiệu năng, benchmark, guides
+│   ├── project/                  # Quản lý dự án, trạng thái, changelog
+│   ├── release-note/             # Ghi chú phát hành
+│   └── archive/                  # Lưu trữ tài liệu cũ, tổng hợp lịch sử
 │
-└── .github/instructions/    # Project guidelines
+└── .github/instructions/         # Project guidelines
 ```
 
 ---
 
-## 📚 Tài liệu
+## 📚 Tài liệu & Tra cứu
 
-### Dành cho Developers
+### Danh mục tài liệu chính (theo chủ đề)
 
-| Tài liệu | Mô tả |
-|----------|-------|
-| [QUICK_START.md](docs/QUICK_START.md) | Bắt đầu trong 5 phút |
-| [PERFORMANCE_OPTIMIZATION_GUIDE.md](docs/PERFORMANCE_OPTIMIZATION_GUIDE.md) | Implementation guide đầy đủ |
-| [BACKSPACE_FIX.md](docs/BACKSPACE_FIX.md) | Chi tiết về bugs và giải pháp (500+ dòng) |
-| [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | Hướng dẫn testing toàn diện |
-| [SHORTCUT_GUIDE.md](docs/SHORTCUT_GUIDE.md) | Keyboard shortcut configuration & priority |
+| Chủ đề                | File chính (master)                              | Mô tả ngắn                    |
+|-----------------------|--------------------------------------------------|-------------------------------|
+| Bắt đầu nhanh         | [getting-started/QUICK_START.md](docs/getting-started/QUICK_START.md) | Hướng dẫn cài đặt, build, test|
+| Phím tắt & Shortcut   | [shortcuts/SHORTCUT_GUIDE.md](docs/shortcuts/SHORTCUT_GUIDE.md)      | Cấu hình & ưu tiên phím tắt   |
+| Sửa lỗi & Fixes       | [fixes/BACKSPACE_FIX.md](docs/fixes/backspace/BACKSPACE_FIX.md)      | Tổng hợp fix backspace, arrow, telex, v.v. |
+| Tối ưu hiệu năng      | [performance/PERFORMANCE_OPTIMIZATION_GUIDE.md](docs/performance/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md) | Hướng dẫn tối ưu, benchmark   |
+| Quản lý dự án         | [project/PROJECT_STATUS.md](docs/project/PROJECT_STATUS.md)          | Trạng thái, lộ trình, branding|
+| Ghi chú phát hành     | [release-note/RELEASE_NOTE_1.2.0.md](docs/release-note/RELEASE_NOTE_1.2.0.md) | Thông tin các bản phát hành   |
+| Lưu trữ (archive)     | [archive/FIX_SUMMARY.md](docs/archive/FIX_SUMMARY.md)                | Tài liệu lịch sử, tổng hợp    |
 
-### Dành cho Users & Testers
+- 📖 **Tổng mục lục & hướng dẫn:** [`docs/README.md`](docs/README.md)
+- 📊 **Sơ đồ cấu trúc & visual:** [`docs/STRUCTURE_VISUAL.md`](docs/STRUCTURE_VISUAL.md)
+- 🗂️ **Chi tiết cấu trúc & migration:** [`docs/DOCUMENTATION_STRUCTURE.md`](docs/DOCUMENTATION_STRUCTURE.md)
 
-| Tài liệu | Mô tả |
-|----------|-------|
-| [TEST_BACKSPACE.md](docs/TEST_BACKSPACE.md) | 14 test cases cho backspace |
-| [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md) | Visual benchmarks |
+---
 
-📖 **Danh mục đầy đủ:** [`docs/README.md`](docs/README.md)
+### Hướng dẫn tra cứu nhanh
+
+- **Bắt đầu:** `docs/getting-started/QUICK_START.md`
+- **Tìm shortcut:** `docs/shortcuts/SHORTCUT_GUIDE.md`
+- **Tìm fix lỗi:** `docs/fixes/backspace/BACKSPACE_FIX.md` hoặc các thư mục con trong `fixes/`
+- **Tối ưu hiệu năng:** `docs/performance/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md`
+- **Kiểm tra trạng thái dự án:** `docs/project/PROJECT_STATUS.md`
+- **Xem lịch sử phát hành:** `docs/release-note/`
+- **Tìm tài liệu cũ:** `docs/archive/`
+
+> Khi tham chiếu tài liệu, luôn dùng đường dẫn tương đối theo chuẩn mới (xem ví dụ trong `docs/DOCUMENTATION_STRUCTURE.md`).
+
+---
 
 ---
 

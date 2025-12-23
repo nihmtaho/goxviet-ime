@@ -18,7 +18,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: macos-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
       - name: Build macOS app
         run: |
           cd platforms/macos/goxviet
-          
+
           # Build for Release configuration
           xcodebuild \
             -project goxviet.xcodeproj \
@@ -78,7 +78,7 @@ jobs:
             -configuration Release \
             -derivedDataPath ./build \
             clean build
-          
+
           echo "✅ macOS app built successfully"
 
       - name: Create unsigned DMG for Homebrew/community
@@ -129,7 +129,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-${{ steps.version.outputs.version }}-dmg
           path: ${{ env.DMG_FILE }}
@@ -152,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: create-release
     if: always()
-    
+
     steps:
       - name: Release status
         run: |
