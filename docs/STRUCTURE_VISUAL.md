@@ -8,10 +8,10 @@ Visual representation of the reorganized documentation structure.
 
 ```
 📚 Vietnamese IME Documentation
-├── 64 files
-├── 19,100+ lines
-├── 7 main categories
-└── 10 subcategories
+├── 7 master topics (main files)
+├── 20+ supporting files (checklists, legacy, archive)
+├── 15,000+ lines
+└── Unified, easy-to-navigate structure
 ```
 
 ---
@@ -21,115 +21,19 @@ Visual representation of the reorganized documentation structure.
 ```
 docs/
 │
-├── 📄 README.md                          # Main index (365 lines)
-├── 📄 DOCUMENTATION_STRUCTURE.md         # This restructure guide (486 lines)
+├── README.md                    # Main documentation index
+├── DOCUMENTATION_STRUCTURE.md   # Structure & migration guide
 │
-├── 🚀 getting-started/                   # 2 files | 600+ lines
-│   ├── QUICK_START.md                    # 5-minute setup guide
-│   └── TESTING_GUIDE.md                  # Comprehensive testing
+├── GETTING_STARTED.md           # Quick setup & onboarding (master)
+├── SHORTCUTS.md                 # Keyboard shortcuts (master)
+├── FIXES.md                     # All bug fixes & solutions (master)
+├── PERFORMANCE.md               # Performance optimization (master)
+├── PROJECT.md                   # Project management & roadmap (master)
+├── RELEASE_NOTES.md             # Release notes (master)
+├── ARCHIVE.md                   # Historical docs (master)
 │
-├── ⌨️ shortcuts/                          # 7 files | 3,500+ lines
-│   ├── SHORTCUT_GUIDE.md                 # Main guide (335 lines) ⭐
-│   ├── SHORTCUT_QUICK_START.md           # Quick start (223 lines)
-│   │
-│   ├── 🔧 implementation/                # 1 file
-│   │   └── SHORTCUT_IMPLEMENTATION_SUMMARY.md (460 lines)
-│   │
-│   ├── ✅ testing/                       # 2 files
-│   │   ├── TEST_SHORTCUT.md             # 20 test cases (629 lines)
-│   │   └── SHORTCUT_VERIFICATION_CHECKLIST.md (564 lines)
-│   │
-│   └── 🗺️ roadmap/                       # 2 files
-│       ├── SHORTCUT_CUSTOMIZATION_ROADMAP.md (966 lines) ⭐
-│       └── SHORTCUT_ROADMAP_SUMMARY.md (276 lines)
-│
-├── 🔐 ACCESSIBILITY_PERMISSION_FIX.md    # Accessibility permission fix (430+ lines) 🆕 ⭐
-│
-├── 🔧 fixes/                             # 22 files | 4,300+ lines
-│   │
-│   ├── 💾 backspace/                     # 15 files | 3,000+ lines
-│   │   ├── BACKSPACE_FIX.md             # Complete fix (500+ lines) ⭐
-│   │   ├── BACKSPACE_FIX_SUMMARY.md     # Quick summary
-│   │   ├── TEST_BACKSPACE.md            # 14 test cases
-│   │   ├── BACKSPACE_QUICK_TEST.md      # Quick test
-│   │   ├── BACKSPACE_QUICK_TEST_GUIDE.md
-│   │   ├── README_FIX_BACKSPACE.md
-│   │   ├── BACKSPACE_OPTIMIZATION_APPLIED.md
-│   │   ├── BACKSPACE_OPTIMIZATION_GUIDE.md
-│   │   ├── BACKSPACE_OPTIMIZATION_SUMMARY.md
-│   │   ├── SMART_BACKSPACE_COMPLETE.md
-│   │   ├── SMART_BACKSPACE_OPTIMIZATION.md
-│   │   ├── SMART_BACKSPACE_RESULTS.md
-│   │   ├── RUST_CORE_BACKSPACE_OPTIMIZATION.md
-│   │   ├── RUST_CORE_BACKSPACE_TEST.md
-│   │   └── COMMIT_SMART_BACKSPACE.md
-│   │
-│   ├── 🟢 menubar-toggle/                # 9 files | 3,000+ lines
-│   │   ├── README.md                    # Index for toggle/focus/fix docs
-│   │   ├── CHANGELOG_TOGGLE_FIX.md
-│   │   ├── MENUBAR_APPEARANCE_FIX.md
-│   │   ├── MENUBAR_TOGGLE_CUSTOM_CONTROL.md
-│   │   ├── MENUBAR_TOGGLE_SWIFTUI_DECISION.md
-│   │   ├── TOGGLE_FIX_SUMMARY.md
-│   │   ├── TOGGLE_TESTING_CHECKLIST.md
-│   │   ├── TOGGLE_V2_SUMMARY.md
-│   │   ├── TOGGLE_V2.1_SUMMARY.md
-│   │   └── TESTING_V2_FOCUS_FIX.md
-│   │
-│   ├── ⬅️ arrow-keys/                    # 4 files | 800+ lines
-│   │   ├── ARROW_KEY_FIX.md             # Complete fix (202 lines)
-```
-│   │   ├── ARROW_KEY_FIX_SUMMARY.md     # Summary (102 lines)
-│   │   ├── ARROW_KEY_FIX_CHECKLIST.md   # Checklist (119 lines)
-│   │   └── BUILD_AND_TEST_ARROW_FIX.md  # Build guide (297 lines)
-│   │
-│   └── 📝 telex/                         # 3 files | 500+ lines
-│       ├── TELEX_FIX_FINAL.md           # Complete fix details
-│       ├── TELEX_FIX_SUMMARY.md         # Quick summary
-│       └── TELEX_VERIFICATION.md        # Verification checklist
-│
-├── 🎯 Core Optimizations (3 files → root)  # NEW 🆕
-│   ├── STROKE_OPTIMIZATION.md           # Stroke & pattern validation
-│   ├── RAPID_KEYSTROKE_HANDLING.md      # Rapid typing (< 16ms)
-│   └── MEMORY_OPTIMIZATION.md           # Zero-allocation RawInputBuffer
-│
-├── ⚡ performance/                       # 12 files | 4,000+ lines
-│   ├── PERFORMANCE_INDEX.md             # Master index (321 lines)
-│   ├── PERFORMANCE_README.md            # Overview (705 lines)
-│   ├── OPTIMIZATION_README.md           # Quick start (234 lines)
-│   ├── QUICK_REFERENCE_OPTIMIZATION.md  # Quick reference (264 lines)
-│   │
-│   ├── 📖 guides/                        # 3 files | 1,300+ lines
-│   │   ├── PERFORMANCE_OPTIMIZATION_GUIDE.md (431 lines) ⭐
-│   │   ├── EDITOR_PERFORMANCE_OPTIMIZATION.md (617 lines)
-│   │   └── PERFORMANCE_FIX.md           # Backspace perf fix
-│   │
-│   └── 📊 summaries/                     # 5 files | 1,200+ lines
-│       ├── PERFORMANCE_SUMMARY.md       # Detailed summary (244 lines)
-│       ├── PERFORMANCE_COMPARISON.md    # Visual benchmarks (455 lines) ⭐
-│       ├── PERFORMANCE_FIX_SUMMARY.md   # Fix summary
-│       ├── EDITOR_OPTIMIZATION_SUMMARY.md (205 lines)
-│       └── OPTIMIZATION_STATUS_SUMMARY.md
-│
-├── 📋 project/                           # 7 files | 2,000+ lines
-│   ├── PROJECT_STATUS.md                # Current status (320 lines) ⭐
-│   ├── CHANGELOG.md                     # Change history (500+ lines) ⭐
-│   ├── RUST_CORE_ROADMAP.md            # Rust roadmap (~900 lines)
-│   ├── COMMIT_MESSAGE_TEMPLATE.md       # Commit guidelines
-│   ├── PROJECT_RESTRUCTURE_SUMMARY.md   # Restructure summary
-│   ├── LOG_PATH_MIGRATION.md           # Log path cleanup (GoxViet rebranding)
-│   └── BRANDING_UPDATE_SUMMARY.md      # Complete rebranding summary (v1.2.0)
-│
-│  └── release-note/                      # 2 files | 265+ lines
-│      ├── RELEASE_NOTE_1.2.0.md           # Version 1.2.0 release notes ⭐
-│      └── RELEASE_NOTE_1.2.1.md           # Version 1.2.1 bugfix & stability notes ⭐
-│
-└── 📦 archive/                           # 5 files | 1,000+ lines
-    ├── FIX_SUMMARY.md                   # Initial event handling fix
-    ├── IMPLEMENTATION_COMPLETE.md       # Integration completion
-    ├── OPTIMIZATION_COMPLETE.md         # Optimization summary (427 lines)
-    ├── UPDATE_SUMMARY_2024.md           # 2024 update summary
-    └── RUST_CORE_NEXT_STEPS.md          # Historical next steps
+├── (legacy folders: getting-started/, shortcuts/, fixes/, performance/, project/, release-note/, archive/)
+│   └── (contain supporting/legacy/checklist files, referenced from master files as needed)
 ```
 
 ---
@@ -166,11 +70,11 @@ docs/
 ```
 START
   ↓
-getting-started/QUICK_START.md (5 min)
+GETTING_STARTED.md (5 min)
   ↓
-shortcuts/SHORTCUT_QUICK_START.md (2 min)
+SHORTCUTS.md (2 min)
   ↓
-getting-started/TESTING_GUIDE.md (10 min)
+GETTING_STARTED.md (Testing section, 10 min)
   ↓
 START USING THE APP ✅
 ```
@@ -180,15 +84,15 @@ START USING THE APP ✅
 ```
 START
   ↓
-project/PROJECT_STATUS.md (10 min)
+PROJECT.md (10 min)
   ↓
-performance/PERFORMANCE_README.md (15 min)
+PERFORMANCE.md (15 min)
   ↓
 Choose Path:
-  ├─→ Performance? → performance/guides/
-  ├─→ Shortcuts?   → shortcuts/SHORTCUT_GUIDE.md
-  ├─→ Fix Bug?     → fixes/[category]/
-  └─→ New Feature? → shortcuts/roadmap/
+  ├→ Performance? → PERFORMANCE.md
+  ├→ Shortcuts?   → SHORTCUTS.md
+  ├→ Fix Bug?     → FIXES.md
+  └→ New Feature? → SHORTCUTS.md (Roadmap section)
   ↓
 IMPLEMENT FEATURE ✅
 ```
@@ -198,12 +102,12 @@ IMPLEMENT FEATURE ✅
 ```
 START
   ↓
-getting-started/TESTING_GUIDE.md (10 min)
+GETTING_STARTED.md (Testing section, 10 min)
   ↓
 Choose Test Type:
-  ├─→ Shortcuts?   → shortcuts/testing/TEST_SHORTCUT.md
-  ├─→ Backspace?   → fixes/backspace/TEST_BACKSPACE.md
-  └─→ Performance? → performance/PERFORMANCE_COMPARISON.md
+  ├→ Shortcuts?   → SHORTCUTS.md (Testing section)
+  ├→ Backspace?   → FIXES.md (Backspace section)
+  └→ Performance? → PERFORMANCE.md (Benchmarks)
   ↓
 RUN TESTS ✅
 ```
@@ -213,11 +117,11 @@ RUN TESTS ✅
 ```
 START
   ↓
-project/PROJECT_STATUS.md (10 min)
+PROJECT.md (10 min)
   ↓
-project/CHANGELOG.md (10 min)
+PROJECT.md (Changelog section, 10 min)
   ↓
-shortcuts/roadmap/SHORTCUT_CUSTOMIZATION_ROADMAP.md (30 min)
+SHORTCUTS.md (Roadmap section, 30 min)
   ↓
 PLAN NEXT SPRINT ✅
 ```
@@ -335,19 +239,13 @@ Smallest Active File: ~100 lines
 ## 🏷️ Category Descriptions
 
 ```
-🚀 getting-started/   - Quick setup and onboarding
-⌨️ shortcuts/         - Keyboard shortcut features
-🔧 fixes/             - Bug fixes and solutions
-  💾 backspace/       - Backspace-related fixes
-  ⬅️ arrow-keys/      - Arrow key fixes
-  📝 telex/           - Telex conversion fixes
-🎯 Core Optimizations - Core performance improvements (NEW 🆕)
-⚡ performance/       - Performance optimization
-  📖 guides/          - Detailed implementation guides
-  📊 summaries/       - Results and benchmarks
-📋 project/           - Project management
-📝 release-note/      - Version release notes
-📦 archive/           - Historical documents
+📄 GETTING_STARTED.md   - Quick setup and onboarding
+📄 SHORTCUTS.md         - Keyboard shortcut features & roadmap
+📄 FIXES.md             - All bug fixes and solutions (Backspace, Arrow keys, Telex, etc.)
+📄 PERFORMANCE.md       - Performance optimization, benchmarks, guides
+📄 PROJECT.md           - Project management, status, changelog, roadmap
+📄 RELEASE_NOTES.md     - Version release notes
+📄 ARCHIVE.md           - Historical documents, legacy info
 ```
 
 ---
@@ -387,17 +285,18 @@ docs/
 
 ### Quick Reference Table
 
-| Old Location | New Location | Category |
-|-------------|--------------|----------|
-| `QUICK_START.md` | `getting-started/QUICK_START.md` | Getting Started |
-| `SHORTCUT_GUIDE.md` | `shortcuts/SHORTCUT_GUIDE.md` | Shortcuts |
-| `BACKSPACE_FIX.md` | `fixes/backspace/BACKSPACE_FIX.md` | Fixes |
-| `ARROW_KEY_FIX.md` | `fixes/arrow-keys/ARROW_KEY_FIX.md` | Fixes |
-| `TELEX_FIX_FINAL.md` | `fixes/telex/TELEX_FIX_FINAL.md` | Fixes |
-| `PERFORMANCE_OPTIMIZATION_GUIDE.md` | `performance/guides/...` | Performance |
-| `PROJECT_STATUS.md` | `project/PROJECT_STATUS.md` | Project |
-| `CHANGELOG.md` | `project/CHANGELOG.md` | Project |
-| `RELEASE_NOTE_1.2.0.md` | `release-note/RELEASE_NOTE_1.2.0.md` | Release Notes |
+| Old Location                        | New Master File      | Category         |
+|--------------------------------------|----------------------|------------------|
+| `getting-started/QUICK_START.md`     | `GETTING_STARTED.md` | Getting Started  |
+| `shortcuts/SHORTCUT_GUIDE.md`        | `SHORTCUTS.md`       | Shortcuts        |
+| `fixes/backspace/BACKSPACE_FIX.md`   | `FIXES.md`           | Fixes            |
+| `fixes/arrow-keys/ARROW_KEY_FIX.md`  | `FIXES.md`           | Fixes            |
+| `fixes/telex/TELEX_FIX_FINAL.md`     | `FIXES.md`           | Fixes            |
+| `performance/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md` | `PERFORMANCE.md` | Performance      |
+| `project/PROJECT_STATUS.md`          | `PROJECT.md`         | Project          |
+| `project/CHANGELOG.md`               | `PROJECT.md`         | Project          |
+| `release-note/RELEASE_NOTE_1.2.0.md` | `RELEASE_NOTES.md`   | Release Notes    |
+| `archive/FIX_SUMMARY.md`             | `ARCHIVE.md`         | Archive          |
 
 ---
 
