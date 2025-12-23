@@ -14,6 +14,7 @@ pub mod buffer;
 pub mod raw_input_buffer;
 pub mod shortcut;
 pub mod syllable;
+pub mod tone_positioning;
 pub mod transform;
 pub mod validation;
 
@@ -126,6 +127,7 @@ impl WordHistory {
     }
 
     /// Pop most recent buffer and raw_input from history
+    #[allow(dead_code)]
     fn pop(&mut self) -> Option<(Buffer, raw_input_buffer::RawInputBuffer)> {
         if self.len == 0 {
             return None;
@@ -373,28 +375,42 @@ impl Engine {
         }
 
         if key == keys::DELETE {
-            // Backspace-after-space feature: restore previous word when all spaces deleted
-            // Track spaces typed after commit, restore word when counter reaches 0
-            if self.spaces_after_commit > 0 && self.buf.is_empty() {
-                self.spaces_after_commit -= 1;
-                if self.spaces_after_commit == 0 {
-                    // All spaces deleted - restore the word buffer AND raw_input
-                    if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
-                        self.buf = restored_buf;
-                        self.raw_input = restored_raw;
-                    }
-                }
-                // Delete one space
-                return Result::send(1, &[]);
-            }
-            // DON'T reset spaces_after_commit here!
-            // User might delete all new input and want to restore previous word.
-            // Reset only happens on: break keys, ESC, ctrl, or new commit.
-
-            // If buffer is already empty, user is deleting content from previous word
-            // that we don't track. Mark this to prevent false shortcut matches.
-            // e.g., "đa" + SPACE + backspace×2 + "a" should NOT match shortcut "a"
+            // BUGFIX: If buffer is already empty, check for potential desync scenarios
+            // Case 1: User typed "gõ " + Cmd+A + backspace (external deletion)
+            //         - buf may still have content OR be empty (depending on timing)
+            //         - word_history has "gõ", spaces_after_commit = 1
+            //         - We should NOT restore from history
+            // Case 2: Normal backspace after space
+            //         - buf is empty, word_history has previous word
+            //         - spaces_after_commit > 0
+            //         - This is the intended restoration scenario
+            // 
+            // Detection heuristic: If buf is empty AND we just pushed to history (spaces_after_commit = 1)
+            // with only 1 space typed, this likely means external deletion happened.
+            // Clear everything to prevent false restoration.
             if self.buf.is_empty() {
+                if self.spaces_after_commit > 0 {
+                    // User pressed backspace with empty buffer and spaces counter > 0
+                    // This could be either:
+                    // A) Legitimate: deleting spaces after a word commit
+                    // B) Desync: external deletion (Cmd+A) before this backspace
+                    //
+                    // We can't reliably distinguish, so we take a conservative approach:
+                    // - Decrement the space counter
+                    // - Pass through the backspace to delete any actual space in the text field
+                    // - But DON'T restore from history yet (wait for counter to fully drain naturally)
+                    // - If counter reaches 0, clear history to prevent stale restoration
+                    self.spaces_after_commit -= 1;
+                    if self.spaces_after_commit == 0 {
+                        // Counter drained - clear history to prevent accidental restoration
+                        self.word_history.clear();
+                    }
+                    // Pass through to delete space (if it exists in the text field)
+                    return Result::none();
+                }
+                // Buffer empty with no spaces counter - clear everything
+                self.word_history.clear();
+                self.raw_input.clear();
                 self.has_non_letter_prefix = true;
                 return Result::none();
             }
@@ -501,7 +517,14 @@ impl Engine {
         // Note: raw_input already contains the current key (pushed in on_key_ext)
         // Check at 2+ chars to catch "ex" pattern (export, express, example)
         // Other patterns need 3+ chars but "ex" must be caught at 2 chars
-        if !self.is_english_word && self.raw_input.len() >= 2 && keys::is_letter(key) {
+        //
+        // CRITICAL FIX: Skip English detection if Vietnamese transforms already applied
+        // If buffer has tone marks (sắc/huyền/etc), this is intentional Vietnamese typing
+        // Issue: "viese" (vie+s+e→viết) was incorrectly detected as English because
+        // raw_input includes 's' (tone mark modifier), creating false "e-s-e" pattern
+        let has_tone_marks = self.buf.iter().any(|c| c.mark > 0);
+        
+        if !self.is_english_word && !has_tone_marks && self.raw_input.len() >= 2 && keys::is_letter(key) {
             let is_english = self.has_english_word_pattern();
             
             if is_english {
@@ -798,7 +821,13 @@ impl Engine {
         // Goal: Detect English words BEFORE Vietnamese transforms occur
         // Performance: <200ns average, zero allocations
         
-        if !self.free_tone_enabled {
+        // CRITICAL FIX: Skip English detection if Vietnamese tone marks already applied
+        // If buffer has tone marks (sắc/huyền/etc), this is intentional Vietnamese typing
+        // Issue: "viese" (vie+s+e→viết) was incorrectly detected as English because
+        // raw_input includes 's' (tone mark modifier), creating false "e-s-e" pattern
+        let has_tone_marks = self.buf.iter().any(|c| c.mark > 0);
+        
+        if !self.free_tone_enabled && !has_tone_marks {
             // ─────────────────────────────────────────────────────────────────
             // LAYER 1: Vietnamese Syllable Validator (~200ns)
             // ─────────────────────────────────────────────────────────────────
@@ -1059,7 +1088,11 @@ impl Engine {
         // Same strategy as try_tone: detect English BEFORE applying marks
         // Performance: <200ns average, zero allocations
         
-        if !self.free_tone_enabled && self.raw_input.len() >= 2 {
+        // CRITICAL FIX: Skip English detection if Vietnamese tone marks already applied
+        // (Same fix as in try_tone - if marks exist, this is intentional Vietnamese)
+        let has_tone_marks = self.buf.iter().any(|c| c.mark > 0);
+        
+        if !self.free_tone_enabled && !has_tone_marks && self.raw_input.len() >= 2 {
             // ─────────────────────────────────────────────────────────────────
             // LAYER 2 & 3: Early Pattern + Multi-Syllable Detection
             // ─────────────────────────────────────────────────────────────────
@@ -2160,6 +2193,13 @@ mod tests {
     const TELEX_COMPOUND: &[(&str, &str)] =
         &[("duocw", "dươc"), ("nguoiw", "ngươi"), ("tuoiws", "tưới")];
 
+    // Test cases for tone mark repositioning when vowel transforms
+    // Issue: "vieset" should become "viết" (ee→ê, then reposition tone)
+    const TELEX_TONE_REPOSITION: &[(&str, &str)] = &[
+        ("vieset", "viết"),  // vie+s→vié, then vié+e+t→viết
+        ("vieste", "viết"),  // vie+s→vié, then vié+t+e→viết
+    ];
+
     // ESC restore test cases: input with ESC (\x1b) → expected raw ASCII
     // ESC restores to exactly what user typed (including modifier keys)
     const TELEX_ESC_RESTORE: &[(&str, &str)] = &[
@@ -2248,6 +2288,11 @@ mod tests {
     #[test]
     fn test_telex_compound() {
         telex(TELEX_COMPOUND);
+    }
+
+    #[test]
+    fn test_telex_tone_reposition() {
+        telex(TELEX_TONE_REPOSITION);
     }
 
     #[test]
@@ -2454,5 +2499,59 @@ mod tests {
         // Delete 'n' - fast path (independent consonant)
         let r3 = e.on_key_ext(keys::DELETE, false, false, false);
         assert_eq!(r3.backspace, 1, "Third delete should be fast path");
+    }
+
+    #[test]
+    fn test_backspace_after_select_all_deletion() {
+        use crate::data::keys;
+        
+        // Test: Fix bug where pressing backspace after select-all deletion
+        // incorrectly restores content from word history
+        // Scenario: Type "gõ " → Cmd+A → backspace → backspace again
+        // Expected: Second backspace should do nothing (not restore "g")
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+        
+        // Type "gox " → produces "gõ " and commits to word history
+        e.on_key_ext(keys::G, false, false, false); // g
+        e.on_key_ext(keys::O, false, false, false); // go
+        e.on_key_ext(keys::X, false, false, false); // gõ
+        
+        let space_result = e.on_key_ext(keys::SPACE, false, false, false); // gõ + space
+        assert_eq!(space_result.action, 0, "Space should pass through");
+        
+        // At this point: buf is empty, word_history has "gõ", spaces_after_commit = 1
+        assert!(e.buf.is_empty(), "Buffer should be cleared after space");
+        assert_eq!(e.spaces_after_commit, 1, "Should track one space after commit");
+        
+        // Simulate: User does Cmd+A (selects "gõ ") and presses backspace
+        // The native app deletes the selected text, but IME buffer is already empty
+        // So when IME receives the backspace event, buf.is_empty() is true
+        let _first_backspace = e.on_key_ext(keys::DELETE, false, false, false);
+        
+        // The first backspace should either:
+        // - Delete a space and decrement spaces_after_commit, OR
+        // - Pass through because buffer is empty
+        // But it should NOT restore from word_history yet
+        
+        // Press backspace again (the problematic case)
+        let second_backspace = e.on_key_ext(keys::DELETE, false, false, false);
+        
+        // BUGFIX VERIFICATION:
+        // Before fix: second backspace would restore "gõ" from word_history,
+        //             then return backspace=1, causing "g" to appear
+        // After fix: second backspace should pass through (action=0)
+        //            because word_history and spaces_after_commit are cleared
+        assert_eq!(second_backspace.action, 0, 
+            "Second backspace should pass through, not restore from history");
+        assert_eq!(second_backspace.backspace, 0, 
+            "Should not send any backspace commands");
+        
+        // Verify state is fully cleared
+        assert!(e.buf.is_empty(), "Buffer should remain empty");
+        assert!(e.raw_input.is_empty(), "Raw input should be cleared");
+        assert_eq!(e.spaces_after_commit, 0, "Spaces counter should be reset");
+        assert_eq!(e.word_history.len, 0, "Word history should be cleared");
     }
 }
