@@ -6,8 +6,8 @@
 //! - Long words (>10 syllables) (target: < 5ms)
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use vietnamese_ime_core::engine::Engine;
-use vietnamese_ime_core::engine::shortcut::InputMethod;
+use goxviet_core::engine::Engine;
+use goxviet_core::engine::shortcut::InputMethod;
 
 /// Helper: Type a sequence and return the engine
 fn type_sequence(method: InputMethod, keys: &str) -> Engine {
