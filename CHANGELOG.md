@@ -1,5 +1,22 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [1.3.1] - 2025-12-23
+
+### Added
+- Enhanced English detection patterns: nhận diện `oo`, `tex`, `nex`, `sex`, `-isk`, `-usk` để giảm false positive khi gõ tiếng Anh.
+- Tự động clear buffer khi undo/restore và bắt đầu từ đầu từ mới.
+- Xử lý Cmd/Shift + Arrow trên macOS: clear buffer khi di chuyển con trỏ bằng phím điều hướng có modifier.
+
+### Changed
+- Cải thiện logic xác định open/closed syllable cho quy tắc đặt dấu tiếng Việt (đặc biệt với pattern "ua").
+- Cập nhật test suite: thêm test cho English flag reset, UTF-8 backspace, English detection.
+
+### Fixed
+- Sửa lỗi backspace với ký tự UTF-8 (đ, ă, ơ, ư, nguyên âm có dấu): đếm ký tự màn hình thay vì byte.
+- Sửa lỗi đặt dấu sai vị trí với pattern "ua" (mùa, chuẩn, ...).
+- Sửa lỗi English word flag không reset sau khi xóa hết buffer, khiến không gõ được dấu tiếng Việt sau khi xóa từ tiếng Anh.
+
+
 ## [1.3.0] - 2025-12-22
 
 ### Added
