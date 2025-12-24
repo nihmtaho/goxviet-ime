@@ -311,15 +311,21 @@ class InputManager {
 
     
     private func processKeyWithEngine(keyCode: UInt16, flags: CGEventFlags, proxy: CGEventTapProxy, event: CGEvent) -> Unmanaged<CGEvent>? {
-        let caps = flags.contains(.maskAlphaShift)
-        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
+        // IMPORTANT:
+        // - `caps` here should represent "uppercase intent" for letters.
+        // - On macOS, uppercase is typically (Shift XOR CapsLock).
+        // - We still pass `shift` separately to Rust so it can decide when to skip modifiers (e.g., Shift+number).
+        let capsLock = flags.contains(.maskAlphaShift)
         let shift = flags.contains(.maskShift)
+        let caps = capsLock != shift
+        
+        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
         
         Log.key(keyCode, "Processing")
         
         // Special handling for backspace: coalesce rapid deletes to fix flicker
         if keyCode == 51 && !ctrl { // 51 = backspace
-            handleDeleteKey(caps: caps, ctrl: ctrl, proxy: proxy, event: event)
+            handleDeleteKey(caps: caps, shift: shift, ctrl: ctrl, proxy: proxy, event: event)
             return nil // Swallow DELETE key - engine handles it
         }
         
@@ -362,8 +368,8 @@ class InputManager {
             return Unmanaged.passUnretained(event)
         }
         
-        // Call Rust engine for other keys
-        let result = ime_key(keyCode, caps, ctrl)
+        // Call Rust engine for other keys (use extended API to preserve Shift state)
+        let result = ime_key_ext(keyCode, caps, ctrl, shift)
         
         guard let r = result else {
             Log.skip()
@@ -432,9 +438,9 @@ class InputManager {
     
     /// Handle DELETE key - process immediately through engine (no batching)
     /// Each DELETE is processed individually to maintain correct state
-    private func handleDeleteKey(caps: Bool, ctrl: Bool, proxy: CGEventTapProxy, event: CGEvent) {
-        // Process DELETE through Rust engine
-        let result = ime_key(51, caps, ctrl)
+    private func handleDeleteKey(caps: Bool, shift: Bool, ctrl: Bool, proxy: CGEventTapProxy, event: CGEvent) {
+        // Process DELETE through Rust engine (use extended API to preserve Shift state)
+        let result = ime_key_ext(51, caps, ctrl, shift)
         
         if let r = result {
             defer { ime_free(r) }

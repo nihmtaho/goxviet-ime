@@ -296,8 +296,13 @@ impl Phonology {
         }
 
         // Rule 2: Diacritic priority (Section 7.2.5)
-        // - If 1st has diacritic and 2nd doesn't → 1st (ưa → ư)
+        // - If BOTH have diacritics (ươ compound) → 2nd (ơ gets tone)
+        // - If only 1st has diacritic and 2nd doesn't → 1st (ưa → ư)
         // - If 2nd has diacritic → 2nd (iê → ê)
+        if v1.has_diacritic() && v2.has_diacritic() {
+            // Both have diacritics (e.g., ươ compound) → prefer 2nd
+            return v2.pos;
+        }
         if v1.has_diacritic() && !v2.has_diacritic() {
             return v1.pos;
         }
