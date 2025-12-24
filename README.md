@@ -88,7 +88,7 @@ goxviet/
 | Sửa lỗi & Fixes       | [fixes/BACKSPACE_FIX.md](docs/fixes/backspace/BACKSPACE_FIX.md)      | Tổng hợp fix backspace, arrow, telex, v.v. |
 | Tối ưu hiệu năng      | [performance/PERFORMANCE_OPTIMIZATION_GUIDE.md](docs/performance/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md) | Hướng dẫn tối ưu, benchmark   |
 | Quản lý dự án         | [project/PROJECT_STATUS.md](docs/project/PROJECT_STATUS.md)          | Trạng thái, lộ trình, branding|
-| Ghi chú phát hành     | [release-note/RELEASE_NOTE_1.2.0.md](docs/release-note/RELEASE_NOTE_1.2.0.md) | Thông tin các bản phát hành   |
+| Ghi chú phát hành     | [release-note/RELEASE_NOTE_1.3.2.md](docs/release-note/RELEASE_NOTE_1.3.2.md) | Thông tin các bản phát hành   |
 | Lưu trữ (archive)     | [archive/FIX_SUMMARY.md](docs/archive/FIX_SUMMARY.md)                | Tài liệu lịch sử, tổng hợp    |
 
 - 📖 **Tổng mục lục & hướng dẫn:** [`docs/README.md`](docs/README.md)
