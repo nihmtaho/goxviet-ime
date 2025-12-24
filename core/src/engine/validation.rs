@@ -359,6 +359,10 @@ where
 /// Check if the buffer shows patterns that suggest foreign word input.
 ///
 /// Returns true if vowel pattern is NOT in valid Vietnamese whitelist.
+/// 
+/// NOTE: This function only checks raw keys without tone/modifier information.
+/// It may incorrectly flag valid Vietnamese patterns that use diacritics.
+/// Callers should check for Vietnamese transforms before using this.
 pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
     let syllable = parse(buffer_keys);
 
@@ -367,10 +371,15 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
         let vowels: Vec<u16> = syllable.vowel.iter().map(|&i| buffer_keys[i]).collect();
 
         // Check consecutive pairs for common foreign patterns
-        // This catches "ou" within longer sequences like "ưou" (from "would")
+        // IMPORTANT: This check only looks at raw keys, not modifiers.
+        // Vietnamese "ươ" (u+o with horn) appears as [U, O] in raw keys,
+        // same as English "ou". This is why we need to check for Vietnamese
+        // transforms in the caller before rejecting.
         for window in vowels.windows(2) {
             let pair = [window[0], window[1]];
             // "ou" and "yo" are common in English but never valid in Vietnamese
+            // EXCEPT: "uo" with horn modifiers (ư + ơ) is valid as ươ compound
+            // This cannot be detected here - caller must check for horn transforms
             if pair == [keys::O, keys::U] || pair == [keys::Y, keys::O] {
                 return true;
             }
