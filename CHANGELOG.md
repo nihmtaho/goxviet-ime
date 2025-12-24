@@ -1,5 +1,23 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [1.3.2] - 2025-12-24
+
+### Added
+- Mở rộng test coverage cho các từ tiếng Anh có cụm phụ âm bất khả thi trong tiếng Việt (vd: improve, import, express, please...).
+- Cập nhật tài liệu hướng dẫn phát hiện tiếng Anh và logic auto-restore.
+- 
+
+### Changed
+- Cải tiến logic nhận diện tiếng Anh trong engine: bổ sung kiểm tra các cụm phụ âm không hợp lệ tiếng Việt (mp, pr, pl, ps, pt, wr, f/w/j/z + phụ âm).
+- Tối ưu hiệu suất kiểm tra, không ảnh hưởng tốc độ gõ tiếng Việt.
+- 
+
+### Fixed
+- Sửa lỗi nghiêm trọng: Telex Auto Restore English không khôi phục đúng từ tiếng Anh khi có cụm phụ âm bất khả thi (vd: "improve" bị thành "ỉmpove").
+- Đảm bảo auto-restore hoạt động chính xác, không còn lỗi lệch buffer hoặc biến đổi dấu sai khi gõ tiếng Anh.
+- 
+
+
 ## [1.3.1] - 2025-12-23
 
 ### Added
