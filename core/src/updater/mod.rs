@@ -1,4 +1,4 @@
-//! Auto-update module for GoNhanh
+//! Auto-update module for GoxViet
 //!
 //! Provides version comparison utilities that can be used across all platforms.
 //! HTTP calls are handled by the platform layer (Swift/C#/GTK) for flexibility.
