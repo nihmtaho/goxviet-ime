@@ -547,22 +547,26 @@ impl Engine {
         let has_tone_marks = self.buf.iter().any(|c| c.mark > 0);
         let has_vietnamese_transforms = self.has_vietnamese_transforms();
         
-        // Skip English detection if ANY Vietnamese transforms already applied.
-        // This prevents blocking valid Vietnamese words like "sẽ" (se + x) where
-        // the raw pattern could be misclassified by English heuristics.
-        // ENGLISH DETECTION (Telex/VNI):
-        // Goal: allow English typing while Telex/VNI is active (e.g. "windows", "release", "express"),
-        // but NEVER let English detection block Vietnamese tone/mark modifiers.
+        // ═══════════════════════════════════════════════════════════════════════════
+        // ENGLISH DETECTION (Telex/VNI)
+        // ═══════════════════════════════════════════════════════════════════════════
+        // Goal: Allow English typing while Telex/VNI is active (e.g. "windows", "user", "express")
         //
-        // Strategy:
-        // - Detect English only on NORMAL letter input (not on modifier keys like s/f/r/x/j/w/z, etc.).
-        // - Once detected, bypass Vietnamese transforms for subsequent normal letters.
-        // - Tone/mark/stroke/remove keys are still handled earlier (try_* paths) and can reset the flag.
+        // CRITICAL DISTINCTION between DEFINITE and AMBIGUOUS patterns:
         //
-        // IMPORTANT:
-        // - We require: no existing Vietnamese transforms yet, otherwise it's already Vietnamese.
-        // - We do NOT run detection when the current key is a modifier key in the active method,
-        //   so sequences like "se" + 'x' can always become "sẽ".
+        // 1. DEFINITE patterns (double consonants like "ss", "tt", "ff", "ll"):
+        //    - These are NEVER valid Vietnamese
+        //    - Detection runs even when current key is a modifier
+        //    - Example: [u,s,s,e,r] → "user" - after "ss", detect English, bypass 'e' and 'r'
+        //
+        // 2. AMBIGUOUS patterns (consonant-e-x like "sex", "tex", "nex"):
+        //    - Could be English word OR Vietnamese modifier sequence
+        //    - Detection ONLY runs when current key is NOT a modifier
+        //    - Example: [s,e,x] → "sẽ" - 'x' is modifier, allow Vietnamese transform
+        //
+        // This ensures:
+        // - "sẽ" (se + x) still works: 'x' is modifier, skip ambiguous pattern check
+        // - "user" (u,s,s,e,r) works: "ss" is definite, detect English immediately
         if (self.method == 0 || self.method == 1)
             && !self.is_english_word
             && !has_tone_marks
@@ -570,15 +574,24 @@ impl Engine {
             && self.raw_input.len() >= 2
             && keys::is_letter(key)
         {
-            // If this key is treated as a Vietnamese modifier in the current method,
-            // skip English detection entirely for this keystroke.
             let m = input::get(self.method);
             let is_modifier_key = m.stroke(key) || m.remove(key) || m.tone(key).is_some() || m.mark(key).is_some();
+            
+            // Check for DEFINITE English patterns (always run, even for modifier keys)
+            // These patterns are NEVER valid Vietnamese, so we can be confident
+            let is_definite_english = self.has_definite_english_pattern();
+            
+            if is_definite_english {
+                self.is_english_word = true;
+                return self.handle_normal_letter(key, caps, shift);
+            }
+            
+            // Check for AMBIGUOUS patterns (only when current key is NOT a modifier)
+            // This allows Vietnamese modifiers like "se" + "x" → "sẽ" to work
             if !is_modifier_key {
                 let is_english = self.has_english_word_pattern();
                 if is_english {
                     self.is_english_word = true;
-                    // Bypass Vietnamese transforms: insert plain letter.
                     return self.handle_normal_letter(key, caps, shift);
                 }
             }
@@ -602,6 +615,23 @@ impl Engine {
         // User wants the symbol (@ for Shift+2, # for Shift+3, etc.), not tone marks
         // This handles both VNI mode (numbers as marks) and Telex mode (prevents accidental transforms)
         let skip_modifiers = shift && keys::is_number(key);
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CRITICAL FIX: Early bypass for English words
+        // ═══════════════════════════════════════════════════════════════════════════
+        // When a word is detected as English (e.g., "us" from [u,s,s]), ALL subsequent
+        // keystrokes must bypass Vietnamese modifiers until the word is reset.
+        //
+        // Example: [u,s,s,e,r] → "user" (NOT "usẻ")
+        // - [u,s,s] = "us" detected as English, is_english_word = true
+        // - [e] = plain 'e' (bypass tone modifiers)
+        // - [r] = plain 'r' (NOT treated as tone key for hỏi)
+        //
+        // This check MUST come BEFORE try_stroke/try_tone/try_mark/try_remove
+        // to prevent accidental Vietnamese transforms on English words.
+        if self.is_english_word {
+            return self.handle_normal_letter(key, caps, shift);
+        }
 
         // 1. Stroke modifier (d → đ)
         if !skip_modifiers && m.stroke(key) {
@@ -640,11 +670,8 @@ impl Engine {
             }
         }
 
-        // If the word is detected as English and current key is not a modifier we handled above,
-        // then bypass Vietnamese transforms and insert as normal letter.
-        if self.is_english_word {
-            return self.handle_normal_letter(key, caps, shift);
-        }
+        // Note: is_english_word check moved to earlier (before modifiers) to prevent
+        // Vietnamese transforms on English words like "user" from [u,s,s,e,r]
 
         // 5. In Telex: "w" as vowel "ư" when valid Vietnamese context
         // Examples: "w" → "ư", "nhw" → "như", but "kw" → "kw" (invalid)
@@ -2283,6 +2310,76 @@ impl Engine {
         false
     }
     
+    /// Check for DEFINITE English patterns that are NEVER valid Vietnamese
+    /// 
+    /// These patterns can be detected even when the current key is a modifier,
+    /// because they are unambiguously English (e.g., double consonants like "ss", "tt").
+    /// 
+    /// This is separate from has_english_word_pattern() which includes ambiguous
+    /// patterns that could conflict with Vietnamese modifier sequences.
+    fn has_definite_english_pattern(&self) -> bool {
+        if self.raw_input.is_empty() {
+            return false;
+        }
+        
+        let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
+        
+        if keys.len() < 2 {
+            return false;
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // "EX" PATTERN AT START (DEFINITE ENGLISH)
+        // ─────────────────────────────────────────────────────────────────────
+        // Pattern: "ex" at word start - NEVER valid Vietnamese
+        // English: export, express, example, experience, expert, examine, etc.
+        // Vietnamese: No words start with "ex"
+        // 
+        // CRITICAL: Detect at 2 chars BEFORE 'x' applies ngã tone to 'e'
+        // This must run even when 'x' is a modifier key
+        if keys[0] == keys::E && keys[1] == keys::X {
+            return true;
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // DOUBLE CONSONANT DETECTION (DEFINITE ENGLISH)
+        // ─────────────────────────────────────────────────────────────────────
+        // Pattern: Double consonants (except d, c, g which have Vietnamese shortcuts)
+        // English: off, all, app, comm, better, letter, coffee, apple, butter, rubber
+        // Vietnamese: Only allows "dd→đ", and optionally "cc→ch", "gg→gi"
+        // 
+        // This is DEFINITE because double consonants like "ss", "tt", "ff", "ll"
+        // are NEVER valid in Vietnamese phonotactics.
+        for i in 0..keys.len().saturating_sub(1) {
+            let k = keys[i];
+            if k == keys[i + 1] && keys::is_consonant(k) {
+                // Allow dd (đ), cc (ch shortcut), gg (gi shortcut)
+                // All others are English double consonants
+                if k != keys::D && k != keys::C && k != keys::G {
+                    return true;
+                }
+            }
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // THREE CONSECUTIVE CONSONANTS (DEFINITE ENGLISH)
+        // ─────────────────────────────────────────────────────────────────────
+        // Vietnamese phonotactics: max 2 consonants in a cluster
+        // English: str-, scr-, thr-, spr-, etc.
+        if keys.len() >= 3 {
+            for i in 0..keys.len().saturating_sub(2) {
+                if keys::is_consonant(keys[i]) 
+                    && keys::is_consonant(keys[i + 1]) 
+                    && keys::is_consonant(keys[i + 2]) 
+                {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+    
     /// Restore buffer to raw ASCII (undo all Vietnamese transforms)
     ///
     /// Auto-restore English words when space is pressed AND transforms were applied.
@@ -3213,5 +3310,141 @@ mod tests {
             let r = e.on_key_ext(keys::SPACE, false, false, false);
             assert_eq!(r.action, 0, "No transforms, pass through");
         }
+    }
+
+    #[test]
+    fn test_english_bypass_after_detection_user() {
+        use crate::data::keys;
+        
+        // Test: [u,s,s,e,r] → "user" (NOT "usẻ")
+        // - [u] → "u"
+        // - [u,s] → "ú" (tone sắc applied)
+        // - [u,s,s] → "us" (double s removes tone, English detected)
+        // - [u,s,s,e] → "use" (bypass Vietnamese, 'e' is plain)
+        // - [u,s,s,e,r] → "user" (bypass Vietnamese, 'r' is NOT treated as tone key)
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Type "user" as [u,s,s,e,r]
+        e.on_key_ext(keys::U, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        e.on_key_ext(keys::E, false, false, false);
+        e.on_key_ext(keys::R, false, false, false);
+
+        // After [u,s,s], is_english_word should be true
+        // Subsequent keys [e,r] should bypass Vietnamese transforms
+        assert_eq!(e.buf.len(), 4, "Buffer should have 4 characters for 'user'");
+        
+        // Verify NO tone marks were applied (especially on 'e')
+        let has_tone_marks = e.buf.iter().any(|c| c.mark > 0);
+        assert!(!has_tone_marks, "Buffer should have no tone marks - 'r' should NOT apply hỏi to 'e'");
+        
+        // Check the actual output
+        let output = e.buf.to_full_string();
+        assert_eq!(output, "user", "Output should be 'user', not 'usẻ'");
+    }
+
+    #[test]
+    fn test_english_bypass_after_detection_better() {
+        use crate::data::keys;
+        
+        // Test: [b,e,t,t,e,r] → "better"
+        // - "tt" (double consonant) triggers English detection
+        // - Subsequent 'e' and 'r' should bypass Vietnamese transforms
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Type "better"
+        for key in [keys::B, keys::E, keys::T, keys::T, keys::E, keys::R] {
+            e.on_key_ext(key, false, false, false);
+        }
+
+        assert_eq!(e.buf.len(), 6, "Buffer should have 6 characters for 'better'");
+        
+        // Verify NO transforms were applied
+        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        assert!(!has_transforms, "Buffer should have no Vietnamese transforms for 'better'");
+        
+        let output = e.buf.to_full_string();
+        assert_eq!(output, "better", "Output should be 'better'");
+    }
+
+    #[test]
+    fn test_english_bypass_after_detection_process() {
+        use crate::data::keys;
+        
+        // Test: [p,r,o,c,e,s,s] → "process"
+        // - "pr" cluster triggers English detection early
+        // - Subsequent keys should bypass Vietnamese transforms
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Type "process"
+        for key in [keys::P, keys::R, keys::O, keys::C, keys::E, keys::S, keys::S] {
+            e.on_key_ext(key, false, false, false);
+        }
+
+        assert_eq!(e.buf.len(), 7, "Buffer should have 7 characters for 'process'");
+        
+        // Verify NO transforms were applied
+        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        assert!(!has_transforms, "Buffer should have no Vietnamese transforms for 'process'");
+        
+        let output = e.buf.to_full_string();
+        assert_eq!(output, "process", "Output should be 'process'");
+    }
+
+    #[test]
+    fn test_english_bypass_stress() {
+        use crate::data::keys;
+        
+        // Test: "stress" - has 'ss' double consonant AND 'str' cluster
+        // 's' is a tone key in Telex, but should be bypassed after English detection
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Type "stress"
+        for key in [keys::S, keys::T, keys::R, keys::E, keys::S, keys::S] {
+            e.on_key_ext(key, false, false, false);
+        }
+
+        assert_eq!(e.buf.len(), 6, "Buffer should have 6 characters for 'stress'");
+        
+        // Verify NO transforms were applied
+        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        assert!(!has_transforms, "Buffer should have no Vietnamese transforms for 'stress'");
+        
+        let output = e.buf.to_full_string();
+        assert_eq!(output, "stress", "Output should be 'stress'");
+    }
+
+    #[test]
+    fn test_english_bypass_express() {
+        use crate::data::keys;
+        
+        // Test: "express" - has 'ex' pattern and 'ss' double consonant
+        // Multiple tone keys (s, r, x) should all be bypassed
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Type "express"
+        for key in [keys::E, keys::X, keys::P, keys::R, keys::E, keys::S, keys::S] {
+            e.on_key_ext(key, false, false, false);
+        }
+
+        assert_eq!(e.buf.len(), 7, "Buffer should have 7 characters for 'express'");
+        
+        // Verify NO transforms were applied
+        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        assert!(!has_transforms, "Buffer should have no Vietnamese transforms for 'express'");
+        
+        let output = e.buf.to_full_string();
+        assert_eq!(output, "express", "Output should be 'express'");
     }
 }
