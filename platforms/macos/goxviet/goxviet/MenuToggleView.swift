@@ -3,7 +3,7 @@
 //  GoxViet
 //
 //  Custom view for menu item with SwiftUI Toggle
-//  Simple implementation following reference architecture
+//  Memory-optimized: proper cleanup of NSHostingView resources
 //
 
 import Cocoa
@@ -21,7 +21,7 @@ class MenuToggleView: NSView {
         set {
             if currentState != newValue {
                 currentState = newValue
-                recreateToggleView()
+                updateToggleView()
             }
         }
     }
@@ -30,7 +30,6 @@ class MenuToggleView: NSView {
         self.onToggle = onToggle
         self.currentState = isOn
         
-        // Create label
         label = NSTextField(labelWithString: labelText)
         label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         label.textColor = .labelColor
@@ -48,24 +47,21 @@ class MenuToggleView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
     
+    deinit {
+        cleanup()
+    }
+    
     private func setupView() {
-        // Configure view to prevent selection highlighting
-        self.wantsLayer = true
-        self.layer?.backgroundColor = NSColor.clear.cgColor
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
         
-        // Layout label (left side)
         label.frame = NSRect(x: 16, y: 6, width: 140, height: 20)
         addSubview(label)
         
-        // Create SwiftUI Toggle with NSHostingView (right side)
-        recreateToggleView()
+        createToggleView()
     }
     
-    private func recreateToggleView() {
-        // Remove old hosting view if exists
-        hostingView?.removeFromSuperview()
-        
-        // Create SwiftUI Toggle (simple, like reference implementation)
+    private func createToggleView() {
         let toggleView = Toggle("", isOn: Binding(
             get: { [weak self] in self?.currentState ?? false },
             set: { [weak self] newValue in
@@ -77,45 +73,50 @@ class MenuToggleView: NSView {
         .labelsHidden()
         .scaleEffect(0.8)
         
-        // Create hosting view
-        hostingView = NSHostingView(rootView: AnyView(toggleView))
-        hostingView?.frame = NSRect(x: 162, y: 2, width: 50, height: 28)
+        let hosting = NSHostingView(rootView: AnyView(toggleView))
+        hosting.frame = NSRect(x: 162, y: 2, width: 50, height: 28)
         
-        if let hostingView = hostingView {
-            addSubview(hostingView)
-        }
+        hostingView = hosting
+        addSubview(hosting)
     }
     
-    // Override to prevent selection highlighting
+    private func updateToggleView() {
+        releaseHostingView()
+        createToggleView()
+    }
+    
+    private func releaseHostingView() {
+        hostingView?.removeFromSuperview()
+        hostingView = nil
+    }
+    
+    func cleanup() {
+        releaseHostingView()
+    }
+    
     override func draw(_ dirtyRect: NSRect) {
-        // Draw clear background to prevent blue selection highlight
         NSColor.clear.setFill()
         dirtyRect.fill()
     }
     
-    // Prevent the view from accepting first responder status
     override var acceptsFirstResponder: Bool {
         return false
     }
     
-    // Override to prevent context menu
     override func menu(for event: NSEvent) -> NSMenu? {
         return nil
     }
     
-    // Update toggle state programmatically
     func updateState(_ newState: Bool) {
         isOn = newState
     }
     
-    // Update appearance for light/dark mode
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         label.textColor = .labelColor
         
-        // Defer to next runloop to avoid layout recursion
         DispatchQueue.main.async { [weak self] in
-            self?.recreateToggleView()
+            self?.updateToggleView()
         }
     }
 }

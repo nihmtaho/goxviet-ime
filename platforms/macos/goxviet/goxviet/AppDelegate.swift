@@ -27,6 +27,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("GoxViet starting in DEBUG mode")
         #endif
         
+        // Auto hide from Dock - show only in menu bar
+        // Based on reference implementation
+        NSApp.setActivationPolicy(.accessory)
+        
         // Create Status Bar Item first (before permission check)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
@@ -324,8 +328,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     deinit {
-        // Remove all observers to prevent memory leaks
         cleanupObservers()
+        cleanupMenuViews()
+    }
+    
+    private func cleanupMenuViews() {
+        toggleView?.cleanup()
+        toggleView = nil
+        smartModeToggleView?.cleanup()
+        smartModeToggleView = nil
     }
     
     func checkPermissionOnActivate() {
@@ -423,8 +434,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showSettings() {
-        // Use the shared settings window controller
-        SettingsWindowController.shared.show()
+        // Show settings window - creates on-demand, releases memory when closed
+        SettingsWindowController.showSettings()
     }
     
     // Removed clearPerAppSettings() - now handled in SettingsView
@@ -481,12 +492,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func quitApp() {
         Log.info("Application quitting")
         InputManager.shared.stop()
+        cleanupMenuViews()
         NSApplication.shared.terminate(self)
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {
         Log.info("Application terminating")
         InputManager.shared.stop()
+        cleanupMenuViews()
     }
     
     // MARK: - Application Lifecycle
