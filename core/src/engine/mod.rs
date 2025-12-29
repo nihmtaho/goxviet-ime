@@ -9,15 +9,54 @@
 //! 2. **Pattern-Based**: Scan entire buffer for patterns instead of case-by-case
 //! 3. **Shortcut Support**: User-defined abbreviations with priority
 //! 4. **Longest-Match-First**: For diacritic placement
+//!
+//! ## Module Structure
+//!
+//! ### Core Types
+//! - `types`: Core types (Action, Result, Transform)
+//! - `config`: Engine configuration options
+//! - `buffer`: Typing buffer with character storage
+//!
+//! ### Processing
+//! - `validation`: Vietnamese spelling validation
+//! - `transform`: Vietnamese transformation functions
+//! - `syllable`: Vietnamese syllable parser
+//! - `tone_positioning`: Diacritic placement rules
+//!
+//! ### Compound Handling
+//! - `vowel_compound`: uo/ươ vowel compound utilities
+//!
+//! ### English Detection & Restore
+//! - `english_detection`: Multi-layer English word detection
+//! - `restore`: Raw ASCII restoration utilities
+//!
+//! ### History & State
+//! - `history`: Word history ring buffer for backspace-after-space
+//! - `raw_input_buffer`: Raw keystroke history for ESC restore
+//! - `rebuild`: Buffer rebuild utilities for output generation
+//!
+//! ### Features
+//! - `shortcut`: User-defined text shortcuts
 
 pub mod buffer;
+pub mod config;
 pub mod english_detection;
+pub mod history;
 pub mod raw_input_buffer;
+pub mod rebuild;
 pub mod shortcut;
 pub mod syllable;
 pub mod tone_positioning;
 pub mod transform;
+pub mod types;
 pub mod validation;
+pub mod vowel_compound;
+pub mod restore;
+
+// Re-export commonly used types for backward compatibility
+pub use self::types::{Action, Result, Transform};
+pub use self::config::{EngineConfig, InputMethod as EngineInputMethod};
+pub use self::history::WordHistory;
 
 use self::raw_input_buffer::RawInputBuffer;
 use crate::data::{
@@ -28,121 +67,9 @@ use crate::data::{
 };
 use crate::input::{self, ToneType};
 use crate::utils;
-use buffer::{Buffer, Char, MAX};
+use buffer::{Buffer, Char};
 use shortcut::{InputMethod, ShortcutTable};
 use validation::{is_foreign_word_pattern, is_valid_with_tones};
-
-/// Engine action result
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Action {
-    None = 0,
-    Send = 1,
-    Restore = 2,
-}
-
-/// Result for FFI
-#[repr(C)]
-pub struct Result {
-    pub chars: [u32; MAX],
-    pub action: u8,
-    pub backspace: u8,
-    pub count: u8,
-    pub _pad: u8,
-}
-
-impl Result {
-    pub fn none() -> Self {
-        Self {
-            chars: [0; MAX],
-            action: Action::None as u8,
-            backspace: 0,
-            count: 0,
-            _pad: 0,
-        }
-    }
-
-    pub fn send(backspace: u8, chars: &[char]) -> Self {
-        let mut result = Self {
-            chars: [0; MAX],
-            action: Action::Send as u8,
-            backspace,
-            count: chars.len().min(MAX) as u8,
-            _pad: 0,
-        };
-        for (i, &c) in chars.iter().take(MAX).enumerate() {
-            result.chars[i] = c as u32;
-        }
-        result
-    }
-}
-
-/// Transform type for revert tracking
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Transform {
-    Mark(u16, u8),
-    Tone(u16, u8),
-    Stroke(u16),
-    /// W as vowel ư (for revert: ww → w)
-    WAsVowel,
-    /// W shortcut was explicitly skipped (prevent re-transformation)
-    WShortcutSkipped,
-}
-
-/// Word history ring buffer capacity (stores last N committed words)
-const HISTORY_CAPACITY: usize = 10;
-
-/// Ring buffer for word history (stack-allocated, O(1) push/pop)
-///
-/// Used for backspace-after-space feature: when user presses backspace
-/// immediately after committing a word with space, restore the previous
-/// buffer state to allow editing.
-///
-/// Stores both buffer (displayed chars) and raw_input (keystrokes) to ensure
-/// correct restoration when user continues typing after backspace.
-struct WordHistory {
-    buffers: [Buffer; HISTORY_CAPACITY],
-    raw_inputs: [raw_input_buffer::RawInputBuffer; HISTORY_CAPACITY],
-    head: usize,
-    len: usize,
-}
-
-impl WordHistory {
-    fn new() -> Self {
-        Self {
-            buffers: std::array::from_fn(|_| Buffer::new()),
-            raw_inputs: std::array::from_fn(|_| raw_input_buffer::RawInputBuffer::new()),
-            head: 0,
-            len: 0,
-        }
-    }
-
-    /// Push buffer and raw_input to history (overwrites oldest if full)
-    fn push(&mut self, buf: Buffer, raw: raw_input_buffer::RawInputBuffer) {
-        self.buffers[self.head] = buf;
-        self.raw_inputs[self.head] = raw;
-        self.head = (self.head + 1) % HISTORY_CAPACITY;
-        if self.len < HISTORY_CAPACITY {
-            self.len += 1;
-        }
-    }
-
-    /// Pop most recent buffer and raw_input from history
-    #[allow(dead_code)]
-    fn pop(&mut self) -> Option<(Buffer, raw_input_buffer::RawInputBuffer)> {
-        if self.len == 0 {
-            return None;
-        }
-        self.head = (self.head + HISTORY_CAPACITY - 1) % HISTORY_CAPACITY;
-        self.len -= 1;
-        Some((self.buffers[self.head].clone(), self.raw_inputs[self.head].clone()))
-    }
-
-    fn clear(&mut self) {
-        self.len = 0;
-        self.head = 0;
-    }
-}
 
 /// Main Vietnamese IME engine
 pub struct Engine {
@@ -1362,58 +1289,28 @@ impl Engine {
     /// This function finds and fixes this pattern anywhere in the buffer.
     ///
     /// Returns Some(position) of the 'o' that was modified, None if no change.
+    /// Delegates to vowel_compound module.
     fn normalize_uo_compound(&mut self) -> Option<usize> {
-        // Look for pattern: U with horn + O without horn (anywhere in buffer)
-        for i in 0..self.buf.len().saturating_sub(1) {
-            let c1 = self.buf.get(i)?;
-            let c2 = self.buf.get(i + 1)?;
-
-            // Check: U with horn + O plain → always normalize to ươ
-            let is_u_with_horn = c1.key == keys::U && c1.tone == tone::HORN;
-            let is_o_plain = c2.key == keys::O && c2.tone == tone::NONE;
-
-            if is_u_with_horn && is_o_plain {
-                // Apply horn to O to form the ươ compound
-                if let Some(c) = self.buf.get_mut(i + 1) {
-                    c.tone = tone::HORN;
-                    return Some(i + 1);
-                }
-            }
-        }
-        None
+        vowel_compound::normalize_uo_compound(&mut self.buf)
     }
 
     /// Find positions of U+O or O+U compound (adjacent vowels)
     /// Returns Some((first_pos, second_pos)) if found, None otherwise
+    /// Delegates to vowel_compound module.
     fn find_uo_compound_positions(&self) -> Option<(usize, usize)> {
-        for i in 0..self.buf.len().saturating_sub(1) {
-            if let (Some(c1), Some(c2)) = (self.buf.get(i), self.buf.get(i + 1)) {
-                let is_uo = c1.key == keys::U && c2.key == keys::O;
-                let is_ou = c1.key == keys::O && c2.key == keys::U;
-                if is_uo || is_ou {
-                    return Some((i, i + 1));
-                }
-            }
-        }
-        None
+        vowel_compound::find_uo_compound_positions(&self.buf)
     }
 
     /// Check for uo compound in buffer (any tone state)
+    /// Delegates to vowel_compound module.
     fn has_uo_compound(&self) -> bool {
-        self.find_uo_compound_positions().is_some()
+        vowel_compound::has_uo_compound(&self.buf)
     }
 
     /// Check for complete ươ compound (both u and o have horn)
+    /// Delegates to vowel_compound module.
     fn has_complete_uo_compound(&self) -> bool {
-        if let Some((pos1, pos2)) = self.find_uo_compound_positions() {
-            if let (Some(c1), Some(c2)) = (self.buf.get(pos1), self.buf.get(pos2)) {
-                // Check ư + ơ pattern (both with horn)
-                let is_u_horn = c1.key == keys::U && c1.tone == tone::HORN;
-                let is_o_horn = c2.key == keys::O && c2.tone == tone::HORN;
-                return is_u_horn && is_o_horn;
-            }
-        }
-        false
+        vowel_compound::has_complete_uo_compound(&self.buf)
     }
 
     /// Find target position for horn modifier with switching support
@@ -2008,13 +1905,9 @@ impl Engine {
     /// Check if buffer has any Vietnamese transforms (tone, mark, stroke)
     /// Used to distinguish between Vietnamese and English words
     /// Example: "tét" has tone → Vietnamese, "test" no transforms → English
+    /// Delegates to restore module.
     fn has_vietnamese_transforms(&self) -> bool {
-        for c in self.buf.iter() {
-            if c.tone != 0 || c.mark != 0 || c.stroke {
-                return true;
-            }
-        }
-        false
+        restore::has_vietnamese_transforms(&self.buf)
     }
 
     /// Detect English word patterns using raw keystroke history
@@ -2387,63 +2280,16 @@ impl Engine {
     /// 
     /// This function is ONLY called when has_vietnamese_transforms() returns true,
     /// so we know transforms were applied and need to be undone.
+    /// Delegates to restore module.
     fn auto_restore_english(&self) -> Result {
-        if self.raw_input.is_empty() || self.buf.is_empty() {
-            return Result::none();
-        }
-
-        // Build raw ASCII output from raw_input history
-        let mut raw_chars: Vec<char> = self
-            .raw_input
-            .iter()
-            .filter_map(|(key, caps)| utils::key_to_char(key, caps))
-            .collect();
-
-        if raw_chars.is_empty() {
-            return Result::none();
-        }
-
-        // Auto-add space after English word restore
-        // This provides better UX: user types "telex" + space, gets "telex " ready for next word
-        raw_chars.push(' ');
-
-        // Backspace count = current buffer length (displayed chars)
-        let backspace = self.buf.len() as u8;
-
-        Result::send(backspace, &raw_chars)
+        restore::auto_restore_english(&self.buf, &self.raw_input)
     }
 
     /// Called when ESC is pressed. Replaces transformed output with original keystrokes.
     /// Example: "tẽt" (from typing "text" in Telex) → "text"
+    /// Delegates to restore module.
     fn restore_to_raw(&self) -> Result {
-        if self.raw_input.is_empty() || self.buf.is_empty() {
-            return Result::none();
-        }
-
-        // Check if any transforms were applied
-        let has_transforms = self
-            .buf
-            .iter()
-            .any(|c| c.tone > 0 || c.mark > 0 || c.stroke);
-        if !has_transforms {
-            return Result::none();
-        }
-
-        // Build raw ASCII output from raw_input history
-        let raw_chars: Vec<char> = self
-            .raw_input
-            .iter()
-            .filter_map(|(key, caps)| utils::key_to_char(key, caps))
-            .collect();
-
-        if raw_chars.is_empty() {
-            return Result::none();
-        }
-
-        // Backspace count = current buffer length (displayed chars)
-        let backspace = self.buf.len() as u8;
-
-        Result::send(backspace, &raw_chars)
+        restore::restore_to_raw(&self.buf, &self.raw_input)
     }
 
     /// Restore raw_input from buffer (for ESC restore to work after backspace-restore)
@@ -2707,6 +2553,7 @@ mod tests {
         // (word boundary behavior is tested elsewhere; this ensures no surprise reversion).
     }
 
+    #[test]
     fn test_backspace_fast_path_trailing_consonant() {
         use crate::data::keys;
         
@@ -2926,7 +2773,7 @@ mod tests {
         assert!(e.buf.is_empty(), "Buffer should remain empty");
         assert!(e.raw_input.is_empty(), "Raw input should be cleared");
         assert_eq!(e.spaces_after_commit, 0, "Spaces counter should be reset");
-        assert_eq!(e.word_history.len, 0, "Word history should be cleared");
+        assert_eq!(e.word_history.len(), 0, "Word history should be cleared");
     }
 
     #[test]
