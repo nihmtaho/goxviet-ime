@@ -118,6 +118,9 @@ class InputManager {
         
         // Start per-app mode manager
         PerAppModeManager.shared.start()
+        
+        // Start input source monitor (auto-disable for non-Latin keyboards)
+        InputSourceMonitor.shared.start()
     }
     
     func stop() {
@@ -135,6 +138,7 @@ class InputManager {
         cleanupObservers()
         
         PerAppModeManager.shared.stop()
+        InputSourceMonitor.shared.stop()
         Log.info("InputManager stopped")
     }
     
@@ -251,6 +255,11 @@ class InputManager {
         
         // 5. If IME is disabled, pass through
         guard AppState.shared.isEnabled else {
+            return Unmanaged.passUnretained(event)
+        }
+        
+        // 5.1. Check if Vietnamese is temporarily disabled due to non-Latin input source
+        if InputSourceMonitor.shared.shouldSkipVietnameseProcessing() {
             return Unmanaged.passUnretained(event)
         }
         

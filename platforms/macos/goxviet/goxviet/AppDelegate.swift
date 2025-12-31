@@ -16,6 +16,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // NotificationCenter observer tokens for proper cleanup
     private var observerTokens: [NSObjectProtocol] = []
     
+    // Timer for auto-polling accessibility permission
+    private var accessibilityPollTimer: Timer?
+    
+    // Flag to track if permission was granted while modal was showing
+    private var permissionGrantedWhileModalActive = false
+    private var isModalAlertActive = false
+    
     var isEnabled: Bool {
         return AppState.shared.isEnabled
     }
@@ -61,60 +68,154 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             Log.info("Accessibility permission granted")
+            stopAccessibilityPollTimer()
             
             // Start InputManager only after permission is confirmed
             InputManager.shared.start()
         }
     }
     
+    // MARK: - Auto-Polling Timer
+    
+    func startAccessibilityPollTimer() {
+        // Ensure we're on main thread for Timer scheduling
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.startAccessibilityPollTimer()
+            }
+            return
+        }
+        
+        // Stop existing timer if any
+        stopAccessibilityPollTimer()
+        
+        // Poll every 1 second to check if permission was granted
+        accessibilityPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let accessEnabled = AXIsProcessTrusted()
+            if accessEnabled {
+                Log.info("Accessibility permission detected via auto-polling")
+                self.stopAccessibilityPollTimer()
+                
+                // If modal is active, just set the flag - don't try to manipulate UI
+                if self.isModalAlertActive {
+                    self.permissionGrantedWhileModalActive = true
+                    Log.info("Permission granted while modal active - will handle after modal closes")
+                } else {
+                    self.onAccessibilityGranted()
+                }
+            }
+        }
+        Log.info("Started accessibility permission auto-polling")
+    }
+    
+    func stopAccessibilityPollTimer() {
+        // Ensure we're on main thread for Timer invalidation
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.stopAccessibilityPollTimer()
+            }
+            return
+        }
+        
+        accessibilityPollTimer?.invalidate()
+        accessibilityPollTimer = nil
+    }
+    
+    func onAccessibilityGranted() {
+        // Ensure we're on main thread
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.onAccessibilityGranted()
+            }
+            return
+        }
+        
+        stopAccessibilityPollTimer()
+        
+        Log.info("Accessibility permission granted - starting InputManager")
+        InputManager.shared.start()
+    }
+    
     func showAccessibilityAlert() {
+        // Reset flag
+        permissionGrantedWhileModalActive = false
+        
+        // Start auto-polling when showing the alert
+        startAccessibilityPollTimer()
+        
+        isModalAlertActive = true
+        
         let alert = NSAlert()
         alert.messageText = "🔐 Accessibility Permission Required"
         alert.informativeText = """
-        GoxViet needs Accessibility permissions to capture keyboard input for Vietnamese typing.
+        GoxViet needs Accessibility permission to capture keyboard input for Vietnamese typing.
         
-        📝 Please follow these steps:
+        📝 Quick Setup (one-time only):
         
-        1️⃣ Click "Open System Preferences" below
-        2️⃣ Find "GoxViet" in the list
-        3️⃣ Check the box next to "GoxViet"
-        4️⃣ Close System Preferences
-        5️⃣ Click "Check Again" or restart GoxViet
+        1️⃣ Click "Open System Settings" below
+        2️⃣ Find "GoxViet" in the list and toggle it ON
+        3️⃣ That's it! Permission will be auto-detected
         
-        ⚠️ Without this permission, Vietnamese input will NOT work.
+        💡 The permission is remembered - you won't need to do this again after rebuilding the app.
         
-        💡 Tip: If you don't see GoxViet in the list, try:
-           • Restart GoxViet
-           • Or manually add it using the + button
+        ⚠️ If GoxViet is not in the list:
+           • Click the + button to add it manually
+           • Or drag GoxViet.app into the list
         """
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Preferences")
-        alert.addButton(withTitle: "Check Again")
+        alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Quit")
+        
+        // Add accessory view with status indicator
+        let statusLabel = NSTextField(labelWithString: "⏳ Waiting for permission... (auto-detecting)")
+        statusLabel.font = NSFont.systemFont(ofSize: 11)
+        statusLabel.textColor = .secondaryLabelColor
+        alert.accessoryView = statusLabel
         
         let response = alert.runModal()
         
+        isModalAlertActive = false
+        
+        // Check if permission was granted while modal was showing
+        if permissionGrantedWhileModalActive {
+            Log.info("Permission was granted while modal was active - starting InputManager")
+            onAccessibilityGranted()
+            return
+        }
+        
         switch response {
         case .alertFirstButtonReturn:
-            // Open System Preferences
+            // Open System Settings - Privacy & Security > Accessibility
             let prefpaneUrl = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
             NSWorkspace.shared.open(prefpaneUrl)
             
-            // Wait longer for user to grant permission
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-                self?.recheckAccessibilityPermission()
+            // Continue polling in background - will auto-detect when granted
+            Log.info("Opened System Settings, waiting for user to grant permission...")
+            
+            // Check again after a delay in case user already granted permission
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.checkAndShowAlertIfNeeded()
             }
             
         case .alertSecondButtonReturn:
-            // Check again immediately
-            recheckAccessibilityPermission()
-            
-        case .alertThirdButtonReturn:
             // Quit
+            stopAccessibilityPollTimer()
             NSApplication.shared.terminate(self)
             
         default:
+            stopAccessibilityPollTimer()
             break
+        }
+    }
+    
+    func checkAndShowAlertIfNeeded() {
+        let accessEnabled = AXIsProcessTrusted()
+        if accessEnabled {
+            onAccessibilityGranted()
+        } else {
+            // Show alert again if permission still not granted
+            showAccessibilityAlert()
         }
     }
     
@@ -129,29 +230,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showAccessibilityAlert()
             }
         } else {
-            Log.info("Accessibility permission now granted")
-            
-            // Start InputManager now that permission is granted
-            InputManager.shared.start()
-            
-            let successAlert = NSAlert()
-            successAlert.messageText = "Permission Granted! ✅"
-            successAlert.informativeText = "GoxViet can now function properly.\n\nYou may need to restart the app if input doesn't work immediately."
-            successAlert.alertStyle = .informational
-            successAlert.addButton(withTitle: "OK")
-            successAlert.addButton(withTitle: "Restart Now")
-            
-            let response = successAlert.runModal()
-            if response == .alertSecondButtonReturn {
-                // Restart app
-                let url = URL(fileURLWithPath: Bundle.main.resourcePath!)
-                let path = url.deletingLastPathComponent().deletingLastPathComponent().absoluteString
-                let task = Process()
-                task.launchPath = "/usr/bin/open"
-                task.arguments = [path]
-                task.launch()
-                NSApplication.shared.terminate(self)
-            }
+            onAccessibilityGranted()
         }
     }
     
@@ -330,6 +409,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     deinit {
         cleanupObservers()
         cleanupMenuViews()
+        stopAccessibilityPollTimer()
     }
     
     private func cleanupMenuViews() {

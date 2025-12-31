@@ -72,6 +72,18 @@ class AppState {
         }
     }
 
+    /// Auto-disable Vietnamese when non-Latin input sources are active
+    /// (e.g., Japanese, Korean, Chinese keyboards)
+    var autoDisableForNonLatinEnabled: Bool {
+        get {
+            return UserDefaults.standard.bool(forKey: Keys.autoDisableNonLatin)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.autoDisableNonLatin)
+            Log.info("Auto-disable for non-Latin input: \(newValue ? "enabled" : "disabled")")
+        }
+    }
+
     // MARK: - Storage Keys
 
     private enum Keys {
@@ -81,6 +93,7 @@ class AppState {
         static let escRestore = "com.goxviet.ime.escRestore"
         static let freeTone = "com.goxviet.ime.freeTone"
         static let perAppModes = "com.goxviet.ime.perAppModes"
+        static let autoDisableNonLatin = "com.goxviet.ime.autoDisableNonLatin"
     }
 
     // MARK: - Initialization
@@ -96,7 +109,8 @@ class AppState {
             Keys.inputMethod: 0,  // Telex
             Keys.modernToneStyle: false,
             Keys.escRestore: true,
-            Keys.freeTone: false
+            Keys.freeTone: false,
+            Keys.autoDisableNonLatin: true  // Default: enabled for better UX with multilingual users
         ]
 
         UserDefaults.standard.register(defaults: defaults)
