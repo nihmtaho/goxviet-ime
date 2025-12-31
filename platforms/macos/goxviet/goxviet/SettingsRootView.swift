@@ -16,6 +16,7 @@ struct SettingsRootView: View {
     @AppStorage("escRestoreEnabled") private var escRestoreEnabled = true
     @AppStorage("freeToneEnabled") private var freeToneEnabled = false
     @AppStorage("smartModeEnabled") private var smartModeEnabled = true
+    @AppStorage("com.goxviet.ime.autoDisableNonLatin") private var autoDisableForNonLatin = true
 
     // MARK: - View State
     @State private var selection: SettingsSection? = .general
@@ -110,6 +111,7 @@ struct SettingsRootView: View {
             case .perApp:
                 PerAppSettingsView(
                     smartModeEnabled: $smartModeEnabled,
+                    autoDisableForNonLatin: $autoDisableForNonLatin,
                     perAppModes: $perAppModes,
                     showClearConfirmation: $showClearConfirmation,
                     reloadAction: loadPerAppModes
@@ -144,6 +146,7 @@ struct SettingsRootView: View {
         AppState.shared.escRestoreEnabled = escRestoreEnabled
         AppState.shared.freeToneEnabled = freeToneEnabled
         AppState.shared.isSmartModeEnabled = smartModeEnabled
+        AppState.shared.autoDisableForNonLatinEnabled = autoDisableForNonLatin
     }
 
     private func openLogFile() {
@@ -312,6 +315,7 @@ private struct GeneralSettingsView: View {
 
 private struct PerAppSettingsView: View {
     @Binding var smartModeEnabled: Bool
+    @Binding var autoDisableForNonLatin: Bool
     @Binding var perAppModes: [String: Bool]
     @Binding var showClearConfirmation: Bool
 
@@ -334,6 +338,39 @@ private struct PerAppSettingsView: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Label("Smart Mode", systemImage: "brain")
+            }
+
+            Section {
+                Toggle("Auto-disable for non-Latin keyboards", isOn: $autoDisableForNonLatin)
+                    .onChange(of: autoDisableForNonLatin) { _, newValue in
+                        AppState.shared.autoDisableForNonLatinEnabled = newValue
+                        if newValue {
+                            InputSourceMonitor.shared.refresh()
+                        }
+                        Log.info("Auto-disable for non-Latin: \(newValue)")
+                    }
+
+                Text("Temporarily disable Vietnamese typing when using Japanese, Korean, Chinese, or other non-Latin input methods.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if InputSourceMonitor.shared.isTemporarilyDisabled,
+                   let inputSourceName = InputSourceMonitor.shared.getCurrentInputSourceDisplayName() {
+                    HStack(spacing: 8) {
+                        Image(systemName: "keyboard.badge.ellipsis")
+                            .foregroundStyle(.orange)
+                        Text("Vietnamese temporarily disabled")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(inputSourceName)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                Label("Multi-Language Support", systemImage: "globe")
             }
 
             if let currentApp = PerAppModeManager.shared.getCurrentAppName(),
