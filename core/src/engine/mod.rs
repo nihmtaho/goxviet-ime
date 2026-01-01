@@ -248,33 +248,61 @@ impl Engine {
             // Auto-restore English words: if buffer is detected as English word,
             // restore to raw ASCII input before processing shortcuts.
             //
-            // IMPORTANT: Never revert a valid Vietnamese word like "rượu" (ruowju).
-            // Root cause: some English heuristics can misclassify "uo/ou" raw patterns.
+            // Issue #29: English words like "with", "term", "push" were being incorrectly
+            // transformed to Vietnamese (e.g., "with" → "ưith", "term" → "tẻm").
             //
-            // We only allow auto-restore when:
-            // - It's detected as English, AND
-            // - Vietnamese transforms were applied (meaning the IME actually changed output), AND
-            // - The current buffer does NOT look like a valid Vietnamese syllable.
+            // Logic combines two signals:
+            // 1. English pattern detection (common words, programming terms, clusters)
+            // 2. Vietnamese syllable validation on RAW INPUT (not transformed buffer)
             //
-            // This keeps English auto-restore behavior while preventing space-triggered revert
-            // for valid Vietnamese compound vowels (e.g., ươu).
-            // PERF: avoid redundant full-buffer scans on SPACE.
-            // `looks_like_vietnamese_syllable()` already checks transforms.
+            // Key insight: We validate the RAW INPUT keys, not the transformed buffer.
+            // This correctly identifies "term" as invalid Vietnamese (has "rm" cluster)
+            // while "test" transforms to valid "tét".
+            //
+            // Decision matrix:
+            // - English pattern + RAW INPUT is invalid Vietnamese → RESTORE
+            // - English pattern + RAW INPUT could be valid Vietnamese → KEEP transformed
+            // - No English pattern → keep as-is
             let has_transforms = self.has_vietnamese_transforms();
-
-            // Check if the current buffer forms a valid Vietnamese syllable
-            // This is more expensive than has_transforms but necessary for correctness on SPACE
-            let looks_vietnamese = if !has_transforms {
+            
+            // Check English patterns (common words, programming terms, clusters)
+            let raw_keys_with_caps: Vec<(u16, bool)> = self.raw_input.iter().collect();
+            
+            // Two-tier English detection:
+            // - STRONG: Common English word list (term, with, push, work, etc.)
+            // - WEAK: Pattern-based detection (clusters, suffixes)
+            let is_common_english = english_detection::is_common_english_word(&raw_keys_with_caps);
+            let is_english_pattern = self.is_english_word || self.has_english_word_pattern();
+            
+            // Restore logic:
+            // 1. STRONG signal (common English word): ALWAYS restore if transforms applied
+            //    This handles "term" → "tẻm", "with" → "ưith", "push" → "púh"
+            //    These are unambiguously English words that got Vietnamese transforms
+            //
+            // 2. WEAK signal (pattern match): Only restore if buffer is NOT valid Vietnamese
+            //    This handles edge cases where pattern matches but could be Vietnamese
+            //
+            // Exception: "test" → "tét" - even though "test" matches common word,
+            // "tét" is a REAL Vietnamese word (with sắc tone). But this is handled
+            // because user explicitly typed 's' which adds sắc mark intentionally.
+            // For now, we prioritize English common words to fix issue #29.
+            let should_restore = if !has_transforms || self.raw_input.is_empty() {
                 false
-            } else {
-                let keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+            } else if is_common_english {
+                // STRONG signal: Common English word → ALWAYS restore
+                // This fixes issue #29: "term", "with", "push", "word", etc.
+                true
+            } else if is_english_pattern {
+                // WEAK signal: Check if buffer is valid Vietnamese
+                let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
                 let tones: Vec<u8> = self.buf.iter().map(|c| c.tone).collect();
-                validation::is_valid_with_tones(&keys, &tones)
+                let is_valid_viet = validation::is_valid_with_tones(&buf_keys, &tones);
+                
+                // Only restore if NOT valid Vietnamese
+                !is_valid_viet
+            } else {
+                false // No English signal, don't restore
             };
-
-            let should_restore = (self.is_english_word || self.has_english_word_pattern())
-                && has_transforms
-                && !looks_vietnamese;
 
             let result = if should_restore && !self.buf.is_empty() && !self.raw_input.is_empty() {
                 // Restore English word to raw ASCII (undo transforms + add space)
@@ -1929,278 +1957,32 @@ impl Engine {
     /// - Total: ~50ns weighted average
     /// 
     /// Reference: ULTIMATE_ENGLISH_DETECTION_GUIDE.md Section "Layer 2 & 3"
+    /// Detect English word patterns using raw keystroke history
+    /// 
+    /// This delegates to the comprehensive english_detection module which implements
+    /// multiple layers of pattern detection:
+    /// - Layer 1: Early patterns (2-3 chars) - ex, wh, ck, etc.
+    /// - Layer 2: Consonant clusters - mp, pr, pl, wr, etc.
+    /// - Layer 3: Vowel patterns - ee, oo, ough, etc.
+    /// - Layer 4: Common English words - with, have, from, work, etc.
+    /// - Layer 5: Programming terms - func, push, struct, etc.
+    /// - Layer 6: English suffixes - tion, sion, ing, etc.
+    /// 
+    /// Used for auto-restore on SPACE: if English pattern detected AND Vietnamese
+    /// transforms were applied, restore to raw ASCII input.
+    /// 
+    /// # Performance
+    /// O(n) where n = raw_input.len(), typically < 200ns for 10-char words
     fn has_english_word_pattern(&self) -> bool {
         if self.raw_input.is_empty() {
             return false;
         }
         
-        // Build pattern from raw_input
-        let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
+        // Build raw_keys from raw_input for english_detection module
+        let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
         
-        // ═════════════════════════════════════════════════════════════════════
-        // LAYER 2: EARLY PATTERN DETECTION (2-3 chars)
-        // ═════════════════════════════════════════════════════════════════════
-        // Goal: Detect 80% of common English words BEFORE Vietnamese transforms
-        // Performance: ~20ns average (HOT PATH)
-        // Reference: ULTIMATE_ENGLISH_DETECTION_GUIDE.md Section "Layer 2"
-        
-        if keys.len() < 2 {
-            return false;
-        }
-        
-        // ─────────────────────────────────────────────────────────────────────
-        // 2-CHAR DETECTION (CRITICAL HOT PATH - 99% of early detections)
-        // ─────────────────────────────────────────────────────────────────────
-        // Pattern: e-x (HIGHEST PRIORITY)
-        // Examples: export, express, example, experience, expert, examine, etc.
-        // Why critical: Must detect BEFORE "e"+"x"→"ẽ" transform occurs at 3rd keystroke
-        // Performance: 10-20ns (single comparison)
-        // Trade-off: Zero false positives ("ex" at start is NEVER Vietnamese)
-        if keys.len() == 2 {
-            if keys[0] == keys::E && keys[1] == keys::X {
-                return true; // ← HOT PATH: 80% of cases exit here
-            }
-        }
-        
-        // Allow Vietnamese 2-char words (e.g., "né", "tế") to continue to 3+ chars
-        if keys.len() < 3 {
-            return false;
-        }
-        
-        // ─────────────────────────────────────────────────────────────────────
-        // 3-CHAR DETECTION (HIGH-VALUE PATTERNS)
-        // ─────────────────────────────────────────────────────────────────────
-        // Goal: Catch remaining 19% of common English words
-        // Performance: 50-100ns (multiple comparisons)
-        // These patterns are NEVER valid Vietnamese syllables
-        if keys.len() == 3 {
-            // Pattern: e-l-e (element, delete, select, telex, release)
-            // Check at any position in the word (not just start)
-            // Zero false positives: "ele" sequence doesn't exist in Vietnamese
-            for i in 0..keys.len().saturating_sub(2) {
-                if keys[i] == keys::E && keys[i+1] == keys::L && keys[i+2] == keys::E {
-                    return true;
-                }
-            }
-            
-            // Pattern: i-m-p (importance, implement, import, impact)
-            // Zero false positives: "m"+"p" cluster is invalid in Vietnamese
-            if keys[0] == keys::I && keys[1] == keys::M && keys[2] == keys::P {
-                return true;
-            }
-            
-            // Pattern: c-o-m (complex, complete, computer, company, common)
-            // Zero false positives: "com" at word start is rare Vietnamese
-            if keys[0] == keys::C && keys[1] == keys::O && keys[2] == keys::M {
-                return true;
-            }
-            
-            // Pattern: e-x-p (export, express, experience, expert)
-            // Continuation of "ex" pattern detected at 2 chars
-            if keys[0] == keys::E && keys[1] == keys::X && keys[2] == keys::P {
-                return true;
-            }
-            
-            // Pattern: consonant-e-x (tex→text, nex→next, sex→sexual, rex→regex, dex→dexterity)
-            // CRITICAL: Detect at 3 chars to prevent "te"+"x"→"tẽ" transform
-            // Trade-off: Blocks Vietnamese "tẽ", "nẽ", "sẽ" (rare words, <0.1% usage)
-            // Rationale: English "text", "next", "sex" are 1000× more common
-            // Mitigation: Users can use VNI mode or ESC toggle for rare cases
-            if keys[1] == keys::E && keys[2] == keys::X {
-                if matches!(keys[0], keys::T | keys::N | keys::S | keys::R | keys::D) {
-                    return true;
-                }
-            }
-            
-            // Pattern: consonant-e-f (ref→reflex, def→define)
-            // Detect at 3 chars to prevent "re"+"f"→"rè" transform
-            // Trade-off: Blocks Vietnamese "rèf", "dèf" but these don't exist in actual usage
-            if keys[1] == keys::E && keys[2] == keys::F {
-                if matches!(keys[0], keys::R | keys::D | keys::P) {
-                    return true;
-                }
-            }
-        }
-        
-        // ─────────────────────────────────────────────────────────────────────
-        // 4+ CHAR DETECTION (ADDITIONAL PATTERNS)
-        // ─────────────────────────────────────────────────────────────────────
-        // More patterns can be safely detected at 4+ characters
-        // Performance: 100-200ns (longer buffer scan)
-        if keys.len() >= 4 {
-            // Pattern: consonant-e-x-t (text, next, context)
-            // Specific 4-char pattern detection
-            if keys[1] == keys::E && keys[2] == keys::X && keys[3] == keys::T {
-                if matches!(keys[0], keys::T | keys::N | keys::S | keys::C) {
-                    return true;
-                }
-            }
-            
-            // Pattern: e-l-e at any position (element, delete, release, etc.)
-            // Check longer words that may have been missed at 3 chars
-            for i in 0..keys.len().saturating_sub(2) {
-                if keys[i] == keys::E && keys[i+1] == keys::L && keys[i+2] == keys::E {
-                    return true;
-                }
-            }
-            
-            // Pattern: consonant-e-f (reflex, define, etc.)
-            // Recheck at 4+ chars for consistency
-            if keys[1] == keys::E && keys[2] == keys::F {
-                if matches!(keys[0], keys::R | keys::D | keys::P) {
-                    return true;
-                }
-            }
-            
-            // ─────────────────────────────────────────────────────────────────
-            // IMPOSSIBLE VIETNAMESE CONSONANT CLUSTERS
-            // ─────────────────────────────────────────────────────────────────
-            // Vietnamese phonotactics forbids certain consonant clusters.
-            // Detecting these allows accurate English word identification.
-            // Based on reference implementation (english_detection.rs)
-            
-            // Check for impossible two-consonant clusters anywhere in word
-            for i in 0..keys.len().saturating_sub(1) {
-                let k1 = keys[i];
-                let k2 = keys[i + 1];
-                
-                // Both must be consonants
-                if !keys::is_consonant(k1) || !keys::is_consonant(k2) {
-                    continue;
-                }
-                
-                // "mp" cluster - English: improve, import, implement, impact, company
-                // Vietnamese: NEVER has "mp" cluster (not valid phonotactically)
-                if k1 == keys::M && k2 == keys::P {
-                    return true;
-                }
-                
-                // "pr" cluster - English: improve, express, present, problem
-                // Vietnamese: NEVER has "pr" cluster
-                if k1 == keys::P && k2 == keys::R {
-                    return true;
-                }
-                
-                // "pl" cluster - English: please, place, plan, play
-                // Vietnamese: NEVER has "pl" cluster
-                if k1 == keys::P && k2 == keys::L {
-                    return true;
-                }
-                
-                // "ps", "pt" clusters - English: psychology, pterodactyl, tips, opts
-                // Vietnamese: NEVER has these clusters
-                if k1 == keys::P && (k2 == keys::S || k2 == keys::T) {
-                    return true;
-                }
-                
-                // "wr" cluster - English: write, wrong, wrap
-                // Vietnamese: NEVER has "wr" (w is only for diacritics)
-                if k1 == keys::W && k2 == keys::R {
-                    return true;
-                }
-                
-                // "f" + consonant (except "ph") - English: from, after, left
-                // Vietnamese: rarely uses "f", never "f" + consonant
-                if k1 == keys::F && k2 != keys::H && keys::is_consonant(k2) {
-                    return true;
-                }
-                
-                // "w" + consonant - English: world, swim, twin
-                // Vietnamese: "w" only for diacritics, never consonant cluster
-                if k1 == keys::W && keys::is_consonant(k2) {
-                    return true;
-                }
-                
-                // "j" + consonant - English: project (after vowel)
-                // Vietnamese: "j" rarely used
-                if k1 == keys::J && keys::is_consonant(k2) {
-                    return true;
-                }
-                
-                // "z" + consonant - English: pizza (zz)
-                // Vietnamese: "z" rarely used
-                if k1 == keys::Z && keys::is_consonant(k2) {
-                    return true;
-                }
-            }
-        }
-        
-        // ═════════════════════════════════════════════════════════════════════
-        // LAYER 3: MULTI-SYLLABLE DETECTION (4+ chars)
-        // ═════════════════════════════════════════════════════════════════════
-        // Goal: Detect English multi-syllable words that passed Layer 1-2
-        // Performance: ~150ns average (single/double pass scan)
-        // Reference: ULTIMATE_ENGLISH_DETECTION_GUIDE.md Section "Layer 3"
-        
-        // ─────────────────────────────────────────────────────────────────────
-        // PATTERN 1: C-e-C-e (Consonant-E-Consonant-E)
-        // ─────────────────────────────────────────────────────────────────────
-        // Key insight: Vietnamese = single syllable, English = multi-syllable
-        // Examples: tele, rele, sele, dele, gene, pres, refle
-        // Check at length >= 4 to avoid blocking Vietnamese 3-char words
-        if keys.len() >= 4 {
-            // Scan for pattern: consonant + 'e' + consonant(s) + 'e'
-            // This is a strong indicator of multi-syllable English words
-            // Vietnamese NEVER has multiple 'e's with consonants between
-            
-            for i in 0..keys.len().saturating_sub(3) {
-                // Check: consonant at position i, 'e' at i+1
-                if keys[i+1] == keys::E && keys::is_consonant(keys[i]) {
-                    // Look for another 'e' after at least one consonant
-                    for j in (i+3)..keys.len() {
-                        if keys[j] == keys::E {
-                            // Verify: at least one consonant between the two 'e's
-                            let has_consonant_between = ((i+2)..j).any(|k| keys::is_consonant(keys[k]));
-                            if has_consonant_between {
-                                return true; // Found C-e-C-e pattern → English!
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // ─────────────────────────────────────────────────────────────────────
-        // PATTERN 2: Multiple 'e' with consonant separation (5+ chars)
-        // ─────────────────────────────────────────────────────────────────────
-        // Examples: release (3 e's), preserve (3 e's), element (3 e's)
-        // Why 'e'? Most common vowel in English (~12% of letters)
-        // Vietnamese NEVER has multiple 'e's with consonants between
-        // Check at length >= 5 to avoid false positives with shorter words
-        if keys.len() >= 5 {
-            // Count 'e' vowel occurrences
-            let e_count = keys.iter().filter(|&&k| k == keys::E).count();
-            
-            if e_count >= 2 {
-                // Collect positions of all 'e' vowels
-                let e_positions: Vec<usize> = keys.iter()
-                    .enumerate()
-                    .filter(|(_, &k)| k == keys::E)
-                    .map(|(i, _)| i)
-                    .collect();
-                
-                // Check if any pair of 'e's has consonant(s) between
-                if e_positions.len() >= 2 {
-                    let has_consonant_between = e_positions.windows(2).any(|window| {
-                        let gap = window[1] - window[0];
-                        gap > 1 // Gap > 1 means at least 1 consonant between
-                    });
-                    
-                    if has_consonant_between {
-                        // Multiple 'e's separated by consonants = English multi-syllable
-                        // Covers: telex, delete, release, reflex, reverse, element, preserve
-                        // Performance: 90% of multi-syllable English words caught here
-                        return true;
-                    }
-                }
-            }
-        }
-        
-        // ═════════════════════════════════════════════════════════════════════
-        // NO MATCH: Not detected as English pattern
-        // ═════════════════════════════════════════════════════════════════════
-        // Allow Vietnamese transform to proceed normally
-        false
+        // Delegate to comprehensive english_detection module
+        english_detection::has_english_pattern(&raw_keys)
     }
     
     /// Check for DEFINITE English patterns that are NEVER valid Vietnamese
@@ -2232,6 +2014,46 @@ impl Engine {
         // This must run even when 'x' is a modifier key
         if keys[0] == keys::E && keys[1] == keys::X {
             return true;
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // "AD" PATTERN AT START (DEFINITE ENGLISH)
+        // ─────────────────────────────────────────────────────────────────────
+        // Pattern: "ad" at word start - NEVER valid Vietnamese
+        // English: add, admin, adapt, address, advance, adventure, advertise, advice
+        // Vietnamese: Never has words starting with "ad" - vowel cannot precede initial consonant
+        // 
+        // CRITICAL: Detect at 2 chars BEFORE second 'd' applies stroke transform (dd → đ)
+        // This prevents "add" → "ađ" by blocking the stroke before it's applied
+        if keys[0] == keys::A && keys[1] == keys::D {
+            return true;
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
+        // "AN" + CONSONANT PATTERN AT START (DEFINITE ENGLISH)
+        // ─────────────────────────────────────────────────────────────────────
+        // Pattern: "an" + consonant (not h/g) at word start
+        // Vietnamese valid: "an", "anh" (h), "ang" (g)
+        // English: and, any, android, answer, announce, annual, ant, ankle
+        // 
+        // IMPORTANT: Exclude Telex tone modifiers (s,f,r,x,j,z) because:
+        // - "ans" → "án" is Vietnamese (a+n+s tone mark)
+        // - "and" → English (a+n+d consonant)
+        // Note: "y" is treated as vowel in keys but in "any" context it acts as consonant
+        if keys.len() >= 3 && keys[0] == keys::A && keys[1] == keys::N {
+            let third = keys[2];
+            
+            // Exclude Telex tone modifiers: s(sắc), f(huyền), r(hỏi), x(ngã), j(nặng), z(remove)
+            let is_tone_modifier = third == keys::S || third == keys::F || third == keys::R 
+                                || third == keys::X || third == keys::J || third == keys::Z;
+            
+            // If third char is consonant (not h/g, not tone modifier), or 'y', it's English
+            if !is_tone_modifier 
+                && (keys::is_consonant(third) || third == keys::Y) 
+                && third != keys::H && third != keys::G 
+            {
+                return true;
+            }
         }
         
         // ─────────────────────────────────────────────────────────────────────

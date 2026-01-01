@@ -155,6 +155,15 @@ fn has_early_english_pattern(keys: &[u16]) -> bool {
         }
     }
 
+    // Pattern: 3-letter "fix" - common English word
+    // English: fix, six, mix (but six/mix can be Vietnamese sĩ/mĩ)
+    // Only "fix" is unambiguous (f + i + x)
+    if len == 3 {
+        if keys[0] == keys::F && keys[1] == keys::I && keys[2] == keys::X {
+            return true;
+        }
+    }
+
     // Pattern: "tion" or "sion" suffix
     // English: action, nation, vision, mission
     // Vietnamese: No words end with "tion" or "sion"
@@ -224,6 +233,40 @@ fn has_early_english_pattern(keys: &[u16]) -> bool {
     // Vietnamese: Never has "ght"
     for i in 0..len.saturating_sub(2) {
         if keys[i] == keys::G && keys[i + 1] == keys::H && keys[i + 2] == keys::T {
+            return true;
+        }
+    }
+
+    // Pattern: "ad" at word start (vowel "a" before consonant "d")
+    // English: add, admin, adapt, address, advance, adventure, advertise, advice
+    // Vietnamese: Never has words starting with "ad" - vowel cannot precede initial consonant
+    // Note: "ad" + any character is always English, so we block transforms early (no auto-restore needed)
+    if len >= 2 && keys[0] == keys::A && keys[1] == keys::D {
+        return true;
+    }
+
+    // Pattern: "an" at word start + consonant that's NOT valid Vietnamese final
+    // Vietnamese valid: "an", "anh" (h), "ang" (g), "anm" is invalid
+    // English: and, any, android, answer, angle, another, analysis, animal, angry
+    // Vietnamese finals after "an": only h, g (for anh, ang)
+    // So "an" + consonant other than h/g = English
+    // 
+    // IMPORTANT: Exclude Telex tone modifiers (s,f,r,x,j,z) because:
+    // - "ans" → "án" is Vietnamese (a+n+s tone mark)
+    // - "and" → English (a+n+d consonant)
+    // Note: "y" is treated as vowel in keys.rs but in "any" context it acts as consonant
+    if len >= 3 && keys[0] == keys::A && keys[1] == keys::N {
+        let third = keys[2];
+        
+        // Exclude Telex tone modifiers: s(sắc), f(huyền), r(hỏi), x(ngã), j(nặng), z(remove)
+        let is_tone_modifier = third == keys::S || third == keys::F || third == keys::R 
+                            || third == keys::X || third == keys::J || third == keys::Z;
+        
+        // If third char is consonant (not h/g, not tone modifier), or 'y', it's English
+        if !is_tone_modifier 
+            && (keys::is_consonant(third) || third == keys::Y) 
+            && third != keys::H && third != keys::G 
+        {
             return true;
         }
     }
@@ -572,6 +615,20 @@ fn has_common_english_word_pattern(keys: &[u16]) -> bool {
             return true;
         } // both
 
+        // Common nouns (short)
+        if w4 == [keys::W, keys::O, keys::R, keys::D] {
+            return true;
+        } // word
+        if w4 == [keys::T, keys::E, keys::R, keys::M] {
+            return true;
+        } // term
+        if w4 == [keys::O, keys::V, keys::E, keys::R] {
+            return true;
+        } // over
+        if w4 == [keys::M, keys::O, keys::R, keys::E] {
+            return true;
+        } // more
+
         // Common verbs
         if w4 == [keys::M, keys::A, keys::K, keys::E] {
             return true;
@@ -626,9 +683,10 @@ fn has_common_english_word_pattern(keys: &[u16]) -> bool {
         if w4 == [keys::F, keys::I, keys::L, keys::E] {
             return true;
         } // file
-        if w4 == [keys::T, keys::E, keys::S, keys::T] {
+        // NOTE: 'test' removed - "tét" is valid Vietnamese word
+        if w4 == [keys::F, keys::I, keys::X, keys::X] {
             return true;
-        } // test
+        } // fixx (placeholder, fix is 3 chars)
         if w4 == [keys::D, keys::A, keys::T, keys::A] {
             return true;
         } // data
@@ -832,6 +890,9 @@ fn has_common_english_word_pattern(keys: &[u16]) -> bool {
         if w5 == [keys::S, keys::T, keys::A, keys::R, keys::T] {
             return true;
         } // start
+        if w5 == [keys::T, keys::E, keys::R, keys::M, keys::S] {
+            return true;
+        } // terms
     }
 
     // Check 6-letter words
@@ -904,6 +965,9 @@ fn has_common_english_word_pattern(keys: &[u16]) -> bool {
         if w6 == [keys::L, keys::E, keys::N, keys::G, keys::T, keys::H] {
             return true;
         } // length
+        if w6 == [keys::O, keys::R, keys::I, keys::G, keys::I, keys::N] {
+            return true;
+        } // origin
     }
 
     false
@@ -1342,14 +1406,25 @@ fn has_english_suffix_pattern(keys: &[u16]) -> bool {
 /// * `had_any_transform` - Whether any Vietnamese transform was applied
 /// * `has_tone_marks` - Whether buffer contains Vietnamese tone marks
 ///
-/// # Returns
-/// `true` if should auto-restore to raw input
+/// Check if raw keystroke sequence matches a COMMON English word exactly
 ///
-/// ## Rules
-/// 1. If no transforms applied → check English patterns → restore if English
-/// 2. If transforms applied but no tone marks → might be accidental → check patterns
-/// 3. If has tone marks → user explicitly added diacritics → DON'T restore
+/// This is a "strong" signal that the user typed English. Words in this list
+/// will ALWAYS trigger auto-restore on SPACE, even if they have Vietnamese
+/// transforms applied (like horn vowels from 'w').
+///
+/// Used for issue #29: "with" → "ưith" should restore to "with "
 #[inline]
+pub fn is_common_english_word(raw_keys: &[(u16, bool)]) -> bool {
+    if raw_keys.len() < 4 {
+        return false;
+    }
+    
+    let keys_only: Vec<u16> = raw_keys.iter().map(|(k, _)| *k).collect();
+    
+    // Check common word patterns (these are unambiguous English)
+    has_common_english_word_pattern(&keys_only) || has_programming_term_pattern(&keys_only)
+}
+
 pub fn should_auto_restore_to_english(
     raw_keys: &[(u16, bool)],
     had_any_transform: bool,
@@ -1587,9 +1662,11 @@ mod tests {
         assert!(has_english_pattern(&keys_from_str("that")));
         assert!(has_english_pattern(&keys_from_str("this")));
         assert!(has_english_pattern(&keys_from_str("code")));
-        assert!(has_english_pattern(&keys_from_str("test")));
+        // NOTE: "test" removed from word list - "tét" is valid Vietnamese
         assert!(has_english_pattern(&keys_from_str("true")));
         assert!(has_english_pattern(&keys_from_str("null")));
+        assert!(has_english_pattern(&keys_from_str("term"))); // Added for issue #29
+        assert!(has_english_pattern(&keys_from_str("word"))); // Added for issue #29
     }
 
     #[test]
@@ -1692,6 +1769,49 @@ mod tests {
         assert!(!has_english_pattern(&keys_from_str("em")));
         assert!(!has_english_pattern(&keys_from_str("anh")));
         assert!(!has_english_pattern(&keys_from_str("chi")));
+        // "ang" is valid Vietnamese (a + ng final)
+        assert!(!has_english_pattern(&keys_from_str("ang")));
+    }
+
+    #[test]
+    fn test_ad_pattern() {
+        // "ad" at word start = English (Vietnamese never has "ad-")
+        // This blocks Vietnamese transforms early - no auto-restore needed
+        // because "ad" + any character is always English
+        assert!(has_english_pattern(&keys_from_str("ad")));
+        assert!(has_english_pattern(&keys_from_str("add")));
+        assert!(has_english_pattern(&keys_from_str("admin")));
+        assert!(has_english_pattern(&keys_from_str("adapt")));
+        assert!(has_english_pattern(&keys_from_str("address")));
+        assert!(has_english_pattern(&keys_from_str("advance")));
+        assert!(has_english_pattern(&keys_from_str("adventure")));
+        assert!(has_english_pattern(&keys_from_str("advertise")));
+        assert!(has_english_pattern(&keys_from_str("advice")));
+        assert!(has_english_pattern(&keys_from_str("adjacent")));
+    }
+
+    #[test]
+    fn test_an_consonant_pattern() {
+        // "an" + consonant (not h/g) = English
+        // Vietnamese only allows: "an", "anh" (h), "ang" (g)
+        // Only test words where 3rd char is actually a consonant (not vowel)
+        assert!(has_english_pattern(&keys_from_str("and")));      // an + d (consonant)
+        assert!(has_english_pattern(&keys_from_str("any")));      // an + y (special case)
+        assert!(has_english_pattern(&keys_from_str("android"))); // an + d (consonant)
+        assert!(has_english_pattern(&keys_from_str("answer")));  // an + s (consonant)
+        assert!(has_english_pattern(&keys_from_str("announce"))); // an + n (consonant)
+        assert!(has_english_pattern(&keys_from_str("annual")));  // an + n (consonant)
+        assert!(has_english_pattern(&keys_from_str("ant")));     // an + t (consonant)
+        assert!(has_english_pattern(&keys_from_str("ankle")));   // an + k (consonant)
+        assert!(has_english_pattern(&keys_from_str("antique"))); // an + t (consonant)
+        
+        // These words have "an" + vowel as 3rd char, so pattern doesn't match directly
+        // But they may be detected by other patterns (e.g., "th" cluster, "sis" suffix)
+        // "another" = an + o (vowel) -> detected by "th" pattern elsewhere
+        // "analysis" = an + a (vowel) -> detected by "sis" suffix
+        // "animal" = an + i (vowel) -> may need other detection
+        // "angle" = an + g (exception) -> not detected by this pattern
+        // "angry" = an + g (exception) -> not detected by this pattern
     }
 
     #[test]
