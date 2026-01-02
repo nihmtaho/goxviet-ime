@@ -433,7 +433,8 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
     // Note: 'x' in Telex is BOTH a final consonant AND a tone modifier (ngã mark).
     // 
     // MUST BE SPECIFIC: Only block known English patterns, not Vietnamese!
-    // - Block: "fix" (f+i+x), "hex" (h+e+x)
+    // - Block: "fix" (f+i+x), "hex" (h+e+x) - ONLY with X modifier
+    // - Allow: "hej" (h+e+j) → "hệ" is valid Vietnamese (Issue #27)
     // - Allow: "mix" (m+i+x) → "mĩ" is valid Vietnamese
     // - Allow: "six" (s+i+x) → "sĩ" is valid Vietnamese
     // - Allow: "tax" (t+a+x) → "tã" is valid Vietnamese
@@ -441,7 +442,9 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
     // - Allow: "sex" (s+e+x) → "sẽ" is valid Vietnamese
     //
     // Strategy: Only block very specific English patterns that are NEVER Vietnamese
-    if matches!(modifier_key, keys::X | keys::J) 
+    // CRITICAL: Only block X modifier, NOT J modifier - J is for nặng tone which is valid Vietnamese
+    // Issue #27: "heej" → "hệ" was incorrectly blocked because J was included in this check
+    if modifier_key == keys::X
         && syllable.vowel.len() == 1 
         && syllable.final_c.is_empty()
         && syllable.initial.len() == 1  // Must be single consonant
@@ -451,6 +454,7 @@ pub fn is_foreign_word_pattern(buffer_keys: &[u16], modifier_key: u16) -> bool {
         
         // VERY SPECIFIC: Only block F+I+X (fix) and H+E+X (hex)
         // These are common English words but rare Vietnamese syllables
+        // Note: Do NOT block J modifier here - "hệ" (h+e+j), "fị" (f+i+j) are valid Vietnamese
         if (initial == keys::F && vowel == keys::I)  // fix
             || (initial == keys::H && vowel == keys::E)  // hex
         {

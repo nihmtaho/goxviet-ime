@@ -3,6 +3,8 @@
 //  GoxViet
 //
 //  Manages application state and per-app Vietnamese input mode settings
+//  Default: English input mode (Vietnamese disabled)
+//  Per-app: Only stores apps with Vietnamese ENABLED (max 100 apps)
 //
 
 import Foundation
@@ -19,7 +21,7 @@ class AppState {
     // MARK: - Properties
 
     /// Whether Vietnamese input is currently enabled
-    private(set) var isEnabled: Bool = true
+    private(set) var isEnabled: Bool = false
 
     /// Whether smart per-app mode is enabled
     var isSmartModeEnabled: Bool {
@@ -93,7 +95,9 @@ class AppState {
         static let escRestore = "com.goxviet.ime.escRestore"
         static let freeTone = "com.goxviet.ime.freeTone"
         static let perAppModes = "com.goxviet.ime.perAppModes"
+        static let knownApps = "com.goxviet.ime.knownApps"
         static let autoDisableNonLatin = "com.goxviet.ime.autoDisableNonLatin"
+        static let hasLaunchedBefore = "com.goxviet.ime.hasLaunchedBefore"
     }
 
     // MARK: - Initialization
@@ -101,6 +105,14 @@ class AppState {
     private init() {
         // Set defaults if not previously configured
         registerDefaults()
+        
+        // On first launch, Vietnamese input is disabled by default
+        // This ensures users explicitly enable it rather than being surprised by transforms
+        if !UserDefaults.standard.bool(forKey: Keys.hasLaunchedBefore) {
+            UserDefaults.standard.set(true, forKey: Keys.hasLaunchedBefore)
+            isEnabled = false
+            Log.info("First launch detected - Vietnamese input disabled by default")
+        }
     }
 
     private func registerDefaults() {
@@ -139,25 +151,28 @@ class AppState {
     // MARK: - Per-App Mode Management
 
     /// Get the saved mode for a specific app
-    /// Returns true (enabled) by default if no specific setting exists
+    /// Returns false (disabled/English) by default if no specific setting exists
+    /// Only apps with Vietnamese ENABLED are stored
     func getPerAppMode(bundleId: String) -> Bool {
         guard let dict = UserDefaults.standard.dictionary(forKey: Keys.perAppModes) as? [String: Bool] else {
-            return true  // Default: enabled
+            return false  // Default: disabled (English mode)
         }
 
-        // Return stored value, or true if not found
-        return dict[bundleId] ?? true
+        // Return stored value, or false if not found (default: English)
+        return dict[bundleId] ?? false
     }
 
     /// Save the mode for a specific app
-    /// Only stores apps that are disabled (to save space)
+    /// Only stores apps with Vietnamese ENABLED (default is disabled/English)
     /// Enforces MAX_PER_APP_ENTRIES limit to prevent unbounded memory growth
     func setPerAppMode(bundleId: String, enabled: Bool) {
         var dict = UserDefaults.standard.dictionary(forKey: Keys.perAppModes) as? [String: Bool] ?? [:]
 
-        if enabled {
-            // Remove from dictionary if enabled (default state)
+        if !enabled {
+            // Remove from dictionary if disabled (default state = English)
             dict.removeValue(forKey: bundleId)
+            // Also remove from known apps list
+            removeKnownApp(bundleId: bundleId)
         } else {
             // Check capacity limit before adding new entry
             if dict[bundleId] == nil && dict.count >= MAX_PER_APP_ENTRIES {
@@ -166,13 +181,15 @@ class AppState {
                 return
             }
 
-            // Store only disabled apps
-            dict[bundleId] = false
+            // Store only Vietnamese-enabled apps
+            dict[bundleId] = true
+            // Auto-record as known app for Saved Applications UI
+            recordKnownApp(bundleId: bundleId)
         }
 
         UserDefaults.standard.set(dict, forKey: Keys.perAppModes)
 
-        Log.info("Per-app mode saved: \(bundleId) = \(enabled ? "enabled" : "disabled")")
+        Log.info("Per-app mode saved: \(bundleId) = \(enabled ? "Vietnamese" : "English")")
     }
 
     /// Clear per-app settings for a specific app (reset to default)
@@ -180,6 +197,9 @@ class AppState {
         var dict = UserDefaults.standard.dictionary(forKey: Keys.perAppModes) as? [String: Bool] ?? [:]
         dict.removeValue(forKey: bundleId)
         UserDefaults.standard.set(dict, forKey: Keys.perAppModes)
+
+        // Also remove from known apps list so UI no longer shows it as "Saved"
+        removeKnownApp(bundleId: bundleId)
 
         Log.info("Per-app mode cleared: \(bundleId)")
     }
@@ -192,6 +212,7 @@ class AppState {
     /// Clear all per-app settings
     func clearAllPerAppModes() {
         UserDefaults.standard.removeObject(forKey: Keys.perAppModes)
+        UserDefaults.standard.removeObject(forKey: Keys.knownApps)
         Log.info("All per-app modes cleared")
     }
 
@@ -209,6 +230,56 @@ class AppState {
     /// Get maximum capacity for per-app settings
     func getPerAppModesCapacity() -> Int {
         return MAX_PER_APP_ENTRIES
+    }
+
+    // MARK: - Known Apps Tracking (for UI)
+
+    /// Record an app as "known" so the UI can show it in Saved Applications.
+    /// Only called when Vietnamese is ENABLED for an app.
+    ///
+    /// This is bounded by MAX_PER_APP_ENTRIES to avoid unbounded storage growth.
+    func recordKnownApp(bundleId: String) {
+        guard !bundleId.isEmpty else { return }
+
+        var known = UserDefaults.standard.array(forKey: Keys.knownApps) as? [String] ?? []
+
+        // Already tracked
+        if known.contains(bundleId) { return }
+
+        // Enforce capacity
+        if known.count >= MAX_PER_APP_ENTRIES {
+            Log.warning("Known apps at capacity (\(MAX_PER_APP_ENTRIES)). Not recording: \(bundleId)")
+            return
+        }
+
+        known.append(bundleId)
+        UserDefaults.standard.set(known, forKey: Keys.knownApps)
+    }
+
+    /// Remove an app from the known list (UI will no longer show it as saved)
+    func removeKnownApp(bundleId: String) {
+        var known = UserDefaults.standard.array(forKey: Keys.knownApps) as? [String] ?? []
+        guard let idx = known.firstIndex(of: bundleId) else { return }
+        known.remove(at: idx)
+        UserDefaults.standard.set(known, forKey: Keys.knownApps)
+    }
+
+    /// Get all known apps (bundle IDs) for Saved Applications UI
+    func getKnownApps() -> [String] {
+        return UserDefaults.standard.array(forKey: Keys.knownApps) as? [String] ?? []
+    }
+
+    /// Get a map of known apps -> effective enabled state (true/false)
+    /// Effective state is computed from per-app overrides (default: disabled/English).
+    func getKnownAppsWithStates() -> [String: Bool] {
+        let known = getKnownApps()
+        guard !known.isEmpty else { return [:] }
+
+        var result: [String: Bool] = [:]
+        for bundleId in known {
+            result[bundleId] = getPerAppMode(bundleId: bundleId)
+        }
+        return result
     }
 
     /// Get human-readable app name from bundle ID
