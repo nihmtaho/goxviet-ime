@@ -17,6 +17,7 @@ enum InjectionMethod {
     case slow           // Terminals/Electron: backspace + text with higher delays
     case selection      // Browser address bars: Shift+Left select + type replacement
     case autocomplete   // Spotlight: Forward Delete + backspace + text via proxy
+    case axDirect       // Browser address bars: AX API direct text manipulation (bypasses autocomplete)
 }
 
 // MARK: - Key Codes
@@ -55,6 +56,8 @@ class TextInjector {
             injectViaSelection(bs: bs, text: text, delays: delays)
         case .autocomplete:
             injectViaAutocomplete(bs: bs, text: text, proxy: proxy)
+        case .axDirect:
+            injectViaAXWithFallback(bs: bs, text: text, proxy: proxy)
         }
     }
     
@@ -129,6 +132,92 @@ class TextInjector {
         // Type replacement text
         postText(text, source: src, proxy: proxy)
         Log.send("auto", bs, text)
+    }
+    
+    // MARK: - AX API Direct Injection
+    
+    /// AX API direct text manipulation for browser address bars
+    /// Bypasses autocomplete behavior by directly setting text field value via Accessibility API
+    /// Returns true if successful, false if caller should fallback to synthetic events
+    private func injectViaAX(bs: Int, text: String) -> Bool {
+        // Get focused element
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let ref = focusedRef else {
+            Log.info("AX: no focus")
+            return false
+        }
+        let axEl = ref as! AXUIElement
+        
+        // Read current text value
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axEl, kAXValueAttribute as CFString, &valueRef) == .success else {
+            Log.info("AX: no value")
+            return false
+        }
+        let fullText = (valueRef as? String) ?? ""
+        
+        // Read cursor position and selection
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+              let axRange = rangeRef else {
+            Log.info("AX: no range")
+            return false
+        }
+        var range = CFRange()
+        guard AXValueGetValue(axRange as! AXValue, .cfRange, &range), range.location >= 0 else {
+            Log.info("AX: bad range")
+            return false
+        }
+        
+        let cursor = range.location
+        let selection = range.length
+        
+        // Handle autocomplete: when selection > 0, text after cursor is autocomplete suggestion
+        // Example: "a|rc://chrome-urls" where "|" is cursor, "rc://..." is selected suggestion
+        let userText = (selection > 0 && cursor <= fullText.count)
+            ? String(fullText.prefix(cursor))
+            : fullText
+        
+        // Calculate replacement: delete `bs` chars before cursor, insert `text`
+        let deleteStart = max(0, cursor - bs)
+        let prefix = String(userText.prefix(deleteStart))
+        let suffix = String(userText.dropFirst(cursor))
+        let newText = (prefix + text + suffix).precomposedStringWithCanonicalMapping
+        
+        // Write new value
+        guard AXUIElementSetAttributeValue(axEl, kAXValueAttribute as CFString, newText as CFTypeRef) == .success else {
+            Log.info("AX: write failed")
+            return false
+        }
+        
+        // Update cursor to end of inserted text
+        var newCursor = CFRange(location: deleteStart + text.count, length: 0)
+        if let newRange = AXValueCreate(.cfRange, &newCursor) {
+            AXUIElementSetAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, newRange)
+        }
+        
+        Log.send("ax", bs, text)
+        return true
+    }
+    
+    /// Try AX injection with retries, fallback to selection method if all fail
+    /// Browser address bars can be busy with autocomplete, causing AX API to fail temporarily
+    private func injectViaAXWithFallback(bs: Int, text: String, proxy: CGEventTapProxy) {
+        // Try AX API up to 3 times (address bar might be busy with autocomplete)
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                usleep(5000) // Small delay before retry
+            }
+            if injectViaAX(bs: bs, text: text) {
+                return // Success
+            }
+        }
+        
+        // Fallback to selection method
+        Log.info("AX: fallback to selection")
+        injectViaSelection(bs: bs, text: text, delays: (1000, 3000, 2000))
     }
     
     // MARK: - Helpers
@@ -245,33 +334,49 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Spotlight - use autocomplete method with Forward Delete to clear suggestions
     if bundleId == "com.apple.Spotlight" { Log.method("auto:spotlight"); return (.autocomplete, (0, 0, 0)) }
     
-    // Browser address bars (AXTextField with autocomplete)
-    let browsers = [
-        // Chromium-based
+    // Chromium-based browser address bars - use AX API direct manipulation
+    // Backspace method fails due to Chromium's autocomplete behavior (issue #26)
+    // AX API bypasses autocomplete by directly setting text field value
+    let chromiumBrowsers = [
         "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
         "org.chromium.Chromium", "com.brave.Browser", "com.brave.Browser.beta",
         "com.brave.Browser.nightly", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta",
         "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.vivaldi.Vivaldi",
         "com.vivaldi.Vivaldi.snapshot", "ru.yandex.desktop.yandex-browser",
-        // Opera
+        // Opera (Chromium-based)
         "com.opera.Opera", "com.operasoftware.Opera", "com.operasoftware.OperaGX",
         "com.operasoftware.OperaAir", "com.opera.OperaNext",
-        // Firefox-based
+        // Arc & Others (Chromium-based)
+        "company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia",
+        "com.sigmaos.sigmaos.macos", "com.pushplaylabs.sidekick",
+        "com.firstversionist.polypane", "ai.perplexity.comet", "com.duckduckgo.macos.browser"
+    ]
+    if chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
+        Log.method("ax:chromium")
+        return (.axDirect, (0, 0, 0))
+    }
+    
+    // Firefox-based browsers - use AX API for address bar
+    let firefoxBrowsers = [
         "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
         "org.waterfoxproject.waterfox", "io.gitlab.librewolf-community.librewolf",
         "one.ablaze.floorp", "org.torproject.torbrowser", "net.mullvad.mullvadbrowser",
-        // Safari
-        "com.apple.Safari", "com.apple.SafariTechnologyPreview",
-        // WebKit-based
-        "com.kagi.kagimacOS",
-        // Arc & Others
-        "company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia",
-        "app.zen-browser.zen", "com.sigmaos.sigmaos.macos", "com.pushplaylabs.sidekick",
-        "com.firstversionist.polypane", "ai.perplexity.comet", "com.duckduckgo.macos.browser"
+        "app.zen-browser.zen"
     ]
-    // Browser address bars - use fast backspace method to avoid text highlighting effect
-    // Selection method causes visible "selection then delete" behavior which is jarring
-    if browsers.contains(bundleId) && role == "AXTextField" { Log.method("fast:browser"); return (.fast, (1000, 2000, 1000)) }
+    if firefoxBrowsers.contains(bundleId) && (role == "AXTextField" || role == "AXWindow") {
+        Log.method("ax:firefox")
+        return (.axDirect, (0, 0, 0))
+    }
+    
+    // Safari - use selection method (different behavior from Chromium)
+    let safariBrowsers = [
+        "com.apple.Safari", "com.apple.SafariTechnologyPreview",
+        "com.kagi.kagimacOS"
+    ]
+    if safariBrowsers.contains(bundleId) && role == "AXTextField" {
+        Log.method("sel:safari")
+        return (.selection, (0, 0, 0))
+    }
     if role == "AXTextField" && bundleId.hasPrefix("com.jetbrains") { Log.method("sel:jb"); return (.selection, (0, 0, 0)) }
     
     // Microsoft Office apps - use backspace method instead of selection
@@ -438,4 +543,3 @@ func getWordToRestoreOnBackspace() -> String? {
     Log.info("restore: word '\(word)' not Vietnamese")
     return nil
 }
-
