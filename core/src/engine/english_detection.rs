@@ -271,6 +271,23 @@ fn has_early_english_pattern(keys: &[u16]) -> bool {
         }
     }
 
+    // Pattern: "ak", "az", "ah" at word start (INVALID Vietnamese syllables)
+    // Vietnamese: "ak", "az", "ah" are NOT valid syllable patterns
+    // - "ak": No Vietnamese words start with "ak" (vowel + k is invalid initial pattern)
+    // - "az": No Vietnamese words start with "az" (vowel + z is invalid, z is tone marker)
+    // - "ah": "anh" is valid, but "ah" + other chars (not 'n') is invalid
+    // These patterns should block transforms immediately (not auto-restore, just block)
+    if len >= 2 && keys[0] == keys::A {
+        let second = keys[1];
+        if second == keys::K || second == keys::Z {
+            return true;
+        }
+        // "ah" followed by anything except "n" (which would make "ahn..." → invalid anyway)
+        if second == keys::H && len >= 3 && keys[2] != keys::N {
+            return true;
+        }
+    }
+
     false
 }
 
@@ -1824,6 +1841,46 @@ mod tests {
         assert!(!has_english_pattern(&keys_from_str("nga"))); // ng
         assert!(!has_english_pattern(&keys_from_str("pha"))); // ph
         assert!(!has_english_pattern(&keys_from_str("gia"))); // gi
+    }
+
+    #[test]
+    fn test_ak_az_ah_invalid_patterns() {
+        // "ak", "az", "ah" are INVALID Vietnamese syllable patterns
+        // These should be blocked immediately (not auto-restore, just block transforms)
+        
+        // "ak" pattern - no Vietnamese words start with "ak"
+        assert!(has_english_pattern(&keys_from_str("ak")));
+        assert!(has_english_pattern(&keys_from_str("akt")));
+        assert!(has_english_pattern(&keys_from_str("ako")));
+        
+        // "az" pattern - no Vietnamese words start with "az" (z is tone marker only)
+        assert!(has_english_pattern(&keys_from_str("az")));
+        assert!(has_english_pattern(&keys_from_str("aze")));
+        assert!(has_english_pattern(&keys_from_str("azu")));
+        
+        // "ah" + non-'n' pattern - "anh" is valid, but "ah" + other chars is not
+        assert!(has_english_pattern(&keys_from_str("aht")));
+        assert!(has_english_pattern(&keys_from_str("aho")));
+        assert!(has_english_pattern(&keys_from_str("aha")));
+        
+        // "anh" should NOT be detected as English (valid Vietnamese)
+        assert!(!has_english_pattern(&keys_from_str("anh")));
+    }
+
+    #[test]
+    fn test_ethnic_minority_place_names() {
+        // "kr" cluster and "k" final for ethnic minority place names
+        // These should NOT be detected as English patterns
+        // (They're handled separately in Vietnamese validation constants)
+        
+        // "kr" initial - not detected as English (e.g., "Krông Búk")
+        assert!(!has_english_pattern(&keys_from_str("krong")));
+        assert!(!has_english_pattern(&keys_from_str("kra")));
+        
+        // Words ending with "k" - not detected as English (e.g., "Đắk Lắk")
+        // Note: single "k" alone is not enough to trigger detection
+        assert!(!has_english_pattern(&keys_from_str("dak")));
+        assert!(!has_english_pattern(&keys_from_str("lak")));
     }
 
     // ===== Auto-restore tests =====

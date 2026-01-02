@@ -29,12 +29,14 @@ pub const VALID_INITIALS_1: &[u16] = &[
     keys::X,
 ];
 
-/// Valid double initial consonants (10 digraphs)
+/// Valid double initial consonants (11 digraphs)
+/// Note: "kr" is included for ethnic minority place names (e.g., "Krông Búk")
 pub const VALID_INITIALS_2: &[[u16; 2]] = &[
     [keys::C, keys::H], // ch
     [keys::G, keys::H], // gh
     [keys::G, keys::I], // gi
     [keys::K, keys::H], // kh
+    [keys::K, keys::R], // kr (ethnic minority place names: Krông Búk)
     [keys::N, keys::G], // ng
     [keys::N, keys::H], // nh
     [keys::P, keys::H], // ph
@@ -48,8 +50,10 @@ pub const VALID_INITIALS_2: &[[u16; 2]] = &[
 // =============================================================================
 
 /// Valid single final consonants
+/// Note: "k" is included for ethnic minority place names (e.g., "Đắk Lắk")
 pub const VALID_FINALS_1: &[u16] = &[
     keys::C,
+    keys::K, // ethnic minority place names: Đắk Lắk
     keys::M,
     keys::N,
     keys::P,

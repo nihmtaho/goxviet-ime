@@ -2057,6 +2057,28 @@ impl Engine {
         }
         
         // ─────────────────────────────────────────────────────────────────────
+        // "AK", "AZ", "AH" PATTERNS AT START (INVALID VIETNAMESE SYLLABLES)
+        // ─────────────────────────────────────────────────────────────────────
+        // Pattern: "ak", "az", "ah" at word start - INVALID Vietnamese syllables
+        // Vietnamese: "ak", "az", "ah" are NOT valid syllable patterns
+        // - "ak": No Vietnamese words start with "ak" (vowel + k is invalid initial pattern)
+        // - "az": No Vietnamese words start with "az" (vowel + z is invalid, z is tone marker)
+        // - "ah": "anh" is valid, but "ah" + other chars (not 'n') is invalid
+        // 
+        // These patterns should block transforms immediately (not auto-restore, just block)
+        // This prevents accidental transforms in edge cases and invalid input
+        if keys.len() >= 2 && keys[0] == keys::A {
+            let second = keys[1];
+            if second == keys::K || second == keys::Z {
+                return true;
+            }
+            // "ah" followed by anything except "n" (which would make "ahn..." → invalid anyway)
+            if second == keys::H && keys.len() >= 3 && keys[2] != keys::N {
+                return true;
+            }
+        }
+        
+        // ─────────────────────────────────────────────────────────────────────
         // DOUBLE CONSONANT DETECTION (DEFINITE ENGLISH)
         // ─────────────────────────────────────────────────────────────────────
         // Pattern: Double consonants (except d, c, g which have Vietnamese shortcuts)
@@ -2373,6 +2395,106 @@ mod tests {
 
         // Optional: commit with space should keep the Vietnamese word and not revert
         // (word boundary behavior is tested elsewhere; this ensures no surprise reversion).
+    }
+
+    #[test]
+    fn test_ak_az_ah_invalid_syllables_blocked() {
+        // Test: "ak", "az", "ah" patterns should be blocked from transforms
+        // These are INVALID Vietnamese syllable patterns and should pass through as-is
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Test "ak" pattern - should NOT transform
+        let ak_result = type_word(&mut e, "ak");
+        assert_eq!(ak_result, "ak", "'ak' should not transform (invalid Vietnamese syllable)");
+
+        // Reset engine
+        e = Engine::new();
+        e.set_method(0);
+        e.set_enabled(true);
+
+        // Test "az" pattern - should NOT transform
+        let az_result = type_word(&mut e, "az");
+        assert_eq!(az_result, "az", "'az' should not transform (invalid Vietnamese syllable)");
+
+        // Reset engine
+        e = Engine::new();
+        e.set_method(0);
+        e.set_enabled(true);
+
+        // Test "ah" + consonant (not 'n') - should NOT transform
+        let aht_result = type_word(&mut e, "aht");
+        assert_eq!(aht_result, "aht", "'aht' should not transform (invalid Vietnamese syllable)");
+
+        // Reset engine
+        e = Engine::new();
+        e.set_method(0);
+        e.set_enabled(true);
+
+        // Test "anh" - SHOULD work as valid Vietnamese
+        let anh_result = type_word(&mut e, "anh");
+        assert_eq!(anh_result, "anh", "'anh' is valid Vietnamese and should pass through");
+    }
+
+    #[test]
+    fn test_ethnic_minority_place_names_kr_cluster() {
+        use crate::data::keys;
+        
+        // Test: "kr" cluster should be valid for ethnic minority place names like "Krông Búk"
+        // Should NOT be detected as English and should allow Vietnamese transforms
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Type "krong" - should NOT be marked as English
+        e.on_key_ext(keys::K, false, false, false);
+        e.on_key_ext(keys::R, false, false, false);
+        e.on_key_ext(keys::O, false, false, false);
+        e.on_key_ext(keys::N, false, false, false);
+        e.on_key_ext(keys::G, false, false, false);
+
+        // Should have 5 chars in buffer and NOT be marked as English
+        assert_eq!(e.buf.len(), 5, "Should have 5 chars for 'krong'");
+        assert!(!e.is_english_word, "'krong' should NOT be marked as English (valid Vietnamese with kr initial)");
+        
+        // Verify we can apply Vietnamese transforms (add circumflex with 'o')
+        let _r = e.on_key_ext(keys::O, false, false, false);
+        
+        // Should allow transform (backspace > 0 means it's transforming)
+        // or at least not reject it
+        assert_eq!(e.is_english_word, false, "Should still allow Vietnamese transforms after typing 'o'");
+    }
+
+    #[test]
+    fn test_ethnic_minority_place_names_k_final() {
+        use crate::data::keys;
+        
+        // Test: "k" as final consonant should be valid for ethnic minority place names like "Đắk Lắk"
+        // Should allow Vietnamese transforms on vowels before 'k'
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        // Type "dak" with stroke and tone
+        e.on_key_ext(keys::D, false, false, false);
+        e.on_key_ext(keys::D, false, false, false); // dd -> đ
+        e.on_key_ext(keys::A, false, false, false);
+        e.on_key_ext(keys::A, false, false, false); // aa -> â
+        e.on_key_ext(keys::K, false, false, false);
+
+        // Should have applied stroke (dd->đ) and circumflex (aa->â)
+        let has_stroke = e.buf.iter().any(|c| c.stroke);
+        let has_circumflex = e.buf.iter().any(|c| c.key == keys::A && c.tone == 1);
+        
+        assert!(has_stroke, "Should have applied stroke transform (dd->đ)");
+        assert!(has_circumflex, "Should have applied circumflex mark (aa->â, tone=1)");
+
+        // Add sắc tone with 's'
+        let r = e.on_key_ext(keys::S, false, false, false);
+        
+        // Should apply tone
+        assert!(r.backspace > 0 || r.count > 0, "Should apply tone transform");
     }
 
     #[test]
