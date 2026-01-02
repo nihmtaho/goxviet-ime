@@ -517,6 +517,10 @@ private struct AdvancedSettingsView: View {
 // MARK: - About View
 
 private struct AboutSettingsView: View {
+    @ObservedObject private var updateManager = UpdateManager.shared
+    @AppStorage("com.goxviet.ime.autoUpdateCheck") private var autoUpdateCheck = true
+    @AppStorage("com.goxviet.ime.autoUpdateInstall") private var autoUpdateInstall = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 32) {
@@ -563,6 +567,8 @@ private struct AboutSettingsView: View {
                 .padding(24)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
+                updatePanel
+
                 HStack(spacing: 18) {
                     Link(destination: URL(string: "https://github.com/goxviet/goxviet")!) {
                         Label("GitHub", systemImage: "link")
@@ -580,6 +586,79 @@ private struct AboutSettingsView: View {
                     .padding(.bottom, 12)
             }
             .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var updatePanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Updates", systemImage: "arrow.down.circle.fill")
+                .font(.headline)
+
+            Toggle("Automatically check for updates", isOn: $autoUpdateCheck)
+                .onChange(of: autoUpdateCheck) { _, newValue in
+                    AppState.shared.autoUpdateCheckEnabled = newValue
+                    UpdateManager.shared.refreshSchedule(triggerImmediate: newValue)
+                }
+
+            Toggle("Auto-install via Homebrew when available", isOn: $autoUpdateInstall)
+                .onChange(of: autoUpdateInstall) { _, newValue in
+                    AppState.shared.autoUpdateInstallEnabled = newValue
+                }
+                .help("Requires Homebrew to be installed on this Mac.")
+
+            HStack(spacing: 12) {
+                Button {
+                    UpdateManager.shared.checkForUpdates(userInitiated: true)
+                } label: {
+                    if updateManager.isChecking {
+                        ProgressView()
+                    } else {
+                        Label("Check Now", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(updateManager.isChecking)
+
+                Button {
+                    openReleasePage()
+                } label: {
+                    Label("Release Notes", systemImage: "doc.text")
+                }
+
+                if updateManager.updateAvailable, let latest = updateManager.latestVersion {
+                    Button {
+                        UpdateManager.shared.downloadUpdate()
+                    } label: {
+                        Label("Update to \(latest)", systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(updateManager.statusMessage)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                if let latest = updateManager.latestVersion {
+                    Text("Latest: \(latest)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let lastChecked = updateManager.lastChecked {
+                    Text("Last checked: \(RelativeDateTimeFormatter().localizedString(for: lastChecked, relativeTo: Date()))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func openReleasePage() {
+        if let url = URL(string: "https://github.com/nihmtaho/goxviet/releases/latest") {
+            NSWorkspace.shared.open(url)
         }
     }
 }
