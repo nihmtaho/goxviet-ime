@@ -49,6 +49,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Check and request Accessibility Permission
         // InputManager will only start if permission is granted
         checkAccessibilityPermission()
+
+        // Start background update checks
+        UpdateManager.shared.start()
         
         Log.info("Application launched successfully")
     }
@@ -318,6 +321,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             action: #selector(showSettings),
             keyEquivalent: ","
         ))
+
+        let updateMenuItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        updateMenuItem.target = self
+        menu.addItem(updateMenuItem)
         
         // View Log (Debug)
         #if DEBUG
@@ -516,6 +527,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings() {
         // Show settings window - creates on-demand, releases memory when closed
         SettingsWindowController.showSettings()
+    }
+
+    @objc func checkForUpdates() {
+        UpdateManager.shared.checkForUpdates(userInitiated: true)
     }
     
     // Removed clearPerAppSettings() - now handled in SettingsView
