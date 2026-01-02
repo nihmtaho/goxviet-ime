@@ -86,6 +86,58 @@ class AppState {
         }
     }
 
+    /// Automatically check for application updates in the background
+    var autoUpdateCheckEnabled: Bool {
+        get {
+            return UserDefaults.standard.bool(forKey: Keys.autoUpdateCheck)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.autoUpdateCheck)
+            Log.info("Auto update check: \(newValue ? "enabled" : "disabled")")
+        }
+    }
+
+    /// Automatically install updates via Homebrew when available
+    var autoUpdateInstallEnabled: Bool {
+        get {
+            return UserDefaults.standard.bool(forKey: Keys.autoUpdateInstall)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.autoUpdateInstall)
+            Log.info("Auto install updates (Homebrew): \(newValue ? "enabled" : "disabled")")
+        }
+    }
+
+    /// Timestamp of the last update check
+    var lastUpdateCheckDate: Date? {
+        get {
+            let timestamp = UserDefaults.standard.double(forKey: Keys.lastUpdateCheck)
+            return timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : nil
+        }
+        set {
+            if let date = newValue {
+                UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Keys.lastUpdateCheck)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.lastUpdateCheck)
+            }
+        }
+    }
+
+    /// The last version we already notified the user about (prevents repeated alerts)
+    var lastNotifiedUpdateVersion: String? {
+        get {
+            let version = UserDefaults.standard.string(forKey: Keys.lastNotifiedUpdateVersion) ?? ""
+            return version.isEmpty ? nil : version
+        }
+        set {
+            if let value = newValue, !value.isEmpty {
+                UserDefaults.standard.set(value, forKey: Keys.lastNotifiedUpdateVersion)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Keys.lastNotifiedUpdateVersion)
+            }
+        }
+    }
+
     // MARK: - Storage Keys
 
     private enum Keys {
@@ -98,6 +150,10 @@ class AppState {
         static let knownApps = "com.goxviet.ime.knownApps"
         static let autoDisableNonLatin = "com.goxviet.ime.autoDisableNonLatin"
         static let hasLaunchedBefore = "com.goxviet.ime.hasLaunchedBefore"
+        static let autoUpdateCheck = "com.goxviet.ime.autoUpdateCheck"
+        static let autoUpdateInstall = "com.goxviet.ime.autoUpdateInstall"
+        static let lastUpdateCheck = "com.goxviet.ime.lastUpdateCheck"
+        static let lastNotifiedUpdateVersion = "com.goxviet.ime.lastNotifiedUpdateVersion"
     }
 
     // MARK: - Initialization
@@ -122,7 +178,9 @@ class AppState {
             Keys.modernToneStyle: false,
             Keys.escRestore: true,
             Keys.freeTone: false,
-            Keys.autoDisableNonLatin: true  // Default: enabled for better UX with multilingual users
+            Keys.autoDisableNonLatin: true,  // Default: enabled for better UX with multilingual users
+            Keys.autoUpdateCheck: true,
+            Keys.autoUpdateInstall: false
         ]
 
         UserDefaults.standard.register(defaults: defaults)
