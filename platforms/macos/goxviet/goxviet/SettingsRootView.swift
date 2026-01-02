@@ -67,31 +67,31 @@ struct SettingsRootView: View {
         .background(.ultraThinMaterial)
         .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 240)
         .navigationTitle("Settings")
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: toggleSidebar) {
-                    Image(systemName: "sidebar.left")
-                }
-            }
-        }
+//        .toolbar {
+//            ToolbarItem(placement: .navigation) {
+//                Button(action: toggleSidebar) {
+//                    Image(systemName: "sidebar.left")
+//                }
+//            }
+//        }
     }
 
     // MARK: - Detail Panel
     private var detailPanel: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.regularMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(.white.opacity(0.12), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.15), radius: 24, x: 0, y: 18)
-                .padding(.vertical, 20)
-                .padding(.trailing, 20)
-                .padding(.leading, 6)
+                .padding(.vertical, 10)
+                .padding(.trailing, 10)
+                .padding(.leading, 10)
 
             detailContent
-                .padding(24)
+                .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .navigationTitle(selection?.title ?? "Settings")
@@ -131,7 +131,9 @@ struct SettingsRootView: View {
 
     // MARK: - Helpers
     private func loadPerAppModes() {
-        perAppModes = AppState.shared.getAllPerAppModes()
+        // Show *known* applications with their effective Vietnamese typing state.
+        // This reflects which apps are enabled/disabled, instead of only listing disabled overrides.
+        perAppModes = AppState.shared.getKnownAppsWithStates()
     }
 
     private func toggleSidebar() {
@@ -373,40 +375,12 @@ private struct PerAppSettingsView: View {
                 Label("Multi-Language Support", systemImage: "globe")
             }
 
-            if let currentApp = PerAppModeManager.shared.getCurrentAppName(),
-               let bundleId = PerAppModeManager.shared.getCurrentBundleId() {
-                Section {
-                    LabeledContent("Application") {
-                        VStack(alignment: .trailing, spacing: 4) {
-                            Text(currentApp)
-                                .fontWeight(.medium)
-                            Text(bundleId)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    let isEnabled = AppState.shared.getPerAppMode(bundleId: bundleId)
-                    LabeledContent("Status") {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(isEnabled ? Color.green : Color.gray)
-                                .frame(width: 8, height: 8)
-                            Text(isEnabled ? "Enabled" : "Disabled")
-                                .font(.caption)
-                        }
-                    }
-                } header: {
-                    Label("Current Application", systemImage: "app.fill")
-                }
-            }
-
             Section {
                 if perAppModes.isEmpty {
                     ContentUnavailableView(
                         "No Applications Detected",
                         systemImage: "app.dashed",
-                        description: Text("Vietnamese input will be automatically disabled when you switch to certain apps.")
+                        description: Text("Saved Applications will show which apps have Vietnamese typing enabled or disabled.")
                     )
                 } else {
                     ForEach(Array(perAppModes.keys.sorted()), id: \.self) { bundleId in
@@ -418,6 +392,7 @@ private struct PerAppSettingsView: View {
                                     .foregroundStyle(isEnabled ? .green : .red)
 
                                 Button {
+                                    // Remove saved visibility + any override for this app
                                     AppState.shared.clearPerAppMode(bundleId: bundleId)
                                     reloadAction()
                                 } label: {

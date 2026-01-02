@@ -2169,6 +2169,27 @@ mod tests {
         ("dd", "đ"),
     ];
 
+    // Issue #27: Vietnamese syllables with nặng tone (j) on circumflex vowels
+    // These were incorrectly blocked because J modifier was grouped with X in foreign word detection
+    const TELEX_CIRCUMFLEX_WITH_NANG: &[(&str, &str)] = &[
+        ("heej", "hệ"),   // h + ê + nặng → hệ (Issue #27 main case)
+        ("eej", "ệ"),     // ê + nặng → ệ
+        ("aaj", "ậ"),     // â + nặng → ậ
+        ("ooj", "ộ"),     // ô + nặng → ộ
+        ("ees", "ế"),     // ê + sắc → ế (contrast test)
+        ("eef", "ề"),     // ê + huyền → ề
+        ("eer", "ể"),     // ê + hỏi → ể
+        ("eex", "ễ"),     // ê + ngã → ễ
+        ("heej ", "hệ "), // with space commit
+        ("beej", "bệ"),   // other initials work too
+        ("deej", "dệ"),
+        ("keej", "kệ"),
+        ("leej", "lệ"),
+        ("meej", "mệ"),
+        ("neej", "nệ"),
+        ("teej", "tệ"),
+    ];
+
     const VNI_BASIC: &[(&str, &str)] = &[
         ("a1", "á"),
         ("a2", "à"),
@@ -2272,6 +2293,14 @@ mod tests {
     #[test]
     fn test_telex_basic() {
         telex(TELEX_BASIC);
+    }
+
+    #[test]
+    fn test_telex_circumflex_with_nang() {
+        // Issue #27: Test Vietnamese syllables with nặng tone on circumflex vowels
+        // Bug: "heej" was producing "hêj" instead of "hệ"
+        // Fix: Only block X modifier for "hex" pattern, not J modifier for Vietnamese words
+        telex(TELEX_CIRCUMFLEX_WITH_NANG);
     }
 
     #[test]

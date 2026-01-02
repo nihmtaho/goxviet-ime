@@ -3,14 +3,16 @@
 //  GoxViet
 //
 //  Manages per-app Gõ Việt input mode settings
-//  Tracks active application and restores saved mode for each app
+//  Default: English input (Vietnamese disabled)
+//  Only tracks apps with Vietnamese ENABLED (max 100 apps)
 //
 
 import Foundation
 import Cocoa
 
 /// Manages per-application Vietnamese input mode
-/// Observes app switching and restores the last saved mode for each app
+/// Default: English input (Vietnamese disabled) for all apps
+/// Only stores apps where user explicitly enabled Vietnamese (max 100 apps)
 class PerAppModeManager {
     static let shared = PerAppModeManager()
     
@@ -55,6 +57,9 @@ class PerAppModeManager {
            let bundleId = frontmostApp.bundleIdentifier {
             currentBundleId = bundleId
             Log.info("PerAppModeManager started (current app: \(bundleId))")
+            
+            // Note: We no longer record all apps as "known" on start
+            // Only apps with Vietnamese ENABLED are tracked (via setPerAppMode)
             
             // Apply saved mode for current app if smart mode is enabled
             if AppState.shared.isSmartModeEnabled {
@@ -104,7 +109,12 @@ class PerAppModeManager {
         let previousBundleId = currentBundleId
         currentBundleId = bundleId
         
+        // Note: We no longer record all apps as "known" on switch
+        // Only apps with Vietnamese ENABLED are tracked (via setPerAppMode)
+        // This reduces resource usage and aligns with default-English behavior
+        
         // Save the current mode for the previous app (if smart mode is enabled)
+        // Only Vietnamese-enabled apps will be stored
         if let previousId = previousBundleId,
            AppState.shared.isSmartModeEnabled {
             let currentMode = AppState.shared.isEnabled
@@ -128,7 +138,7 @@ class PerAppModeManager {
             return
         }
         
-        // Get saved mode (default: enabled)
+        // Get saved mode (default: disabled/English)
         let savedMode = AppState.shared.getPerAppMode(bundleId: bundleId)
         
         // Apply the saved mode
@@ -142,7 +152,7 @@ class PerAppModeManager {
         )
         
         let appName = AppState.shared.getAppName(bundleId: bundleId)
-        Log.info("Mode restored for \(appName): \(savedMode ? "enabled" : "disabled")")
+        Log.info("Mode restored for \(appName): \(savedMode ? "Vietnamese" : "English")")
     }
     
     /// Explicitly set the state for the current app and save it
@@ -158,10 +168,11 @@ class PerAppModeManager {
         }
         
         // Save the mode for this app
+        // Note: setPerAppMode automatically handles recordKnownApp when enabled=true
         AppState.shared.setPerAppMode(bundleId: bundleId, enabled: enabled)
         
         let appName = AppState.shared.getAppName(bundleId: bundleId)
-        Log.info("State saved for \(appName): \(enabled ? "enabled" : "disabled")")
+        Log.info("State saved for \(appName): \(enabled ? "Vietnamese" : "English")")
     }
     
     /// Get the current app's bundle ID
