@@ -104,21 +104,33 @@ jobs:
 
           # Build for Apple Silicon (arm64)
           echo "🔨 Building for aarch64-apple-darwin..."
-          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin || { echo "cargo build aarch64 failed"; ls -la target/aarch64-apple-darwin/release || true; exit 1; }
 
           # Build for Intel (x86_64)
           echo "🔨 Building for x86_64-apple-darwin..."
-          cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin || { echo "cargo build x86_64 failed"; ls -la target/x86_64-apple-darwin/release || true; exit 1; }
 
           # Create universal binary using lipo
           echo "🔗 Creating universal binary..."
-          lipo -create \
-            target/aarch64-apple-darwin/release/libgoxviet_core.a \
-            target/x86_64-apple-darwin/release/libgoxviet_core.a \
-            -output ../platforms/macos/goxviet/libgoxviet_core.a
+          set -x
+          LIPO_IN1=target/aarch64-apple-darwin/release/libgoxviet_core.a
+          LIPO_IN2=target/x86_64-apple-darwin/release/libgoxviet_core.a
+          LIPO_OUT=../platforms/macos/goxviet/libgoxviet_core.a
+
+          echo "Checking inputs for lipo:"
+          ls -lh "$LIPO_IN1" || { echo "Missing $LIPO_IN1"; ls -la target/aarch64-apple-darwin/release || true; exit 1; }
+          ls -lh "$LIPO_IN2" || { echo "Missing $LIPO_IN2"; ls -la target/x86_64-apple-darwin/release || true; exit 1; }
+
+          lipo -create "$LIPO_IN1" "$LIPO_IN2" -output "$LIPO_OUT" || { echo "lipo failed"; exit 1; }
 
           echo "✅ Rust core built successfully (Universal Binary)"
-          ls -lh ../platforms/macos/goxviet/libgoxviet_core.a
+          ls -lh "$LIPO_OUT"
+          echo "Running otool -L on $LIPO_OUT (may be a static archive)"
+          otool -L "$LIPO_OUT" || true
+          set +x
+
+          # Print the directory contents for quick debugging
+          echo "Contents of platforms/macos/goxviet:" && ls -la ../platforms/macos/goxviet || true
 
       # ============================================
       # XCODE BUILD
@@ -127,6 +139,23 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.1.1'  # Use available Xcode version on hosted runner
+
+      - name: Check Rust core library presence before Xcode build
+        run: |
+          echo "Verifying libgoxviet_core.a presence and info"
+          FILE=platforms/macos/goxviet/libgoxviet_core.a
+          if [ -f "$FILE" ]; then
+            echo "Found $FILE"
+            ls -lh "$FILE"
+            echo "Archive content (if ar available):"
+            ar -t "$FILE" || true
+            echo "Attempting otool -L (will likely not show for static lib):"
+            otool -L "$FILE" || true
+          else
+            echo "ERROR: $FILE not found. Listing platform dir for diagnostics:"
+            ls -la platforms/macos/goxviet || true
+            exit 1
+          fi
 
       - name: Clean Xcode DerivedData
         run: |
