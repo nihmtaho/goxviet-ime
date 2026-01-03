@@ -44,6 +44,7 @@ impl ScreenTracker {
         }
     }
 
+    #[allow(dead_code)]
     fn set_method(&mut self, method: u8) {
         self.engine.set_method(method);
     }
@@ -94,6 +95,7 @@ impl ScreenTracker {
     }
 
     /// Clear the engine state (simulates word boundary)
+    #[allow(dead_code)]
     fn clear(&mut self) {
         self.engine.clear();
         self.screen.clear();

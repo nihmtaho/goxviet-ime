@@ -3,8 +3,8 @@
 //! Pattern-based transformation for Vietnamese diacritics.
 //! Scans entire buffer instead of case-by-case processing.
 
-use super::buffer::Buffer;
-use super::tone_positioning;
+use crate::engine::buffer::Buffer;
+use crate::engine::vietnamese::tone_positioning;
 use crate::data::{
     chars::{mark, tone},
     keys,
@@ -277,7 +277,7 @@ pub fn revert_stroke(buf: &mut Buffer) -> TransformResult {
 
 #[cfg(test)]
 mod tests {
-    use super::super::buffer::Char;
+    use crate::engine::buffer::Char;
     use super::*;
 
     fn setup_buffer(s: &str) -> Buffer {

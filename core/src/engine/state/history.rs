@@ -34,8 +34,8 @@
 //! }
 //! ```
 
-use super::buffer::Buffer;
-use super::raw_input_buffer::RawInputBuffer;
+use crate::engine::buffer::Buffer;
+use crate::engine::buffer::raw_input_buffer::RawInputBuffer;
 
 /// Ring buffer capacity (stores last N committed words)
 ///

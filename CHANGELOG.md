@@ -1,5 +1,21 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [1.5.0] - 2026-01-02
+
+### Added
+- **Trình quản lý cập nhật tự động**: GoxViet kiểm tra phiên bản mới mỗi 6 giờ, cho phép cập nhật với một click (mount DMG, copy app, restart tự động)
+- **Hỗ trợ đa ngôn ngữ**: Tự động vô hiệu hóa bộ gõ tiếng Việt khi chuyển sang bàn phím không Latin (Nhật, Hàn, Trung, v.v.), tự động khôi phục khi quay lại
+
+### Changed
+- **Quy trình xin quyền Accessibility**: Tự động phát hiện khi quyền được cấp, không cần nhấn "Check Again"
+- **Cài đặt DMG**: Loại bỏ Homebrew auto-install, chỉ hỗ trợ tải DMG trực tiếp từ GitHub
+
+### Fixed
+- Fix: Mất quyền Accessibility sau khi rebuild/cài lại (code signing không đổi)
+- Fix: Crash SIGABRT khi chạy từ Xcode (code signature mismatch giữa app và Rust library)
+- Fix: Gõ tiếng Việt sai trong thanh địa chỉ Chromium (Issue #26) - thêm phương thức injection `axDirect` qua Accessibility API
+
+
 ## [1.4.1] - 2026-01-02
 
 ### Added

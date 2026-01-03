@@ -107,6 +107,7 @@ fn assert_no_transform_telex(words: &[&str]) {
 
 /// Helper to test auto-restore on SPACE
 /// Types word, then SPACE, checks if restored to original + space
+#[allow(dead_code)]
 fn assert_auto_restore_on_space(word: &str) {
     use goxviet_core::data::keys;
     
