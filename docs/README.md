@@ -2,7 +2,7 @@
 
 Comprehensive documentation for Gõ Việt (GoxViet) project, organized by topic for easy navigation.
 
-**Total Documentation:** 74 files | **Lines:** 21,100+ | **Last Updated:** 2025-12-23
+**Total Documentation:** 75 files | **Lines:** 21,400+ | **Last Updated:** 2025-12-31
 
 ---
 
@@ -13,7 +13,7 @@ Comprehensive documentation for Gõ Việt (GoxViet) project, organized by topic
 ### 📚 TỔNG QUAN PHÂN LOẠI TÀI LIỆU
 
 #### 1. **Tài liệu TÍNH NĂNG** (Features, Shortcuts, Accessibility...)
-- Mô tả các chức năng chính: Smart Per-App, phím tắt, Accessibility, hướng dẫn sử dụng nhanh, checklist kiểm thử.
+- Mô tả các chức năng chính: Smart Per-App, phím tắt, Accessibility, Multi-Language Support, hướng dẫn sử dụng nhanh, checklist kiểm thử.
 - Mục tiêu: Giúp người dùng và lập trình viên hiểu rõ cách sử dụng, cấu hình, mở rộng các tính năng.
 
 #### 2. **Tài liệu IMPROVEMENT** (Performance, Optimization, Auto-Restore...)
@@ -58,6 +58,9 @@ docs/
 ### Quick Start
 - **[getting-started/QUICK_START.md](getting-started/QUICK_START.md)** - 5-minute setup guide
 - **[getting-started/TESTING_GUIDE.md](getting-started/TESTING_GUIDE.md)** - Comprehensive testing guide
+
+### Multi-Language Support ⭐ NEW
+- **[MULTI_LANGUAGE_SUPPORT.md](MULTI_LANGUAGE_SUPPORT.md)** - Auto-disable Vietnamese for non-Latin keyboards (288 lines)
 
 ### Deployment Guides ⭐ NEW
 - **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Full deployment with code signing & notarization
@@ -195,6 +198,7 @@ docs/
 - **[performance/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md](performance/guides/PERFORMANCE_OPTIMIZATION_GUIDE.md)** - Full implementation guide (430+ lines) ⭐
 - **[performance/guides/EDITOR_PERFORMANCE_OPTIMIZATION.md](performance/guides/EDITOR_PERFORMANCE_OPTIMIZATION.md)** - VSCode/Zed optimization
 - **[performance/guides/PERFORMANCE_FIX.md](performance/guides/PERFORMANCE_FIX.md)** - Performance fix details
+- **[performance/ENGLISH_DETECTION_PATTERNS.md](performance/ENGLISH_DETECTION_PATTERNS.md)** - 6-layer English detection patterns (181 lines) ⭐ NEW
 - **[STROKE_OPTIMIZATION.md](STROKE_OPTIMIZATION.md)** - Stroke & pattern validation optimization ⭐ NEW
 - **[RAPID_KEYSTROKE_HANDLING.md](RAPID_KEYSTROKE_HANDLING.md)** - Rapid keystroke handling (< 16ms) ⭐ NEW
 - **[MEMORY_OPTIMIZATION.md](MEMORY_OPTIMIZATION.md)** - Memory efficiency with RawInputBuffer ⭐ NEW

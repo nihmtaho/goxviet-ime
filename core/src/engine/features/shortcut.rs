@@ -3,7 +3,7 @@
 //! Allows users to define shortcuts like "vn" → "Việt Nam"
 //! Shortcuts can be specific to input methods (Telex/VNI) or apply to all.
 
-use super::buffer::MAX;
+use crate::engine::buffer::MAX;
 use std::collections::HashMap;
 
 /// Maximum replacement length in UTF-32 codepoints (matches Result.chars array size)
@@ -780,7 +780,7 @@ mod tests {
         
         // Empty table should have minimal memory
         let empty_usage = table.memory_usage();
-        assert!(empty_usage >= 0);
+        // Note: usize is always >= 0, so we just verify it exists
         
         // Add some shortcuts
         table.add(Shortcut::new("vn", "Việt Nam"));

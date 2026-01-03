@@ -3,7 +3,7 @@
 //! Whitelist-based validation for Vietnamese syllables.
 //! Uses valid patterns from docs/vietnamese-language-system.md Section 7.6.1
 
-use super::syllable::{parse, Syllable};
+use crate::engine::vietnamese::syllable::{parse, Syllable};
 use crate::data::chars::tone;
 use crate::data::constants;
 use crate::data::keys;
