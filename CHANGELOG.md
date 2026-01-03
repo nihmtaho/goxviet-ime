@@ -1,5 +1,21 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [1.5.1] - 2026-01-03
+
+### Added
+- advanced phonotactic analysis engine to support language decision and syllable validation (commit: `05a571d`)
+
+### Changed
+- consolidate English detection logic to use the phonotactic engine and refactor related modules (commit: `06baea7`, `4def9db`)
+- performance optimizations for the English-detection pipeline to reduce false positives and speed up validation (commit: `47dbf6d`)
+- phase-2 folder restructuring and refactor of engine modules for maintainability (commit: `4def9db`)
+- optimizations to `RawInputBuffer` and backspace handling to avoid buffer desync and improve undo/restore behaviour (commit: `b9ef1cd`, `982dbc2`)
+
+### Fixed
+- prevent auto-restore false positives for Vietnamese words; ensure auto-restore only triggers for confirmed English words (commit: `d6c793f`)
+- improve English detection to avoid false positives on valid Vietnamese syllables (commit: `3cef501`)
+
+
 ## [1.5.0] - 2026-01-02
 
 ### Added
