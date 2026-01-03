@@ -8,7 +8,7 @@
 //! These types are extracted from the main engine module for better organization
 //! and to enable reuse across different engine components.
 
-use super::buffer::MAX;
+use crate::engine::buffer::MAX;
 
 // ============================================================
 // FFI Result Types
