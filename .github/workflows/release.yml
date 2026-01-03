@@ -121,6 +121,9 @@ jobs:
           ls -lh "$LIPO_IN1" || { echo "Missing $LIPO_IN1"; ls -la target/aarch64-apple-darwin/release || true; exit 1; }
           ls -lh "$LIPO_IN2" || { echo "Missing $LIPO_IN2"; ls -la target/x86_64-apple-darwin/release || true; exit 1; }
 
+          # Ensure output directory exists
+          mkdir -p ../platforms/macos/goxviet
+
           lipo -create "$LIPO_IN1" "$LIPO_IN2" -output "$LIPO_OUT" || { echo "lipo failed"; exit 1; }
 
           echo "✅ Rust core built successfully (Universal Binary)"
