@@ -126,7 +126,7 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.2'  # Stable version compatible with macos-13
+          xcode-version: '26.1.1'  # Use available Xcode version on hosted runner
 
       - name: Clean Xcode DerivedData
         run: |
