@@ -1,7 +1,7 @@
 # DOCUMENTATION STRUCTURE
 
-**Cập nhật:** 2025-12-24  
-**Trạng thái:** ✅ Đã tổ chức lại, đồng bộ mục lục, bổ sung bản phát hành mới nhất.
+**Cập nhật:** 2025-12-31  
+**Trạng thái:** ✅ Đã tổ chức lại, đồng bộ mục lục, bổ sung tính năng Multi-Language Support.
 
 Tài liệu được chia theo chủ đề, dễ tra cứu, dễ bảo trì. Khi thêm tài liệu mới, luôn cập nhật mục lục tại đây và `README.md`.
 
@@ -28,9 +28,10 @@ docs/
 ## 🔄 Mục lục & phân loại
 
 - **getting-started/**: QUICK_START.md, TESTING_GUIDE.md
+- **Multi-Language Support**: MULTI_LANGUAGE_SUPPORT.md ⭐ NEW (auto-disable Vietnamese for non-Latin keyboards)
 - **shortcuts/**: SHORTCUT_GUIDE.md, SHORTCUT_QUICK_START.md, roadmap, testing
 - **fixes/**: backspace/, arrow-keys/, menubar-toggle/, telex/
-- **performance/**: guides/, summaries/, benchmark, tối ưu hóa
+- **performance/**: guides/, summaries/, benchmark, tối ưu hóa, ENGLISH_DETECTION_PATTERNS.md ⭐ NEW
 - **project/**: PROJECT_STATUS.md, CHANGELOG.md, roadmap, branding
 - **release-note/**: RELEASE_NOTE_1.3.2.md (mới nhất), các bản trước
 - **archive/**: Tổng hợp lịch sử, tài liệu cũ
@@ -39,6 +40,9 @@ docs/
 → Thêm file vào `release-note/`, cập nhật mục lục tại đây và `README.md`.
 
 **Xem sơ đồ trực quan:** `STRUCTURE_VISUAL.md`
+
+**Tính năng mới (2025-12-31):**  
+→ `MULTI_LANGUAGE_SUPPORT.md` - Tự động tắt Vietnamese khi dùng bàn phím Nhật/Hàn/Trung/...
 
 ## 🎯 Benefits of New Structure
 

@@ -156,7 +156,7 @@ fn bench_backspace_after_transform(c: &mut Criterion) {
         ("uow", "ươ", "compound_vowel"),
     ];
     
-    for (keys, result, name) in scenarios {
+    for (keys, _result, name) in scenarios {
         group.bench_function(name, |b| {
             b.iter(|| {
                 let mut engine = type_sequence(InputMethod::Telex, keys);

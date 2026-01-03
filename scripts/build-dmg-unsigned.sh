@@ -86,8 +86,8 @@ if [ -z "$BUILT_APP" ] || [ ! -d "$BUILT_APP" ]; then
     exit 1
 fi
 
-# Copy to dist folder
-cp -R "$BUILT_APP" dist/
+# Copy to dist folder with branded name
+cp -R "$BUILT_APP" dist/GoxViet.app
 echo -e "${GREEN}✓ Application built successfully (unsigned)${NC}"
 
 # Step 4: Prepare DMG directory
@@ -160,8 +160,8 @@ Requirements:
 
 Support:
 ========
-- GitHub: https://github.com/yourusername/goxviet
-- Issues: https://github.com/yourusername/goxviet/issues
+- GitHub: https://github.com/nihmtaho/goxviet
+- Issues: https://github.com/nihmtaho/goxviet/issues
 
 License: MIT
 

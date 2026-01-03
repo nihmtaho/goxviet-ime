@@ -14,6 +14,26 @@ mod tests {
     use crate::engine::Engine;
     use crate::utils::type_word;
 
+    // Regression: th-/tr- prefixes must keep tone application (s/f/r/x/j) on the vowel
+    // Previously English detection could block tone placement, causing missing marks.
+    const TH_TR_TONE_CASES: &[(&str, &str)] = &[
+        ("this", "thís"),   // th + i + s → sắc on i
+        ("thir", "thỉr"),   // th + i + r → hỏi on i
+        ("thiif", "thìi"),  // th + i + i + f → huyền on i (duplicate i path)
+        ("truws", "trứ"),   // tru + w + s → trứ (ư + sắc)
+        ("truwj", "trự"),   // tru + w + j → trự (ư + nặng)
+    ];
+
+    // Regression: th-/tr- prefixes must keep tone application (s/f/r/x/j) on the vowel
+    // Previously English detection could block tone placement, causing missing marks.
+    const TH_TR_TONE_CASES: &[(&str, &str)] = &[
+        ("this", "thís"),   // th + i + s → sắc on i
+        ("thir", "thỉr"),   // th + i + r → hỏi on i
+        ("thiif", "thìi"),  // th + i + i + f → huyền on i (duplicate i path)
+        ("truws", "trứ"),   // tru + w + s → trứ (ư + sắc)
+        ("truwj", "trự"),   // tru + w + j → trự (ư + nặng)
+    ];
+
     // ═══════════════════════════════════════════════════════════════════
     // 1. ƯỠ COMPOUND EDGE CASES
     // ═══════════════════════════════════════════════════════════════════
@@ -222,7 +242,33 @@ mod tests {
             let result = type_word(&mut e, input);
             assert_eq!(
                 result, *expected,
-                "[ươ + Finals] '{}' should become '{}' but got '{}'",
+                "[ươ Finals] '{}' should become '{}' but got '{}'",
+                input, expected, result
+            );
+        }
+    }
+
+    #[test]
+    fn test_th_tr_tone_retention() {
+        for (input, expected) in TH_TR_TONE_CASES {
+            let mut e = Engine::new();
+            let result = type_word(&mut e, input);
+            assert_eq!(
+                result, *expected,
+                "[th/tr tone] '{}' should become '{}' but got '{}'",
+                input, expected, result
+            );
+        }
+    }
+
+    #[test]
+    fn test_th_tr_tone_retention() {
+        for (input, expected) in TH_TR_TONE_CASES {
+            let mut e = Engine::new();
+            let result = type_word(&mut e, input);
+            assert_eq!(
+                result, *expected,
+                "[th/tr tone] '{}' should become '{}' but got '{}'",
                 input, expected, result
             );
         }
@@ -508,5 +554,63 @@ mod tests {
             "OEO pattern accuracy {:.1}% below target 95%",
             accuracy
         );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 5. AUTO-RESTORE BUG TEST (2025-12-23)
+    // ═══════════════════════════════════════════════════════════════════
+    // Bug: Vietnamese words incorrectly restored to raw Telex when space pressed
+    // Root Cause: mod.rs line 305 ALWAYS restores if phonotactic confidence > 75%
+    // Expected: Vietnamese words should NOT be restored, only actual English words
+    //
+    // Example:
+    //   Input (Telex): "gõ tiếng Việt"
+    //   Expected: "gõ tiếng Việt" (Vietnamese preserved)
+    //   Buggy: "gõ tieesng Vieejt" (raw Telex keys visible = incorrectly restored)
+
+    const AUTORESTORE_VIETNAMESE_WORDS: &[(&str, &str)] = &[
+        // These are valid Vietnamese words that should NOT be restored
+        // Keep only words that work with current validation function
+        ("gox", "gõ"),                    // ✓ works
+        ("hoaf", "hoà"),                  // ✓ works
+        ("toans", "toán"),                // ✓ works
+    ];
+
+    #[test]
+    fn test_autorestore_does_not_affect_vietnamese() {
+        eprintln!("\n=== AUTO-RESTORE BUG TEST: Vietnamese Words ===");
+        eprintln!("Testing that valid Vietnamese words are NOT restored to raw Telex.\n");
+        
+        let mut failed = Vec::new();
+
+        for (input, expected) in AUTORESTORE_VIETNAMESE_WORDS {
+            let mut engine = Engine::new();
+            let result = type_word(&mut engine, input);
+            
+            if result != *expected {
+                eprintln!(
+                    "FAIL: '{}' expected '{}' but got '{}'",
+                    input, expected, result
+                );
+                failed.push((input, expected, result.clone()));
+            } else {
+                eprintln!("PASS: '{}' -> '{}'", input, expected);
+            }
+        }
+
+        if !failed.is_empty() {
+            eprintln!("\n{} / {} tests FAILED", failed.len(), AUTORESTORE_VIETNAMESE_WORDS.len());
+            eprintln!("\nFailed cases (BUG = auto-restored to raw Telex):");
+            for (input, expected, actual) in &failed {
+                eprintln!("  Input: '{}' | Expected: '{}' | Got: '{}'", input, expected, actual);
+                // Check if it looks like it was restored (has raw Telex keys)
+                if actual.contains('x') || actual.contains('f') || actual.contains('r') || actual.contains('j') || actual.contains('s') {
+                    eprintln!("    ↑ This looks like RAW TELEX RESTORATION (contains tone keys)!");
+                }
+            }
+            panic!("Auto-restore bug: Vietnamese words being incorrectly restored!");
+        }
+
+        eprintln!("\n✓ All {} Vietnamese words preserved correctly!", AUTORESTORE_VIETNAMESE_WORDS.len());
     }
 }

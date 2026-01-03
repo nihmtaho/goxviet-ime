@@ -2,15 +2,24 @@
 # VIETNAMESE IME PROJECT - GITIGNORE
 # ============================================
 
+.github/ISSUE_TEMPLATE/*
+.github/instructions/*
+!.github/ISSUE_TEMPLATE/*.md
+!.github/workflows/*.{yml, .md}
+!.github/instructions/*.instructions.md
+
 # Documentation & Examples (không track)
 .github/
-#docs/
+docs/
 example-project/
 scripts/
 bindings/
 homebrew/
 platforms/macos/goxviet/archive/
-#/*.md
+/*.md
+!/AGENTS.md
+!/README.md
+!/CHANGELOG.md
 /*.txt
 
 # ============================================
