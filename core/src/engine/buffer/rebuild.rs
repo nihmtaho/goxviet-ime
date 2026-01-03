@@ -30,7 +30,7 @@
 //! ```
 
 use super::buffer::{Buffer, Char};
-use super::types::Result;
+use crate::engine::types::Result;
 use crate::data::{chars, keys};
 
 // ============================================================
