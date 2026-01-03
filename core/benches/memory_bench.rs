@@ -6,7 +6,7 @@
 //! Uses FFI interface since Engine is not publicly exported.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use vietnamese_ime_core::*;
+use goxviet_core::*;
 
 // Key codes for common keys
 const KEY_A: u16 = 0;

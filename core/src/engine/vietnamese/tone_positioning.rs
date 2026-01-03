@@ -38,7 +38,7 @@
 //! viê + s    → viết (mark moves to ê, Rule 1 applies)
 //! ```
 
-use super::buffer::Buffer;
+use crate::engine::buffer::Buffer;
 use crate::data::{keys, vowel::{Modifier, Vowel}};
 
 use crate::utils;
@@ -203,7 +203,7 @@ pub fn reposition_mark(buf: &mut Buffer) -> Option<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::buffer::{Buffer, Char};
+    use crate::engine::buffer::{Buffer, Char};
     use super::*;
     use crate::data::chars::mark;
 
