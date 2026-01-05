@@ -1,5 +1,20 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [1.5.2] - 2026-01-05
+
+### Added
+- Modifier shortcut to toggle enable/disable Vietnamese keyboard (macOS)
+- Option to toggle auto-hide in Dock (macOS)
+- 
+
+### Changed
+- Improved UI for better user experience
+- 
+
+### Fixed
+- 
+
+
 ## [1.5.1] - 2026-01-03
 
 ### Added
