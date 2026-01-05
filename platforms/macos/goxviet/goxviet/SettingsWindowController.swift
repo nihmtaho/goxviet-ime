@@ -36,8 +36,10 @@ final class SettingsWindowController: NSWindowController {
         let controller = SettingsWindowController()
         current = controller
         
-        NSApp.setActivationPolicy(.regular)
+        let hide = UserDefaults.standard.bool(forKey: "com.goxviet.ime.hideFromDock")
+        NSApp.setActivationPolicy(hide ? .accessory : .regular)
         
+        // Center window on main screen BEFORE showing
         controller.window?.center()
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
@@ -63,30 +65,29 @@ final class SettingsWindowController: NSWindowController {
     private init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 840, height: 580),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], // removed .resizable
             backing: .buffered,
-            defer: true
+            defer: false
         )
-        
-        window.title = "GoxViet Settings"
+
+        //window.title = "GoxViet Settings"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.isOpaque = false
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
-        window.level = .normal
+        window.level = .mainMenu + 1
         window.collectionBehavior = [.moveToActiveSpace]
         window.minSize = NSSize(width: 760, height: 520)
-        window.maxSize = NSSize(width: 1200, height: 820)
-        
+        window.maxSize = NSSize(width: 760, height: 520)
+
         if #available(macOS 11.0, *) {
             window.toolbarStyle = .unified
         }
-        
+
         super.init(window: window)
         window.delegate = self
-        
         createContent()
     }
     
@@ -132,7 +133,8 @@ extension SettingsWindowController: NSWindowDelegate {
         guard !SettingsWindowController.isClosing else { return }
         SettingsWindowController.isClosing = true
         
-        NSApp.setActivationPolicy(.accessory)
+        let hide = UserDefaults.standard.bool(forKey: "com.goxviet.ime.hideFromDock")
+        NSApp.setActivationPolicy(hide ? .accessory : .regular)
         
         releaseContent()
         

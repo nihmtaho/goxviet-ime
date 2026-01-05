@@ -13,6 +13,15 @@ import Cocoa
 struct KeyboardShortcut: Codable, Equatable {
     var keyCode: UInt16
     var modifiers: UInt64  // CGEventFlags raw value
+
+    // Supported modifier flags for matching and display
+    static let allowedFlags: CGEventFlags = [
+        .maskControl,
+        .maskAlternate,
+        .maskShift,
+        .maskCommand,
+        .maskSecondaryFn
+    ]
     
     // Default: Control+Space
     static let `default` = KeyboardShortcut(
@@ -35,9 +44,10 @@ struct KeyboardShortcut: Codable, Equatable {
     
     var displayParts: [String] {
         var parts: [String] = []
-        let flags = CGEventFlags(rawValue: modifiers)
-        
-        // Add modifiers in standard order: Control, Option, Shift, Command
+        let flags = normalizedFlags
+
+        // Add modifiers in standard order: Fn, Control, Option, Shift, Command
+        if flags.contains(.maskSecondaryFn) { parts.append("fn") }
         if flags.contains(.maskControl) { parts.append("⌃") }
         if flags.contains(.maskAlternate) { parts.append("⌥") }
         if flags.contains(.maskShift) { parts.append("⇧") }
@@ -161,32 +171,39 @@ struct KeyboardShortcut: Codable, Equatable {
     
     /// Check if this shortcut is valid
     var isValid: Bool {
-        // Must have at least one modifier
-        let flags = CGEventFlags(rawValue: modifiers)
-        let hasModifier = flags.contains(.maskControl) ||
-                         flags.contains(.maskAlternate) ||
-                         flags.contains(.maskShift) ||
-                         flags.contains(.maskCommand)
+        // Must have at least one supported modifier
+        let flags = normalizedFlags
+        let hasModifier = !flags.intersection(Self.allowedFlags).isEmpty
         
         // Either has a key or is modifier-only
         return hasModifier && (keyCode != 0 || isModifierOnly)
     }
     
-    /// Check if this shortcut conflicts with system shortcuts
-    var hasSystemConflict: Bool {
-        let flags = CGEventFlags(rawValue: modifiers)
+    /// Get conflict status and severity (warning, not blocking)
+    var conflictInfo: (hasConflict: Bool, level: String, message: String)? {
+        let flags = normalizedFlags
         
-        // Cmd+Space is Spotlight (system conflict)
+        // Cmd+Space is Spotlight (can be overridden but warning)
         if keyCode == 0x31 && flags.contains(.maskCommand) && !flags.contains(.maskShift) {
-            return true
+            return (true, "spotlight", "Command+Space conflicts with macOS Spotlight. You can override it, but Spotlight will not work unless disabled in System Settings.")
         }
         
-        // Cmd+Tab is app switcher (system conflict)
+        // Cmd+Tab is app switcher (can be overridden but warning)
         if keyCode == 0x30 && flags.contains(.maskCommand) {
-            return true
+            return (true, "switcher", "Command+Tab conflicts with app switcher. You can override it, but app switching may be affected.")
         }
         
-        return false
+        // Control+Space may conflict with input source switching on some systems
+        if keyCode == 0x31 && flags.contains(.maskControl) && !flags.contains(.maskShift) {
+            return (true, "inputSource", "Control+Space may conflict with Input Source switching (depending on system settings). Check System Settings → Keyboard → Keyboard Shortcuts → Input Sources if needed.")
+        }
+        
+        return nil
+    }
+    
+    /// Deprecated: use conflictInfo instead
+    var hasSystemConflict: Bool {
+        return conflictInfo != nil
     }
 }
 
@@ -195,27 +212,17 @@ struct KeyboardShortcut: Codable, Equatable {
 extension KeyboardShortcut {
     /// Match this shortcut against a key event
     func matches(keyCode: UInt16, flags: CGEventFlags) -> Bool {
-        // Key code must match (unless modifier-only)
-        guard isModifierOnly || keyCode == self.keyCode else {
-            return false
+        let incoming = flags.intersection(Self.allowedFlags)
+        let savedFlags = normalizedFlags
+
+        if isModifierOnly {
+            // Modifier-only shortcuts should only match on the sentinel keyCode (flagsChanged)
+            return keyCode == 0xFFFF && incoming == savedFlags
         }
-        
-        let savedFlags = CGEventFlags(rawValue: modifiers)
-        let requiredModifiers: [CGEventFlags] = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
-        
-        // All required modifiers must be pressed
-        for mod in requiredModifiers {
-            if savedFlags.contains(mod) && !flags.contains(mod) {
-                return false
-            }
-        }
-        
-        // Extra Command modifier should not match if not required
-        if !savedFlags.contains(.maskCommand) && flags.contains(.maskCommand) {
-            return false
-        }
-        
-        return true
+
+        // For key-bound shortcuts, keyCode must match and modifiers must match
+        guard keyCode == self.keyCode else { return false }
+        return incoming == savedFlags
     }
 }
 
@@ -236,5 +243,30 @@ extension KeyboardShortcut {
                 modifiers: (CGEventFlags.maskControl.rawValue | CGEventFlags.maskAlternate.rawValue)
             )
         ]
+    }
+}
+
+// MARK: - Helpers
+
+extension KeyboardShortcut {
+    /// Normalized flags limited to supported modifiers
+    var normalizedFlags: CGEventFlags {
+        return CGEventFlags(rawValue: modifiers).intersection(Self.allowedFlags)
+    }
+
+    /// Build a shortcut from a keyDown NSEvent.
+    static func from(event: NSEvent) -> KeyboardShortcut? {
+        guard event.type == .keyDown else { return nil }
+        let cgFlags = event.cgEvent?.flags ?? CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))
+        let normalized = cgFlags.intersection(Self.allowedFlags)
+        guard !normalized.isEmpty else { return nil }
+        return KeyboardShortcut(keyCode: event.keyCode, modifiers: normalized.rawValue)
+    }
+
+    /// Build a modifier-only shortcut from flags (no key code).
+    static func modifierOnly(from flags: CGEventFlags) -> KeyboardShortcut? {
+        let normalized = flags.intersection(Self.allowedFlags)
+        guard !normalized.isEmpty else { return nil }
+        return KeyboardShortcut(keyCode: 0xFFFF, modifiers: normalized.rawValue)
     }
 }

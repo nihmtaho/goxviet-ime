@@ -453,6 +453,13 @@ private struct ReleaseResponse: Decodable {
         case assets
     }
 
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.tagName = try container.decode(String.self, forKey: .tagName)
+        self.htmlURL = try container.decode(String.self, forKey: .htmlURL)
+        self.assets = try container.decode([ReleaseAsset].self, forKey: .assets)
+    }
+
     var preferredDownloadURL: URL? {
         if let dmgAsset = assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }) {
             return URL(string: dmgAsset.browserDownloadURL)
@@ -468,6 +475,12 @@ private struct ReleaseAsset: Decodable {
     enum CodingKeys: String, CodingKey {
         case name
         case browserDownloadURL = "browser_download_url"
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.browserDownloadURL = try container.decode(String.self, forKey: .browserDownloadURL)
     }
 }
 
@@ -512,3 +525,4 @@ extension UpdateManager: URLSessionDownloadDelegate {
         }
     }
 }
+

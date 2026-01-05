@@ -1,3 +1,11 @@
+// MARK: - Window Delegate for Shortcut Handling
+class SettingsWindowDelegate: NSObject, NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.performClose(nil)
+        return false
+    }
+}
+
 //
 //  SettingsRootView.swift
 //  GoxViet
@@ -15,8 +23,10 @@ struct SettingsRootView: View {
     @AppStorage("modernToneStyle") private var modernToneStyle = false
     @AppStorage("escRestoreEnabled") private var escRestoreEnabled = true
     @AppStorage("freeToneEnabled") private var freeToneEnabled = false
+
     @AppStorage("smartModeEnabled") private var smartModeEnabled = true
     @AppStorage("com.goxviet.ime.autoDisableNonLatin") private var autoDisableForNonLatin = true
+    @AppStorage("com.goxviet.ime.hideFromDock") private var hideFromDock = true
 
     // MARK: - View State
     @State private var selection: SettingsSection? = .general
@@ -106,12 +116,13 @@ struct SettingsRootView: View {
                     inputMethod: $inputMethod,
                     modernToneStyle: $modernToneStyle,
                     escRestoreEnabled: $escRestoreEnabled,
-                    freeToneEnabled: $freeToneEnabled
+                    freeToneEnabled: $freeToneEnabled,
+                    autoDisableForNonLatin: $autoDisableForNonLatin,
+                    hideFromDock: $hideFromDock
                 )
             case .perApp:
                 PerAppSettingsView(
                     smartModeEnabled: $smartModeEnabled,
-                    autoDisableForNonLatin: $autoDisableForNonLatin,
                     perAppModes: $perAppModes,
                     showClearConfirmation: $showClearConfirmation,
                     reloadAction: loadPerAppModes
@@ -230,6 +241,8 @@ private struct GeneralSettingsView: View {
     @Binding var modernToneStyle: Bool
     @Binding var escRestoreEnabled: Bool
     @Binding var freeToneEnabled: Bool
+    @Binding var autoDisableForNonLatin: Bool
+    @Binding var hideFromDock: Bool
 
     var body: some View {
         Form {
@@ -239,15 +252,13 @@ private struct GeneralSettingsView: View {
                     Text("VNI").tag(1)
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: inputMethod) { _, newValue in
+                .onChange(of: inputMethod) { oldValue, newValue in
                     AppState.shared.inputMethod = newValue
                     InputManager.shared.setInputMethod(newValue)
-                    Log.info("Input method: \(newValue == 0 ? "Telex" : "VNI")")
+                    Log.info("Input method: (newValue == 0 ? 'Telex' : 'VNI')")
                 }
-
                 Text(inputMethodDescription)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
             } header: {
                 Label("Input Method", systemImage: "keyboard")
             }
@@ -272,17 +283,6 @@ private struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle("ESC key restores original word", isOn: $escRestoreEnabled)
-                    .onChange(of: escRestoreEnabled) { _, newValue in
-                        AppState.shared.escRestoreEnabled = newValue
-                        InputManager.shared.setEscRestore(newValue)
-                        Log.info("ESC restore: \(newValue)")
-                    }
-
-                Text("Press ESC to restore the original unaccented word.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 Toggle("Free tone placement", isOn: $freeToneEnabled)
                     .onChange(of: freeToneEnabled) { _, newValue in
                         AppState.shared.freeToneEnabled = newValue
@@ -293,56 +293,8 @@ private struct GeneralSettingsView: View {
                 Text("Allow tone marks before completing the vowel.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } header: {
-                Label("Smart Features", systemImage: "sparkles")
-            }
-        }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-    }
 
-    private var inputMethodDescription: String {
-        switch inputMethod {
-        case 0:
-            return "Telex: s, f, r, x, j for tone marks. aw → ă, aa → â, ee → ê, dd → đ."
-        case 1:
-            return "VNI: 1-5 for tone marks, 6 → â/ê/ô, 7 → ư/ơ, 8 → ă, 9 → đ."
-        default:
-            return ""
-        }
-    }
-}
-
-// MARK: - Per-App Settings
-
-private struct PerAppSettingsView: View {
-    @Binding var smartModeEnabled: Bool
-    @Binding var autoDisableForNonLatin: Bool
-    @Binding var perAppModes: [String: Bool]
-    @Binding var showClearConfirmation: Bool
-
-    let reloadAction: () -> Void
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Enable Smart Per-App Mode", isOn: $smartModeEnabled)
-                    .onChange(of: smartModeEnabled) { _, newValue in
-                        AppState.shared.isSmartModeEnabled = newValue
-                        if newValue {
-                            PerAppModeManager.shared.refresh()
-                        }
-                        Log.info("Smart mode: \(newValue)")
-                    }
-
-                Text("Automatically remember Vietnamese input state for each application.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Label("Smart Mode", systemImage: "brain")
-            }
-
-            Section {
+                // --- Multi-Language Support ---
                 Toggle("Auto-disable for non-Latin keyboards", isOn: $autoDisableForNonLatin)
                     .onChange(of: autoDisableForNonLatin) { _, newValue in
                         AppState.shared.autoDisableForNonLatinEnabled = newValue
@@ -372,7 +324,66 @@ private struct PerAppSettingsView: View {
                     .padding(.vertical, 4)
                 }
             } header: {
-                Label("Multi-Language Support", systemImage: "globe")
+                Label("Smart Features", systemImage: "sparkles")
+            }
+            
+            Section {
+                Toggle("Hide from Dock", isOn: $hideFromDock)
+                    .onChange(of: hideFromDock) { _, newValue in
+                        let policy: NSApplication.ActivationPolicy = newValue ? .accessory : .regular
+                        NSApp.setActivationPolicy(policy)
+                        Log.info("Dock visibility: \(newValue ? "hidden" : "visible")")
+                    }
+                
+                Text("When enabled, GoxViet will only appear in the menu bar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Label("Appearance", systemImage: "dock.rectangle")
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+    }
+
+    private var inputMethodDescription: String {
+        switch inputMethod {
+        case 0:
+            return "Telex: s, f, r, x, j for tone marks. aw → ă, aa → â, ee → ê, dd → đ."
+        case 1:
+            return "VNI: 1-5 for tone marks, 6 → â/ê/ô, 7 → ư/ơ, 8 → ă, 9 → đ."
+        default:
+            return ""
+        }
+    }
+}
+
+// MARK: - Per-App Settings
+
+private struct PerAppSettingsView: View {
+    @Binding var smartModeEnabled: Bool
+    @Binding var perAppModes: [String: Bool]
+    @Binding var showClearConfirmation: Bool
+
+    let reloadAction: () -> Void
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enable Smart Per-App Mode", isOn: $smartModeEnabled)
+                    .onChange(of: smartModeEnabled) { _, newValue in
+                        AppState.shared.isSmartModeEnabled = newValue
+                        if newValue {
+                            PerAppModeManager.shared.refresh()
+                        }
+                        Log.info("Smart mode: \(newValue)")
+                    }
+
+                Text("Automatically remember Vietnamese input state for each application.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Label("Smart Mode", systemImage: "brain")
             }
 
             Section {
@@ -450,19 +461,34 @@ private struct AdvancedSettingsView: View {
     let resetAction: () -> Void
     let openLogAction: () -> Void
 
+    @State private var currentShortcut = InputManager.shared.getCurrentShortcut()
+    @State private var showRecordingSheet = false
+
     var body: some View {
         Form {
             Section {
                 LabeledContent("Toggle Input") {
-                    Text(InputManager.shared.getCurrentShortcut().displayString)
-                        .font(.body.monospaced())
+                    Button(action: { showRecordingSheet = true }) {
+                        HStack(spacing: 10) {
+                            Text(currentShortcut.displayString)
+                                .font(.body.monospaced())
+                                .fontWeight(.semibold)
+                            
+                            Spacer()
+                            
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.body)
+                                .foregroundStyle(.blue)
+                        }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 8)
                         .background(.quaternary)
-                        .cornerRadius(6)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
                 }
-
-                Text("Change in System Settings → Keyboard → Keyboard Shortcuts → Input Sources.")
+                
+                Text("Click to record a new shortcut")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -511,6 +537,157 @@ private struct AdvancedSettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
+        .sheet(isPresented: $showRecordingSheet) {
+            ShortcutRecordingSheet(
+                isPresented: $showRecordingSheet,
+                onComplete: { shortcut in
+                    handleShortcutCaptured(shortcut)
+                }
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .shortcutChanged)) { _ in
+            currentShortcut = InputManager.shared.getCurrentShortcut()
+        }
+    }
+}
+
+private extension AdvancedSettingsView {
+    func handleShortcutCaptured(_ shortcut: KeyboardShortcut) {
+        guard shortcut.isValid else {
+            return
+        }
+
+        currentShortcut = shortcut
+        InputManager.shared.setShortcut(shortcut)
+        showRecordingSheet = false
+    }
+}
+
+private struct ShortcutRecordingSheet: View {
+    @Binding var isPresented: Bool
+    let onComplete: (KeyboardShortcut) -> Void
+    
+    @State private var isRecording = true
+    @State private var statusMessage = "Press the keyboard shortcut you want to use…"
+    @State private var conflictWarning: String?
+    @State private var capturedShortcut: KeyboardShortcut?
+    
+    private var capturedDisplayString: String {
+        capturedShortcut?.displayString ?? ""
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "keyboard.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Record New Shortcut")
+                            .font(.headline)
+                        Text("Supports Control, Option, Shift, Command, and Fn")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.bottom, 8)
+                
+                Divider()
+
+                Text("Cách ghi nhanh:\n1) Giữ các phím Control/Option/Shift/Command/Fn,\n2) Nhấn phím chữ/số. Nếu muốn chỉ dùng phím bổ trợ (ví dụ Command+Shift), giữ nguyên ~0.35s, không nhấn thêm phím.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+
+                Text("Cảnh báo: Shortcut có thể ghi đè phím tắt của ứng dụng khác, hãy chọn cẩn trọng.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                
+                if capturedShortcut != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Captured Shortcut:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        HStack {
+                            Text(capturedDisplayString)
+                                .font(.title2.monospaced())
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(.blue.opacity(0.1))
+                                .cornerRadius(8)
+                            
+                            Spacer()
+                        }
+                        
+                        if let conflict = conflictWarning {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundStyle(.orange)
+                                Text(conflict)
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(.top, 4)
+                        }
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text(statusMessage)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 12)
+                }
+            }
+            .padding(20)
+            .background(.regularMaterial)
+            .cornerRadius(12)
+            
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .buttonStyle(.bordered)
+                
+                Spacer()
+                
+                if capturedShortcut != nil {
+                    Button("Record Again") {
+                        capturedShortcut = nil
+                        conflictWarning = nil
+                        isRecording = true
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Button("Apply") {
+                        if let shortcut = capturedShortcut {
+                            onComplete(shortcut)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                }
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 420, idealWidth: 480)
+        .overlay(
+            ShortcutRecorder(
+                isRecording: $isRecording,
+                onComplete: { shortcut in
+                    capturedShortcut = shortcut
+                    conflictWarning = shortcut.conflictInfo?.message
+                    isRecording = false
+                },
+                onCancel: {}
+            )
+            .allowsHitTesting(false)
+        )
     }
 }
 
@@ -519,27 +696,29 @@ private struct AdvancedSettingsView: View {
 private struct AboutSettingsView: View {
     @ObservedObject private var updateManager = UpdateManager.shared
     @AppStorage("com.goxviet.ime.autoUpdateCheck") private var autoUpdateCheck = true
-    @AppStorage("com.goxviet.ime.autoUpdateInstall") private var autoUpdateInstall = false
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
-                Spacer(minLength: 24)
+            VStack(spacing: 18) {
+                Spacer(minLength: 16)
 
-                Image(systemName: "keyboard.fill")
-                    .font(.system(size: 80))
-                    .foregroundStyle(
-                        .linearGradient(
-                            colors: [.blue, .purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                // App Icon
+                if let appIcon = NSImage(named: "AppIcon") {
+                    Image(nsImage: appIcon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 80, height: 80)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(.white.opacity(0.22), lineWidth: 1)
                         )
-                    )
-                    .symbolEffect(.pulse)
+                        .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 6)
+                }
 
-                VStack(spacing: 8) {
+                VStack(spacing: 2) {
                     Text("GoxViet")
-                        .font(.system(size: 40, weight: .bold))
+                        .font(.system(size: 32, weight: .bold))
                     Text("Gõ Việt")
                         .font(.title3)
                         .foregroundStyle(.secondary)
@@ -556,24 +735,45 @@ private struct AboutSettingsView: View {
                     .font(.body)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, 24)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    FeatureRow(icon: "bolt.fill", color: .yellow, text: "High-performance Rust core (< 16ms latency)")
-                    FeatureRow(icon: "brain.fill", color: .pink, text: "Smart per-app mode")
-                    FeatureRow(icon: "keyboard.badge.ellipsis", color: .blue, text: "Telex & VNI input methods")
-                    FeatureRow(icon: "textformat", color: .green, text: "Modern & Traditional tone styles")
+                // Feature grid, modern, aligned, hide ESC restore
+                let features: [(String, Color, String)] = [
+                    ("bolt.fill", .yellow, "Rust core <16ms"),
+                    ("brain.fill", .pink, "Smart per-app mode"),
+                    ("keyboard.badge.ellipsis", .blue, "Telex & VNI input"),
+                    ("textformat", .green, "Modern/traditional tone"),
+                    //( "arrow.uturn.left.circle.fill", .purple, "ESC restore/undo"), // Hide unfinished
+                    ("sparkles", .orange, "Auto-disable non-Latin")
+                ]
+                Grid(alignment: .center, horizontalSpacing: 0, verticalSpacing: 8) {
+                    GridRow {
+                        FeatureRow(icon: features[0].0, color: features[0].1, text: features[0].2)
+                        FeatureRow(icon: features[1].0, color: features[1].1, text: features[1].2)
+                    }
+                    GridRow {
+                        FeatureRow(icon: features[2].0, color: features[2].1, text: features[2].2)
+                        FeatureRow(icon: features[3].0, color: features[3].1, text: features[3].2)
+                    }
+                    GridRow {
+                        FeatureRow(icon: features[4].0, color: features[4].1, text: features[4].2)
+                        Spacer()
+                    }
                 }
-                .padding(24)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                )
 
+                // Auto-update panel, modern card style
                 updatePanel
 
+                // Links row
                 HStack(spacing: 18) {
                     Link(destination: URL(string: "https://github.com/goxviet/goxviet")!) {
                         Label("GitHub", systemImage: "link")
                     }
-
                     Link(destination: URL(string: "https://github.com/goxviet/goxviet/issues")!) {
                         Label("Report Issue", systemImage: "exclamationmark.bubble")
                     }
@@ -583,28 +783,39 @@ private struct AboutSettingsView: View {
                 Text("© 2025 GoxViet. All rights reserved.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 8)
             }
             .frame(maxWidth: .infinity)
         }
     }
 
+    // Auto-update panel: modern, minimal, visually prominent
     private var updatePanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Updates", systemImage: "arrow.down.circle.fill")
-                .font(.headline)
+        VStack(spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                Text("Auto-Update")
+                    .font(.headline)
+                Spacer()
+                if updateManager.updateAvailable, let latest = updateManager.latestVersion {
+                    Button {
+                        UpdateManager.shared.downloadUpdate()
+                    } label: {
+                        Label("Update to \(latest)", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                }
+            }
 
-            Toggle("Automatically check for updates", isOn: $autoUpdateCheck)
+            Toggle("Auto check for updates", isOn: $autoUpdateCheck)
+                .toggleStyle(.switch)
                 .onChange(of: autoUpdateCheck) { _, newValue in
                     AppState.shared.autoUpdateCheckEnabled = newValue
                     UpdateManager.shared.refreshSchedule(triggerImmediate: newValue)
                 }
-
-            Toggle("Auto-install via Homebrew when available", isOn: $autoUpdateInstall)
-                .onChange(of: autoUpdateInstall) { _, newValue in
-                    AppState.shared.autoUpdateInstallEnabled = newValue
-                }
-                .help("Requires Homebrew to be installed on this Mac.")
 
             HStack(spacing: 12) {
                 Button {
@@ -623,27 +834,17 @@ private struct AboutSettingsView: View {
                 } label: {
                     Label("Release Notes", systemImage: "doc.text")
                 }
-
-                if updateManager.updateAvailable, let latest = updateManager.latestVersion {
-                    Button {
-                        UpdateManager.shared.downloadUpdate()
-                    } label: {
-                        Label("Update to \(latest)", systemImage: "square.and.arrow.down")
-                    }
-                }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(updateManager.statusMessage)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-
                 if let latest = updateManager.latestVersion {
                     Text("Latest: \(latest)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
                 if let lastChecked = updateManager.lastChecked {
                     Text("Last checked: \(RelativeDateTimeFormatter().localizedString(for: lastChecked, relativeTo: Date()))")
                         .font(.caption2)
@@ -651,9 +852,17 @@ private struct AboutSettingsView: View {
                 }
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: .blue.opacity(0.10), radius: 5, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.blue.opacity(0.18), lineWidth: 1)
+        )
+        .padding(.horizontal, 10)
     }
 
     private func openReleasePage() {
@@ -716,9 +925,11 @@ private struct SettingsGlassBackground: View {
     }
 }
 
+
 // MARK: - Preview
 
 #Preview {
     SettingsRootView()
         .frame(width: 840, height: 580)
 }
+

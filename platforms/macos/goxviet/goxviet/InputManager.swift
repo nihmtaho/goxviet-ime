@@ -312,8 +312,22 @@ class InputManager {
     }
     
     private func handleFlagsChanged(event: CGEvent, proxy: CGEventTapProxy) -> Unmanaged<CGEvent>? {
-        // This can be used for modifier-only shortcuts (e.g., double-tap Shift)
-        // For now, just pass through
+        // Support modifier-only toggle shortcut (e.g., Command+Shift held together)
+        let flags = event.flags
+        let keyCode: UInt16 = 0xFFFF // Sentinel for modifier-only shortcuts
+
+        // Ignore if no supported modifier is active
+        if flags.intersection(KeyboardShortcut.allowedFlags).isEmpty {
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Trigger toggle when current shortcut is modifier-only and matches flags
+        if currentShortcut.isModifierOnly && currentShortcut.matches(keyCode: keyCode, flags: flags) {
+            toggleEnabled()
+            Log.info("Toggle shortcut (modifier-only) triggered: \(currentShortcut.displayString)")
+            return nil // Swallow event
+        }
+
         return Unmanaged.passUnretained(event)
     }
     
