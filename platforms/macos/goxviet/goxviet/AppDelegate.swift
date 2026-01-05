@@ -6,6 +6,7 @@
 //
 
 import Cocoa
+import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     
@@ -26,6 +27,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var isEnabled: Bool {
         return AppState.shared.isEnabled
     }
+
+    private func applyActivationPolicyFromPreference() {
+        let hide = UserDefaults.standard.bool(forKey: "com.goxviet.ime.hideFromDock")
+        let policy: NSApplication.ActivationPolicy = hide ? .accessory : .regular
+        NSApp.setActivationPolicy(policy)
+    }
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Enable logging in debug mode
@@ -34,9 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("GoxViet starting in DEBUG mode")
         #endif
         
-        // Auto hide from Dock - show only in menu bar
-        // Based on reference implementation
-        NSApp.setActivationPolicy(.accessory)
+        // Apply Dock visibility from user preference
+        applyActivationPolicyFromPreference()
         
         // Create Status Bar Item first (before permission check)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -54,6 +60,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UpdateManager.shared.start()
         
         Log.info("Application launched successfully")
+    }
+    
+    // MARK: - Settings Window (SwiftUI)
+    
+    @objc func showSettingsWindow() {
+        applyActivationPolicyFromPreference()
+        SettingsWindowController.showSettings()
     }
     
     // MARK: - Accessibility Permission
@@ -153,7 +166,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "🔐 Accessibility Permission Required"
         alert.informativeText = """
         GoxViet needs Accessibility permission to capture keyboard input for Vietnamese typing.
-        
         📝 Quick Setup (one-time only):
         
         1️⃣ Click "Open System Settings" below
@@ -318,7 +330,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Settings
         menu.addItem(NSMenuItem(
             title: "Settings...",
-            action: #selector(showSettings),
+            action: #selector(showSettingsWindow),
             keyEquivalent: ","
         ))
 
@@ -552,11 +564,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let shortcut = InputManager.shared.getCurrentShortcut()
         let alert = NSAlert()
         alert.messageText = "GoxViet - Gõ Việt"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         alert.informativeText = """
         A high-performance Vietnamese IME powered by Rust.
-        
-        Version: 1.0.2
-        
+
+        Version: \(version) (Build \(build))
+
         Features:
         • Native macOS integration via Accessibility API
         • Ultra-low latency input processing (< 5ms)
@@ -564,15 +578,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         • Per-app Vietnamese mode memory
         • Telex and VNI input methods
         • Modern and traditional tone styles
-        
+
         Toggle Shortcut: \(shortcut.displayString)
         (Use \(shortcut.displayString) to switch between Gõ Việt and English)
-        
+
         Built with ❤️ using Rust + Swift
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
-        
+
         #if DEBUG
         alert.addButton(withTitle: "View Log")
         let response = alert.runModal()
@@ -600,10 +614,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Application Lifecycle
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // When user clicks app icon again, show about dialog
-        if !flag {
-            showAbout()
-        }
-        return true
+        // When user clicks app icon, always show Settings window
+        SettingsWindowController.showSettings()
+        return false // prevent default About popup
     }
 }
