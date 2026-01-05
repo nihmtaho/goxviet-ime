@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		96DB42412F0B897C00C435C2 /* libgoxviet_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 96DB42402F0B897C00C435C2 /* libgoxviet_core.a */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		96A921572EF531D900BE0070 /* goxviet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = goxviet.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		96DB42402F0B897C00C435C2 /* libgoxviet_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libgoxviet_core.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				96DB42412F0B897C00C435C2 /* libgoxviet_core.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,6 +39,7 @@
 			isa = PBXGroup;
 			children = (
 				96A921592EF531D900BE0070 /* goxviet */,
+				96DB423F2F0B897C00C435C2 /* Frameworks */,
 				96A921582EF531D900BE0070 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +50,14 @@
 				96A921572EF531D900BE0070 /* goxviet.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		96DB423F2F0B897C00C435C2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				96DB42402F0B897C00C435C2 /* libgoxviet_core.a */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -276,10 +291,13 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../../core/target/release";
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/../../../core/target/release",
+					"$(PROJECT_DIR)",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.5.2;
-				OTHER_LDFLAGS = "-lgoxviet_core";
+				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.goxviet.ime;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -330,10 +348,13 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../../core/target/release";
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/../../../core/target/release",
+					"$(PROJECT_DIR)",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.5.2;
-				OTHER_LDFLAGS = "-lgoxviet_core";
+				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.goxviet.ime;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

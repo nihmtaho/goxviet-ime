@@ -48,17 +48,39 @@ fi
 xcodebuild clean -project goxviet.xcodeproj -scheme goxviet -configuration Release > /dev/null 2>&1 || true
 echo -e "${GREEN}✓ Xcode build cleaned${NC}"
 
-# Step 2: Build Rust core
-echo -e "\n${YELLOW}[2/6] Building Rust core (release mode)...${NC}"
-cd "$PROJECT_ROOT/core"
-cargo build --release
 
-if [ ! -f "target/release/libgoxviet_core.dylib" ]; then
-    echo -e "${RED}Error: Rust library not found${NC}"
+# Step 2: Build Rust core (universal binary)
+echo -e "\n${YELLOW}[2/6] Building Rust core (universal binary for Apple Silicon and Intel)...${NC}"
+cd "$PROJECT_ROOT/core"
+
+# Build for Apple Silicon (arm64)
+echo -e "${BLUE}Building for aarch64-apple-darwin...${NC}"
+cargo build --release --target aarch64-apple-darwin
+
+# Build for Intel (x86_64)
+echo -e "${BLUE}Building for x86_64-apple-darwin...${NC}"
+cargo build --release --target x86_64-apple-darwin
+
+# Create universal binary
+UNIVERSAL_LIB_PATH="$PROJECT_ROOT/platforms/macos/goxviet/libgoxviet_core.a"
+LIPO_IN1="target/aarch64-apple-darwin/release/libgoxviet_core.a"
+LIPO_IN2="target/x86_64-apple-darwin/release/libgoxviet_core.a"
+
+if [ ! -f "$LIPO_IN1" ] || [ ! -f "$LIPO_IN2" ]; then
+    echo -e "${RED}Error: One or both architecture static libraries not found${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Rust core built successfully${NC}"
+echo -e "${BLUE}Creating universal binary with lipo...${NC}"
+mkdir -p "$PROJECT_ROOT/platforms/macos/goxviet"
+lipo -create "$LIPO_IN1" "$LIPO_IN2" -output "$UNIVERSAL_LIB_PATH"
+
+if [ ! -f "$UNIVERSAL_LIB_PATH" ]; then
+    echo -e "${RED}Error: Universal libgoxviet_core.a not created${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Rust universal binary built successfully${NC}"
 
 # Step 3: Build macOS app (unsigned)
 echo -e "\n${YELLOW}[3/6] Building macOS application (unsigned)...${NC}"
