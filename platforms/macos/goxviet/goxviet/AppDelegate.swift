@@ -31,7 +31,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyActivationPolicyFromPreference() {
         let hide = UserDefaults.standard.bool(forKey: "com.goxviet.ime.hideFromDock")
         let policy: NSApplication.ActivationPolicy = hide ? .accessory : .regular
-        NSApp.setActivationPolicy(policy)
+
+        // Delegate to coordinator to coalesce and apply outside layout passes
+        ActivationPolicyCoordinator.shared.request(policy)
     }
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
@@ -40,6 +42,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Log.isEnabled = true
         Log.info("GoxViet starting in DEBUG mode")
         #endif
+        
+        // Disable automatic window restoration to avoid className errors
+        UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
         
         // Apply Dock visibility from user preference
         applyActivationPolicyFromPreference()
@@ -65,8 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings Window (SwiftUI)
     
     @objc func showSettingsWindow() {
-        applyActivationPolicyFromPreference()
-        SettingsWindowController.showSettings()
+        WindowManager.shared.showSettingsWindow()
     }
     
     // MARK: - Accessibility Permission
@@ -420,6 +424,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.checkPermissionOnActivate()
         }
         observerTokens.append(activateToken)
+        
+        // Listen for internal open window requests (from Settings UI buttons etc)
+        let openUpdateToken = NotificationCenter.default.addObserver(
+            forName: .openUpdateWindow,
+            object: nil,
+            queue: .main
+        ) { _ in
+            WindowManager.shared.showUpdateWindow()
+        }
+        observerTokens.append(openUpdateToken)
     }
     
     private func cleanupObservers() {
@@ -537,11 +551,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showSettings() {
-        // Show settings window - creates on-demand, releases memory when closed
-        SettingsWindowController.showSettings()
+        // Show settings window using GoxVietApp
+        showSettingsWindow()
     }
 
     @objc func checkForUpdates() {
+        WindowManager.shared.showUpdateWindow()
+        // Trigger update check
         UpdateManager.shared.checkForUpdates(userInitiated: true)
     }
     
@@ -607,6 +623,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ aNotification: Notification) {
         Log.info("Application terminating")
+        UpdateManager.shared.stop()
         InputManager.shared.stop()
         cleanupMenuViews()
     }
@@ -615,7 +632,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // When user clicks app icon, always show Settings window
-        SettingsWindowController.showSettings()
+        showSettingsWindow()
         return false // prevent default About popup
     }
 }
+

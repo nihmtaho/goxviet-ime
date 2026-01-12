@@ -61,8 +61,18 @@ class MenuToggleView: NSView {
         createToggleView()
     }
     
-    private func createToggleView() {
-        let toggleView = Toggle("", isOn: Binding(
+    private func updateToggleView() {
+        guard let hostingView = hostingView else {
+            createToggleView()
+            return
+        }
+        
+        // Efficiently update existing hosting view's root view
+        hostingView.rootView = AnyView(makeToggleView())
+    }
+    
+    private func makeToggleView() -> some View {
+        Toggle("", isOn: Binding(
             get: { [weak self] in self?.currentState ?? false },
             set: { [weak self] newValue in
                 self?.currentState = newValue
@@ -72,17 +82,14 @@ class MenuToggleView: NSView {
         .toggleStyle(.switch)
         .labelsHidden()
         .scaleEffect(0.8)
-        
-        let hosting = NSHostingView(rootView: AnyView(toggleView))
+    }
+    
+    private func createToggleView() {
+        let hosting = NSHostingView(rootView: AnyView(makeToggleView()))
         hosting.frame = NSRect(x: 162, y: 2, width: 50, height: 28)
         
         hostingView = hosting
         addSubview(hosting)
-    }
-    
-    private func updateToggleView() {
-        releaseHostingView()
-        createToggleView()
     }
     
     private func releaseHostingView() {

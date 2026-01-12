@@ -9,13 +9,14 @@
 
 import Foundation
 import Cocoa
+import Combine
 
 /// Maximum number of per-app settings to store (prevents unbounded memory growth)
 /// This limit is reasonable for most users while preventing memory bloat
 private let MAX_PER_APP_ENTRIES = 100
 
 /// Global application state manager
-class AppState {
+class AppState: ObservableObject {
     static let shared = AppState()
 
     // MARK: - Properties
@@ -97,6 +98,18 @@ class AppState {
         }
     }
 
+    /// Hide app from Dock (menubar-only mode)
+    var hideFromDock: Bool {
+        get {
+            return UserDefaults.standard.bool(forKey: Keys.hideFromDock)
+        }
+        set {
+            objectWillChange.send()
+            UserDefaults.standard.set(newValue, forKey: Keys.hideFromDock)
+            Log.info("Hide from Dock: \(newValue ? "enabled" : "disabled")")
+        }
+    }
+
     /// Automatically install updates via Homebrew when available
     var autoUpdateInstallEnabled: Bool {
         get {
@@ -154,6 +167,7 @@ class AppState {
         static let autoUpdateInstall = "com.goxviet.ime.autoUpdateInstall"
         static let lastUpdateCheck = "com.goxviet.ime.lastUpdateCheck"
         static let lastNotifiedUpdateVersion = "com.goxviet.ime.lastNotifiedUpdateVersion"
+        static let hideFromDock = "com.goxviet.ime.hideFromDock"
     }
 
     // MARK: - Initialization
@@ -180,7 +194,8 @@ class AppState {
             Keys.freeTone: false,
             Keys.autoDisableNonLatin: true,  // Default: enabled for better UX with multilingual users
             Keys.autoUpdateCheck: true,
-            Keys.autoUpdateInstall: false
+            Keys.autoUpdateInstall: false,
+            Keys.hideFromDock: true  // Default: hide from dock (menubar-only)
         ]
 
         UserDefaults.standard.register(defaults: defaults)
@@ -366,4 +381,6 @@ extension Notification.Name {
     static let shortcutRecorded = Notification.Name("shortcutRecorded")
     static let shortcutRecordingCancelled = Notification.Name("shortcutRecordingCancelled")
     static let showUpdateWindow = Notification.Name("showUpdateWindow")
+    static let openUpdateWindow = Notification.Name("openUpdateWindow")
+    static let openSettingsWindow = Notification.Name("openSettingsWindow")
 }

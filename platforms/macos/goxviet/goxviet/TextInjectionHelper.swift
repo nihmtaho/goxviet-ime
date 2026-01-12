@@ -291,6 +291,63 @@ class TextInjector {
 
 // MARK: - App Detection
 
+/// Static bundle ID constants for app detection
+/// Using Set for O(1) lookup instead of Array O(n) contains()
+/// Prevents reallocating these arrays on every keystroke
+private struct BundleConstants {
+    static let chromiumBrowsers: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
+        "org.chromium.Chromium", "com.brave.Browser", "com.brave.Browser.beta",
+        "com.brave.Browser.nightly", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta",
+        "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.vivaldi.Vivaldi",
+        "com.vivaldi.Vivaldi.snapshot", "ru.yandex.desktop.yandex-browser",
+        // Opera (Chromium-based)
+        "com.opera.Opera", "com.operasoftware.Opera", "com.operasoftware.OperaGX",
+        "com.operasoftware.OperaAir", "com.opera.OperaNext",
+        // Arc & Others (Chromium-based)
+        "company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia",
+        "com.sigmaos.sigmaos.macos", "com.pushplaylabs.sidekick",
+        "com.firstversionist.polypane", "ai.perplexity.comet", "com.duckduckgo.macos.browser"
+    ]
+    
+    static let firefoxBrowsers: Set<String> = [
+        "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
+        "org.waterfoxproject.waterfox", "io.gitlab.librewolf-community.librewolf",
+        "one.ablaze.floorp", "org.torproject.torbrowser", "net.mullvad.mullvadbrowser",
+        "app.zen-browser.zen"
+    ]
+    
+    static let safariBrowsers: Set<String> = [
+        "com.apple.Safari", "com.apple.SafariTechnologyPreview",
+        "com.kagi.kagimacOS"
+    ]
+    
+    static let modernEditors: Set<String> = [
+        // Code Editors
+        "com.microsoft.VSCode", "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3",
+        "com.panic.Nova", "com.github.atom", "com.github.GitHubClient", "com.coteditor.CotEditor",
+        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview",
+        // Text Editors
+        "com.apple.TextEdit", "com.apple.Notes", "com.apple.mail",
+        // Note-taking apps
+        "md.obsidian", "com.bear-writer.Bear", "com.dayoneapp.dayone",
+        // Chat & Communication
+        "com.tinyspeck.slackmacgap", "com.hnc.Discord", "com.apple.iChat",
+        "com.microsoft.teams", "com.microsoft.teams2", "us.zoom.xos",
+        // Browsers (content areas, not address bars)
+        "com.google.Chrome", "com.apple.Safari", "org.mozilla.firefox",
+        "com.brave.Browser", "com.microsoft.edgemac", "com.vivaldi.Vivaldi",
+        "company.thebrowser.Arc", "com.opera.Opera"
+    ]
+    
+    static let terminals: Set<String> = [
+        "com.apple.Terminal", "com.googlecode.iterm2", "io.alacritty",
+        "com.github.wez.wezterm", "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
+        "net.kovidgoyal.kitty", "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
+        "com.termius-dmg.mac", "com.google.antigravity"
+    ]
+}
+
 /// Detect optimal injection method based on focused app and UI element
 func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Get focused element and its owning app (works for overlays like Spotlight)
@@ -337,43 +394,19 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Chromium-based browser address bars - use AX API direct manipulation
     // Backspace method fails due to Chromium's autocomplete behavior (issue #26)
     // AX API bypasses autocomplete by directly setting text field value
-    let chromiumBrowsers = [
-        "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
-        "org.chromium.Chromium", "com.brave.Browser", "com.brave.Browser.beta",
-        "com.brave.Browser.nightly", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta",
-        "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.vivaldi.Vivaldi",
-        "com.vivaldi.Vivaldi.snapshot", "ru.yandex.desktop.yandex-browser",
-        // Opera (Chromium-based)
-        "com.opera.Opera", "com.operasoftware.Opera", "com.operasoftware.OperaGX",
-        "com.operasoftware.OperaAir", "com.opera.OperaNext",
-        // Arc & Others (Chromium-based)
-        "company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia",
-        "com.sigmaos.sigmaos.macos", "com.pushplaylabs.sidekick",
-        "com.firstversionist.polypane", "ai.perplexity.comet", "com.duckduckgo.macos.browser"
-    ]
-    if chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
+    if BundleConstants.chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
         Log.method("ax:chromium")
         return (.axDirect, (0, 0, 0))
     }
     
     // Firefox-based browsers - use AX API for address bar
-    let firefoxBrowsers = [
-        "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
-        "org.waterfoxproject.waterfox", "io.gitlab.librewolf-community.librewolf",
-        "one.ablaze.floorp", "org.torproject.torbrowser", "net.mullvad.mullvadbrowser",
-        "app.zen-browser.zen"
-    ]
-    if firefoxBrowsers.contains(bundleId) && (role == "AXTextField" || role == "AXWindow") {
+    if BundleConstants.firefoxBrowsers.contains(bundleId) && (role == "AXTextField" || role == "AXWindow") {
         Log.method("ax:firefox")
         return (.axDirect, (0, 0, 0))
     }
     
     // Safari - use selection method (different behavior from Chromium)
-    let safariBrowsers = [
-        "com.apple.Safari", "com.apple.SafariTechnologyPreview",
-        "com.kagi.kagimacOS"
-    ]
-    if safariBrowsers.contains(bundleId) && role == "AXTextField" {
+    if BundleConstants.safariBrowsers.contains(bundleId) && role == "AXTextField" {
         Log.method("sel:safari")
         return (.selection, (0, 0, 0))
     }
@@ -389,28 +422,19 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if bundleId == "notion.id" { Log.method("slow:notion"); return (.slow, (8000, 15000, 8000)) }
     
     // Modern editors - instant method with zero delays for maximum speed
-    let modernEditors = [
-        "com.microsoft.VSCode", "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3",
-        "com.panic.Nova", "com.github.atom", "com.github.GitHubClient", "com.coteditor.CotEditor",
-        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview"
-    ]
-    if modernEditors.contains(bundleId) { Log.method("instant:editor"); return (.instant, (0, 0, 0)) }
+    if BundleConstants.modernEditors.contains(bundleId) { Log.method("instant:editor"); return (.instant, (0, 0, 0)) }
     
     // Terminal apps - need conservative delays for reliable rendering
-    let terminals = [
-        "com.apple.Terminal", "com.googlecode.iterm2", "io.alacritty",
-        "com.github.wez.wezterm", "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
-        "net.kovidgoyal.kitty", "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
-        "com.termius-dmg.mac", "com.google.antigravity"
-    ]
-    if terminals.contains(bundleId) { Log.method("slow:term"); return (.slow, (3000, 8000, 3000)) }
+    if BundleConstants.terminals.contains(bundleId) { Log.method("slow:term"); return (.slow, (3000, 8000, 3000)) }
     
     // JetBrains IDEs - need moderate delays for stability
     if bundleId.hasPrefix("com.jetbrains") { Log.method("slow:jb"); return (.slow, (3000, 8000, 3000)) }
     
-    // Default: safe delays for stability across unknown apps
+    // OPTIMIZATION: Reduced default delays for better performance
+    // Old: (1000, 3000, 1500) - conservative but slow
+    // New: (0, 0, 0) - fast for most modern apps
     Log.method("default")
-    return (.fast, (1000, 3000, 1500))
+    return (.fast, (0, 0, 0))
 }
 
 // MARK: - Screen Text Reading (for word restoration)
