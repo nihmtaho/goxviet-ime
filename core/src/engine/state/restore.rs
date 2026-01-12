@@ -35,6 +35,47 @@ pub fn build_raw_output(raw_input: &RawInputBuffer) -> Vec<char> {
         .collect()
 }
 
+/// Build raw ASCII output from a specific position in raw input history
+///
+/// Used for incremental restore - only rebuilds from the first transform position.
+///
+/// # Arguments
+/// * `raw_input` - Raw keystroke history buffer
+/// * `from_pos` - Starting position (0-indexed)
+///
+/// # Returns
+/// Vector of ASCII characters from position to end
+pub fn build_raw_output_from(raw_input: &RawInputBuffer, from_pos: usize) -> Vec<char> {
+    raw_input
+        .iter()
+        .skip(from_pos)
+        .filter_map(|(key, caps)| utils::key_to_char(key, caps))
+        .collect()
+}
+
+/// Find the position of the first character with Vietnamese transforms
+///
+/// Used for incremental restore optimization - instead of rebuilding the entire
+/// buffer, we only rebuild from the first transformed character.
+///
+/// # Arguments
+/// * `buf` - Buffer to search
+///
+/// # Returns
+/// Position of first transform, or buffer length if no transforms found
+///
+/// # Example
+/// ```ignore
+/// // Buffer: "usẽr" (transform at position 2)
+/// let pos = find_first_transform_position(&buf);
+/// assert_eq!(pos, 2); // 'ẽ' is at position 2
+/// ```
+pub fn find_first_transform_position(buf: &Buffer) -> usize {
+    buf.iter()
+        .position(|c| c.tone != 0 || c.mark != 0 || c.stroke)
+        .unwrap_or(buf.len())
+}
+
 /// Restore buffer to raw ASCII for English words
 ///
 /// Auto-restore English words when space is pressed AND transforms were applied.
@@ -73,6 +114,49 @@ pub fn auto_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result 
     let backspace = buf.len() as u8;
 
     Result::send(backspace, &raw_chars)
+}
+
+/// Restore buffer to raw ASCII for English words (instant - no space)
+///
+/// Used for immediate restoration during typing when English is detected.
+/// OPTIMIZED: Uses incremental restore to only rebuild transformed portion.
+///
+/// # Performance
+/// - Old: Delete entire buffer + retype all characters (O(n))
+/// - New: Delete only from first transform + retype from there (O(k) where k = chars after transform)
+///
+/// # Example
+/// ```ignore
+/// // Typing "user": u → s → s → e → r
+/// // At 'e': buffer = "usẽ" (transform at pos 2)
+/// // Old: backspace 3, type "use" (6 operations)
+/// // New: backspace 1, type "e" (2 operations) - 3x faster!
+/// ```
+pub fn instant_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result {
+    if raw_input.is_empty() || buf.is_empty() {
+        return Result::none();
+    }
+
+    // OPTIMIZATION: Find first transform position for incremental restore
+    let first_transform_pos = find_first_transform_position(buf);
+
+    // If no transforms found, nothing to restore
+    if first_transform_pos >= buf.len() {
+        return Result::none();
+    }
+
+    // Build raw output only from the transform position onwards
+    let raw_chars_from = build_raw_output_from(raw_input, first_transform_pos);
+
+    if raw_chars_from.is_empty() {
+        return Result::none();
+    }
+
+    // Count screen characters from transform position to end
+    // This is how many backspaces we need
+    let backspace = (buf.len() - first_transform_pos) as u8;
+
+    Result::send(backspace, &raw_chars_from)
 }
 
 /// Restore buffer to raw ASCII (ESC key handler)
@@ -279,5 +363,131 @@ mod tests {
     fn test_has_vietnamese_transforms_empty() {
         let buf = Buffer::new();
         assert!(!has_vietnamese_transforms(&buf));
+    }
+
+    #[test]
+    fn test_find_first_transform_position_with_tone() {
+        // Buffer: "usẽr" - transform at position 2
+        let buf = make_buffer(&[
+            (keys::U, 0, 0, false),
+            (keys::S, 0, 0, false),
+            (keys::E, 0, 4, false), // mark=4 is ngã
+            (keys::R, 0, 0, false),
+        ]);
+        assert_eq!(find_first_transform_position(&buf), 2);
+    }
+
+    #[test]
+    fn test_find_first_transform_position_with_stroke() {
+        // Buffer: "đa" - transform at position 0
+        let buf = make_buffer(&[(keys::D, 0, 0, true), (keys::A, 0, 0, false)]);
+        assert_eq!(find_first_transform_position(&buf), 0);
+    }
+
+    #[test]
+    fn test_find_first_transform_position_no_transforms() {
+        // Buffer: "test" - no transforms
+        let buf = make_buffer(&[
+            (keys::T, 0, 0, false),
+            (keys::E, 0, 0, false),
+            (keys::S, 0, 0, false),
+            (keys::T, 0, 0, false),
+        ]);
+        assert_eq!(find_first_transform_position(&buf), 4); // Returns buf.len()
+    }
+
+    #[test]
+    fn test_find_first_transform_position_empty() {
+        let buf = Buffer::new();
+        assert_eq!(find_first_transform_position(&buf), 0);
+    }
+
+    #[test]
+    fn test_build_raw_output_from() {
+        let raw = make_raw_input(&[
+            (keys::U, false),
+            (keys::S, false),
+            (keys::E, false),
+            (keys::R, false),
+        ]);
+        let output = build_raw_output_from(&raw, 2);
+        assert_eq!(output, vec!['e', 'r']); // From position 2 onwards
+    }
+
+    #[test]
+    fn test_build_raw_output_from_start() {
+        let raw = make_raw_input(&[(keys::T, false), (keys::E, false)]);
+        let output = build_raw_output_from(&raw, 0);
+        assert_eq!(output, vec!['t', 'e']); // All characters
+    }
+
+    #[test]
+    fn test_build_raw_output_from_beyond_end() {
+        let raw = make_raw_input(&[(keys::A, false)]);
+        let output = build_raw_output_from(&raw, 10);
+        assert!(output.is_empty()); // Beyond end = empty
+    }
+
+    #[test]
+    fn test_instant_restore_english_incremental() {
+        // Buffer: "usẽr" (transform at position 2)
+        let buf = make_buffer(&[
+            (keys::U, 0, 0, false),
+            (keys::S, 0, 0, false),
+            (keys::E, 0, 4, false), // mark=4 is ngã
+            (keys::R, 0, 0, false),
+        ]);
+        // Raw input: "user"
+        let raw = make_raw_input(&[
+            (keys::U, false),
+            (keys::S, false),
+            (keys::E, false),
+            (keys::R, false),
+        ]);
+
+        let result = instant_restore_english(&buf, &raw);
+
+        assert_eq!(result.action, 1); // Action::Send
+        // OPTIMIZATION: Only backspace from position 2 (2 chars: "ẽr")
+        assert_eq!(result.backspace, 2);
+        // OPTIMIZATION: Only send "er" (2 chars)
+        assert_eq!(result.count, 2);
+    }
+
+    #[test]
+    fn test_instant_restore_english_no_transforms() {
+        // Buffer: "test" (no transforms)
+        let buf = make_buffer(&[
+            (keys::T, 0, 0, false),
+            (keys::E, 0, 0, false),
+            (keys::S, 0, 0, false),
+            (keys::T, 0, 0, false),
+        ]);
+        let raw = make_raw_input(&[
+            (keys::T, false),
+            (keys::E, false),
+            (keys::S, false),
+            (keys::T, false),
+        ]);
+
+        let result = instant_restore_english(&buf, &raw);
+
+        // No transforms = no restore needed
+        assert_eq!(result.action, 0); // Action::None
+    }
+
+    #[test]
+    fn test_instant_restore_english_transform_at_start() {
+        // Buffer: "đa" (transform at position 0)
+        let buf = make_buffer(&[(keys::D, 0, 0, true), (keys::A, 0, 0, false)]);
+        let raw = make_raw_input(&[(keys::D, false), (keys::D, false), (keys::A, false)]);
+
+        let result = instant_restore_english(&buf, &raw);
+
+        assert_eq!(result.action, 1); // Action::Send
+        // Backspace entire buffer (transform at start)
+        assert_eq!(result.backspace, 2);
+        // Send all raw chars
+        assert_eq!(result.count, 3); // "dda"
     }
 }

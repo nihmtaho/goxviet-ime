@@ -390,9 +390,21 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     
     // Modern editors - instant method with zero delays for maximum speed
     let modernEditors = [
+        // Code Editors
         "com.microsoft.VSCode", "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3",
         "com.panic.Nova", "com.github.atom", "com.github.GitHubClient", "com.coteditor.CotEditor",
-        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview"
+        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview",
+        // Text Editors
+        "com.apple.TextEdit", "com.apple.Notes", "com.apple.mail",
+        // Note-taking apps
+        "md.obsidian", "com.bear-writer.Bear", "com.dayoneapp.dayone",
+        // Chat & Communication
+        "com.tinyspeck.slackmacgap", "com.hnc.Discord", "com.apple.iChat",
+        "com.microsoft.teams", "com.microsoft.teams2", "us.zoom.xos",
+        // Browsers (content areas, not address bars)
+        "com.google.Chrome", "com.apple.Safari", "org.mozilla.firefox",
+        "com.brave.Browser", "com.microsoft.edgemac", "com.vivaldi.Vivaldi",
+        "company.thebrowser.Arc", "com.opera.Opera"
     ]
     if modernEditors.contains(bundleId) { Log.method("instant:editor"); return (.instant, (0, 0, 0)) }
     
@@ -408,9 +420,11 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // JetBrains IDEs - need moderate delays for stability
     if bundleId.hasPrefix("com.jetbrains") { Log.method("slow:jb"); return (.slow, (3000, 8000, 3000)) }
     
-    // Default: safe delays for stability across unknown apps
+    // OPTIMIZATION: Reduced default delays for better performance
+    // Old: (1000, 3000, 1500) - conservative but slow
+    // New: (0, 0, 0) - fast for most modern apps
     Log.method("default")
-    return (.fast, (1000, 3000, 1500))
+    return (.fast, (0, 0, 0))
 }
 
 // MARK: - Screen Text Reading (for word restoration)

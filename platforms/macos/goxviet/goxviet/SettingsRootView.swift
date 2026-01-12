@@ -46,7 +46,7 @@ struct SettingsRootView: View {
             .navigationSplitViewStyle(.balanced)
         }
         .frame(minWidth: 760, idealWidth: 840, minHeight: 520, idealHeight: 580)
-        .background(Color.clear)
+        //.background(Color.primary)
         .onAppear {
             loadPerAppModes()
             syncToAppState()

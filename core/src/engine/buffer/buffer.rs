@@ -20,6 +20,7 @@ pub struct Char {
 }
 
 impl Char {
+    #[inline]
     pub fn new(key: u16, caps: bool) -> Self {
         Self {
             key,
@@ -30,10 +31,12 @@ impl Char {
         }
     }
 
+    #[inline]
     pub fn has_tone(&self) -> bool {
         self.tone > 0
     }
 
+    #[inline]
     pub fn has_mark(&self) -> bool {
         self.mark > 0
     }
@@ -53,6 +56,7 @@ impl Default for Buffer {
 }
 
 impl Buffer {
+    #[inline]
     pub fn new() -> Self {
         Self {
             data: [Char::default(); MAX],
@@ -60,6 +64,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn push(&mut self, c: Char) {
         if self.len < MAX {
             self.data[self.len] = c;
@@ -67,6 +72,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn pop(&mut self) -> Option<Char> {
         if self.len > 0 {
             self.len -= 1;
@@ -76,18 +82,22 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.len = 0;
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
+    #[inline]
     pub fn get(&self, i: usize) -> Option<&Char> {
         if i < self.len {
             Some(&self.data[i])
@@ -96,6 +106,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn get_mut(&mut self, i: usize) -> Option<&mut Char> {
         if i < self.len {
             Some(&mut self.data[i])
@@ -104,6 +115,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn last(&self) -> Option<&Char> {
         if self.len > 0 {
             Some(&self.data[self.len - 1])
@@ -113,6 +125,7 @@ impl Buffer {
     }
 
     /// Find indices of vowels in buffer
+    #[inline]
     pub fn find_vowels(&self) -> Vec<usize> {
         use crate::data::keys;
         (0..self.len)
@@ -121,6 +134,7 @@ impl Buffer {
     }
 
     /// Find vowel position by key (from end)
+    #[inline]
     pub fn find_vowel_by_key(&self, key: u16) -> Option<usize> {
         use crate::data::keys;
         (0..self.len)
@@ -129,6 +143,7 @@ impl Buffer {
     }
 
     /// Iterate over chars
+    #[inline]
     pub fn iter(&self) -> std::slice::Iter<'_, Char> {
         self.data[..self.len].iter()
     }

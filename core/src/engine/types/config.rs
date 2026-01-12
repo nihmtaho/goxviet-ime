@@ -133,6 +133,12 @@ pub struct EngineConfig {
     /// Modern style is the default and is recommended by Vietnamese
     /// language authorities.
     pub modern_tone: bool,
+
+    /// Enable instant auto-restore for English words
+    ///
+    /// When `true` (default), restores English words immediately upon detection
+    /// without waiting for a space character.
+    pub instant_restore_enabled: bool,
 }
 
 impl Default for EngineConfig {
@@ -140,10 +146,11 @@ impl Default for EngineConfig {
         Self {
             method: InputMethod::Telex,
             enabled: true,
-            skip_w_shortcut: false,
+            skip_w_shortcut: true,
             esc_restore_enabled: false, // Default OFF per user request
-            free_tone_enabled: false,
+            free_tone_enabled: true,
             modern_tone: true, // Modern style (hoà, thuý)
+            instant_restore_enabled: true,
         }
     }
 }
@@ -329,9 +336,9 @@ mod tests {
         let config = EngineConfig::default();
         assert_eq!(config.method, InputMethod::Telex);
         assert!(config.enabled);
-        assert!(!config.skip_w_shortcut);
+        assert!(config.skip_w_shortcut); // Default is now true
         assert!(!config.esc_restore_enabled);
-        assert!(!config.free_tone_enabled);
+        assert!(config.free_tone_enabled); // Default is now true
         assert!(config.modern_tone);
     }
 
