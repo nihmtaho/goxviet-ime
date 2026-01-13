@@ -65,10 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings Window (SwiftUI)
     
     @objc func showSettingsWindow() {
-        // Post notification to open Settings window
-        // This will be handled by SettingsWindowManager which has access to @Environment(\.openWindow)
-        NotificationCenter.default.post(name: .openSettingsWindow, object: nil)
-        Log.info("Posted notification to open Settings window")
+        WindowManager.shared.showSettingsWindow()
     }
     
     // MARK: - Accessibility Permission
@@ -422,6 +419,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.checkPermissionOnActivate()
         }
         observerTokens.append(activateToken)
+        
+        // Listen for internal open window requests (from Settings UI buttons etc)
+        let openUpdateToken = NotificationCenter.default.addObserver(
+            forName: .openUpdateWindow,
+            object: nil,
+            queue: .main
+        ) { _ in
+            WindowManager.shared.showUpdateWindow()
+        }
+        observerTokens.append(openUpdateToken)
     }
     
     private func cleanupObservers() {
@@ -544,8 +551,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func checkForUpdates() {
-        // Post notification to open update window
-        NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
+        WindowManager.shared.showUpdateWindow()
         // Trigger update check
         UpdateManager.shared.checkForUpdates(userInitiated: true)
     }
@@ -624,3 +630,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false // prevent default About popup
     }
 }
+
