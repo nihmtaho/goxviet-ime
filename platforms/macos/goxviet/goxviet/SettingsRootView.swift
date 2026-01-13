@@ -1,11 +1,3 @@
-// MARK: - Window Delegate for Shortcut Handling
-class SettingsWindowDelegate: NSObject, NSWindowDelegate {
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        sender.performClose(nil)
-        return false
-    }
-}
-
 //
 //  SettingsRootView.swift
 //  GoxViet
@@ -26,7 +18,9 @@ struct SettingsRootView: View {
 
     @AppStorage("smartModeEnabled") private var smartModeEnabled = true
     @AppStorage("com.goxviet.ime.autoDisableNonLatin") private var autoDisableForNonLatin = true
-    @AppStorage("com.goxviet.ime.hideFromDock") private var hideFromDock = true
+    
+    // Use AppState for hideFromDock instead of @AppStorage
+    @ObservedObject private var appState = AppState.shared
 
     // MARK: - View State
     @State private var selection: SettingsSection? = .general
@@ -45,8 +39,6 @@ struct SettingsRootView: View {
             }
             .navigationSplitViewStyle(.balanced)
         }
-        .frame(minWidth: 760, idealWidth: 840, minHeight: 520, idealHeight: 580)
-        //.background(Color.primary)
         .onAppear {
             loadPerAppModes()
             syncToAppState()
@@ -117,8 +109,7 @@ struct SettingsRootView: View {
                     modernToneStyle: $modernToneStyle,
                     escRestoreEnabled: $escRestoreEnabled,
                     freeToneEnabled: $freeToneEnabled,
-                    autoDisableForNonLatin: $autoDisableForNonLatin,
-                    hideFromDock: $hideFromDock
+                    autoDisableForNonLatin: $autoDisableForNonLatin
                 )
             case .perApp:
                 PerAppSettingsView(
@@ -242,7 +233,9 @@ private struct GeneralSettingsView: View {
     @Binding var escRestoreEnabled: Bool
     @Binding var freeToneEnabled: Bool
     @Binding var autoDisableForNonLatin: Bool
-    @Binding var hideFromDock: Bool
+    
+    // Use AppState for hideFromDock
+    @ObservedObject private var appState = AppState.shared
 
     var body: some View {
         Form {
@@ -328,12 +321,7 @@ private struct GeneralSettingsView: View {
             }
             
             Section {
-                Toggle("Hide from Dock", isOn: $hideFromDock)
-                    .onChange(of: hideFromDock) { _, newValue in
-                        let policy: NSApplication.ActivationPolicy = newValue ? .accessory : .regular
-                        NSApp.setActivationPolicy(policy)
-                        Log.info("Dock visibility: \(newValue ? "hidden" : "visible")")
-                    }
+                Toggle("Hide from Dock", isOn: $appState.hideFromDock)
                 
                 Text("When enabled, GoxViet will only appear in the menu bar.")
                     .font(.caption)

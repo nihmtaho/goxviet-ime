@@ -65,8 +65,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings Window (SwiftUI)
     
     @objc func showSettingsWindow() {
-        applyActivationPolicyFromPreference()
-        SettingsWindowController.showSettings()
+        // Post notification to open Settings window
+        // This will be handled by SettingsWindowManager which has access to @Environment(\.openWindow)
+        NotificationCenter.default.post(name: .openSettingsWindow, object: nil)
+        Log.info("Posted notification to open Settings window")
     }
     
     // MARK: - Accessibility Permission
@@ -537,8 +539,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showSettings() {
-        // Show settings window - creates on-demand, releases memory when closed
-        SettingsWindowController.showSettings()
+        // Show settings window using GoxVietApp
+        showSettingsWindow()
     }
 
     @objc func checkForUpdates() {
@@ -615,7 +617,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // When user clicks app icon, always show Settings window
-        SettingsWindowController.showSettings()
+        showSettingsWindow()
         return false // prevent default About popup
     }
 }
