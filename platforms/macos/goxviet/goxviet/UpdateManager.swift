@@ -36,10 +36,12 @@ final class UpdateManager: NSObject, ObservableObject {
     @Published private(set) var updateState: UpdateState = .idle
     @Published private(set) var downloadProgress: Double = 0.0
 
-    private let session: URLSession
+    private let apiSession: URLSession
+    private var downloadSession: URLSession?
     private var downloadTask: URLSessionDownloadTask?
     private var downloadingVersion: String?
     private var timer: Timer?
+    private var isRunning: Bool = false
     private let defaults = UserDefaults.standard
 
     private let apiURL = URL(string: "https://api.github.com/repos/nihmtaho/goxviet-ime/releases/latest")!
@@ -51,17 +53,38 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     private override init() {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 12
-        config.timeoutIntervalForResource = 12
-        session = URLSession(configuration: config)
+        let apiConfig = URLSessionConfiguration.default
+        apiConfig.waitsForConnectivity = true
+        apiConfig.timeoutIntervalForRequest = 12
+        apiConfig.timeoutIntervalForResource = 12
+        apiSession = URLSession(configuration: apiConfig)
         super.init()
     }
 
     // MARK: - Public API
 
     func start() {
+        guard !isRunning else { return }
+        isRunning = true
         refreshSchedule(triggerImmediate: true)
+    }
+
+    func stop() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.timer?.invalidate()
+            self.timer = nil
+            self.downloadTask?.cancel()
+            self.downloadTask = nil
+            self.downloadSession?.invalidateAndCancel()
+            self.downloadSession = nil
+            self.apiSession.invalidateAndCancel()
+            self.isChecking = false
+            self.isInstalling = false
+            self.updateState = .idle
+            self.isRunning = false
+            Log.info("UpdateManager stopped and cleaned up")
+        }
     }
 
     func refreshSchedule(triggerImmediate: Bool = false) {
@@ -95,7 +118,7 @@ final class UpdateManager: NSObject, ObservableObject {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("GoxViet-Update-Agent", forHTTPHeaderField: "User-Agent")
 
-        session.dataTask(with: request) { [weak self] data, response, error in
+        apiSession.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
 
             if let error = error {
@@ -139,15 +162,16 @@ final class UpdateManager: NSObject, ObservableObject {
         }
 
         downloadingVersion = latestVersion ?? "unknown"
-        let config = URLSessionConfiguration.default
-        let customSession = URLSession(configuration: config, delegate: self, delegateQueue: .main)
-        downloadTask = customSession.downloadTask(with: downloadURL)
+        let session = makeDownloadSession()
+        downloadTask = session.downloadTask(with: downloadURL)
         downloadTask?.resume()
     }
 
     func cancelDownload() {
         downloadTask?.cancel()
         downloadTask = nil
+        downloadSession?.invalidateAndCancel()
+        downloadSession = nil
         DispatchQueue.main.async {
             self.isInstalling = false
             self.updateState = .idle
@@ -297,7 +321,7 @@ final class UpdateManager: NSObject, ObservableObject {
             self.statusMessage = "Downloading update..."
         }
 
-        session.downloadTask(with: url) { [weak self] tempURL, response, error in
+        apiSession.downloadTask(with: url) { [weak self] tempURL, response, error in
             guard let self = self else { return }
 
             if let error = error {
@@ -401,6 +425,21 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 }
 
+private extension UpdateManager {
+    func makeDownloadSession() -> URLSession {
+        if let existing = downloadSession { return existing }
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 120
+        config.allowsExpensiveNetworkAccess = true
+        config.allowsConstrainedNetworkAccess = true
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
+        downloadSession = session
+        return session
+    }
+}
+
 // MARK: - Preferences Helpers
 
 private extension UpdateManager {
@@ -497,6 +536,8 @@ extension UpdateManager: URLSessionDownloadDelegate {
                 try FileManager.default.removeItem(at: dmgPath)
             }
             try FileManager.default.copyItem(at: location, to: dmgPath)
+            downloadSession?.finishTasksAndInvalidate()
+            downloadSession = nil
             
             // Update state to ready to install
             DispatchQueue.main.async {
@@ -536,6 +577,8 @@ extension UpdateManager: URLSessionDownloadDelegate {
         } else {
             finishCheckWithError("Download failed: \(error.localizedDescription)", userInitiated: true)
         }
+        downloadSession?.finishTasksAndInvalidate()
+        downloadSession = nil
     }
 }
 

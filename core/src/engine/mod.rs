@@ -835,7 +835,8 @@ impl Engine {
             }
 
             // COMPLEX PATH: Has vowels, need validation
-            if !self.free_tone_enabled {
+            // Skip validation for Telex (method 0) - matches try_tone/try_mark behavior
+            if !self.free_tone_enabled && self.method != 0 {
                 // Use iterator-based validation to avoid allocation
                 let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
                 if !VietnameseSyllableValidator::validate(&buffer_keys).is_valid {
@@ -869,8 +870,9 @@ impl Engine {
 
         // VNI validation: only validate if we have vowels after 'd'
         // Allow "d9" → "đ" before vowel is typed
+        // Skip validation for VNI method (method 1) - matches try_tone/try_mark behavior
         let has_vowel_after = self.buf.iter().skip(pos + 1).any(|c| keys::is_vowel(c.key));
-        if !self.free_tone_enabled && has_vowel_after {
+        if !self.free_tone_enabled && has_vowel_after && self.method != 1 {
             // Use iterator-based validation to avoid allocation
             let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
             if !VietnameseSyllableValidator::validate(&buffer_keys).is_valid {
@@ -1323,9 +1325,11 @@ impl Engine {
 
         // Check for invalid Vietnamese initial consonants (English word detection)
         // Skip transformation if invalid initial detected (unless already has Vietnamese transforms)
+        // Skip validation for Telex/VNI methods (matches try_tone behavior)
         if !self.free_tone_enabled
             && !has_horn_transforms
             && !has_stroke_transforms
+            && (self.method != 0 && self.method != 1)
             && !self.has_valid_initial()
         {
             // Don't lock into English mode here; just decline the transform.
@@ -1333,8 +1337,12 @@ impl Engine {
         }
 
         // Validate buffer structure (skip if has horn/stroke transforms - already intentional Vietnamese)
-        // Also skip validation if free_tone mode is enabled
-        if !self.free_tone_enabled && !has_horn_transforms && !has_stroke_transforms {
+        // Also skip validation if free_tone mode is enabled or using Telex/VNI (0/1)
+        if !self.free_tone_enabled
+            && !has_horn_transforms
+            && !has_stroke_transforms
+            && (self.method != 0 && self.method != 1)
+        {
             // Use iterator-based validation to avoid allocation
             let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
             if !VietnameseSyllableValidator::validate(&buffer_keys).is_valid {

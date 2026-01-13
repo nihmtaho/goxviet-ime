@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		96DB42412F0B897C00C435C2 /* libgoxviet_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 96DB42402F0B897C00C435C2 /* libgoxviet_core.a */; };
+		9642376D2F165DD500F9DA20 /* libgoxviet_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 96DB42402F0B897C00C435C2 /* libgoxviet_core.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,7 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				96DB42412F0B897C00C435C2 /* libgoxviet_core.a in Frameworks */,
+				9642376D2F165DD500F9DA20 /* libgoxviet_core.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -207,7 +207,7 @@ impl Dictionary {
 
     #[inline(always)]
     fn is_vietnamese_len7(hash: u32) -> bool {
-        hash == 3189400552
+        hash == 3189400552 || hash == 1145497276
     }
 
     #[inline(always)]

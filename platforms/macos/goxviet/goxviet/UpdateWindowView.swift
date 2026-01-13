@@ -386,9 +386,9 @@ struct UpdateWindowView: View {
         let version = updateManager.latestVersion ?? "latest"
         let urlString: String
         if version == "latest" {
-            urlString = "https://github.com/nihmtaho/goxviet/releases/latest"
+            urlString = "https://github.com/nihmtaho/goxviet-ime/releases/latest"
         } else {
-            urlString = "https://github.com/nihmtaho/goxviet/releases/tag/v\(version)"
+            urlString = "https://github.com/nihmtaho/goxviet-ime/releases/tag/v\(version)"
         }
         
         if let url = URL(string: urlString) {

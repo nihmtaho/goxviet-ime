@@ -68,6 +68,7 @@ pub static VIETNAMESE_BIGRAMS: [BigramRow; 128] = {
         keys::I,
         keys::U,
         keys::O,
+        keys::Y,
         keys::A // aa -> â
     );
     // B follows (start only)
@@ -252,6 +253,7 @@ pub static VIETNAMESE_BIGRAMS: [BigramRow; 128] = {
         keys::P,
         keys::A, // ia
         keys::E, // ie -> iê
+        keys::O, // io -> iô, iơ
         keys::U  // iu
     );
     // O follows...

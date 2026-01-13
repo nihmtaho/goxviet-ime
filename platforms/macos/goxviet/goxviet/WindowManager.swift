@@ -28,9 +28,11 @@ class WindowManager: NSObject, NSWindowDelegate {
     func showSettingsWindow() {
         // If window exists, bring to front
         if let window = settingsWindow {
-            NSApp.setActivationPolicy(.regular)
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            setActivationPolicy(.regular)
+            DispatchQueue.main.async {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
             return
         }
         
@@ -50,6 +52,7 @@ class WindowManager: NSObject, NSWindowDelegate {
         window.delegate = self
         window.identifier = NSUserInterfaceItemIdentifier("settings")
         window.minSize = NSSize(width: 820, height: 520)
+        window.isRestorable = false  // Disable window restoration
         
         // Set content view using NSHostingView
         let contentView = SettingsRootView()
@@ -59,10 +62,14 @@ class WindowManager: NSObject, NSWindowDelegate {
         
         self.settingsWindow = window
         
-        // Show window and activate app
-        NSApp.setActivationPolicy(.regular)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // Request activation policy change first
+        setActivationPolicy(.regular)
+        
+        // Defer window show to allow policy change to complete
+        DispatchQueue.main.async {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         
         Log.info("Created direct Settings window")
     }
@@ -77,9 +84,11 @@ class WindowManager: NSObject, NSWindowDelegate {
     
     func showUpdateWindow() {
         if let window = updateWindow {
-            NSApp.setActivationPolicy(.regular)
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            setActivationPolicy(.regular)
+            DispatchQueue.main.async {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
             return
         }
         
@@ -97,6 +106,7 @@ class WindowManager: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.identifier = NSUserInterfaceItemIdentifier("update")
+        window.isRestorable = false  // Disable window restoration
         
         let contentView = UpdateWindowView()
         let hostingView = NSHostingView(rootView: contentView)
@@ -105,9 +115,14 @@ class WindowManager: NSObject, NSWindowDelegate {
         
         self.updateWindow = window
         
-        NSApp.setActivationPolicy(.regular)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // Request activation policy change first
+        setActivationPolicy(.regular)
+        
+        // Defer window show to allow policy change to complete
+        DispatchQueue.main.async {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         
         Log.info("Created direct Update window")
     }
@@ -125,9 +140,18 @@ class WindowManager: NSObject, NSWindowDelegate {
         if settingsWindow == nil && updateWindow == nil {
             let hideFromDock = AppState.shared.hideFromDock
             let policy: NSApplication.ActivationPolicy = hideFromDock ? .accessory : .regular
-            NSApp.setActivationPolicy(policy)
+            
+            setActivationPolicy(policy)
             Log.info("All windows closed. Policy set to: \(hideFromDock ? ".accessory" : ".regular")")
         }
+    }
+    
+    private func setActivationPolicy(_ policy: NSApplication.ActivationPolicy) {
+        // Only change if different to avoid redundant layout triggers
+        guard NSApp.activationPolicy() != policy else { return }
+
+        // Delegate to coordinator to apply outside current layout pass
+        ActivationPolicyCoordinator.shared.request(policy)
     }
     
     // MARK: - NSWindowDelegate

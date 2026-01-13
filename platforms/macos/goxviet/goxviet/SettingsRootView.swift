@@ -767,10 +767,10 @@ private struct AboutSettingsView: View {
 
                 // Links row
                 HStack(spacing: 18) {
-                    Link(destination: URL(string: "https://github.com/goxviet/goxviet")!) {
+                    Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
                         Label("GitHub", systemImage: "link")
                     }
-                    Link(destination: URL(string: "https://github.com/goxviet/goxviet/issues")!) {
+                    Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
                         Label("Report Issue", systemImage: "exclamationmark.bubble")
                     }
                 }
@@ -786,7 +786,7 @@ private struct AboutSettingsView: View {
     }
 
     private func openReleasePage() {
-        if let url = URL(string: "https://github.com/nihmtaho/goxviet/releases/latest") {
+        if let url = URL(string: "https://github.com/nihmtaho/goxviet-ime/releases/latest") {
             NSWorkspace.shared.open(url)
         }
     }
