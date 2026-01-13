@@ -544,6 +544,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func checkForUpdates() {
+        // Post notification to open update window
+        NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
+        // Trigger update check
         UpdateManager.shared.checkForUpdates(userInitiated: true)
     }
     

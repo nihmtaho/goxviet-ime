@@ -682,12 +682,9 @@ private struct ShortcutRecordingSheet: View {
 // MARK: - About View
 
 private struct AboutSettingsView: View {
-    @ObservedObject private var updateManager = UpdateManager.shared
-    @AppStorage("com.goxviet.ime.autoUpdateCheck") private var autoUpdateCheck = true
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 24) {
                 Spacer(minLength: 16)
 
                 // App Icon
@@ -731,7 +728,6 @@ private struct AboutSettingsView: View {
                     ("brain.fill", .pink, "Smart per-app mode"),
                     ("keyboard.badge.ellipsis", .blue, "Telex & VNI input"),
                     ("textformat", .green, "Modern/traditional tone"),
-                    //( "arrow.uturn.left.circle.fill", .purple, "ESC restore/undo"), // Hide unfinished
                     ("sparkles", .orange, "Auto-disable non-Latin")
                 ]
                 Grid(alignment: .center, horizontalSpacing: 0, verticalSpacing: 8) {
@@ -754,8 +750,20 @@ private struct AboutSettingsView: View {
                         .fill(.ultraThinMaterial)
                 )
 
-                // Auto-update panel, modern card style
-                updatePanel
+                // Check for updates button (Modern style)
+                Button {
+                    NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.down.circle.fill")
+                        Text("Check for Updates...")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+                .padding(.horizontal, 40)
 
                 // Links row
                 HStack(spacing: 18) {
@@ -775,82 +783,6 @@ private struct AboutSettingsView: View {
             }
             .frame(maxWidth: .infinity)
         }
-    }
-
-    // Auto-update panel: modern, minimal, visually prominent
-    private var updatePanel: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-                Text("Auto-Update")
-                    .font(.headline)
-                Spacer()
-                if updateManager.updateAvailable, let latest = updateManager.latestVersion {
-                    Button {
-                        UpdateManager.shared.downloadUpdate()
-                    } label: {
-                        Label("Update to \(latest)", systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                }
-            }
-
-            Toggle("Auto check for updates", isOn: $autoUpdateCheck)
-                .toggleStyle(.switch)
-                .onChange(of: autoUpdateCheck) { _, newValue in
-                    AppState.shared.autoUpdateCheckEnabled = newValue
-                    UpdateManager.shared.refreshSchedule(triggerImmediate: newValue)
-                }
-
-            HStack(spacing: 12) {
-                Button {
-                    UpdateManager.shared.checkForUpdates(userInitiated: true)
-                } label: {
-                    if updateManager.isChecking {
-                        ProgressView()
-                    } else {
-                        Label("Check Now", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                }
-                .disabled(updateManager.isChecking)
-
-                Button {
-                    openReleasePage()
-                } label: {
-                    Label("Release Notes", systemImage: "doc.text")
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(updateManager.statusMessage)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                if let latest = updateManager.latestVersion {
-                    Text("Latest: \(latest)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let lastChecked = updateManager.lastChecked {
-                    Text("Last checked: \(RelativeDateTimeFormatter().localizedString(for: lastChecked, relativeTo: Date()))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.regularMaterial)
-                .shadow(color: .blue.opacity(0.10), radius: 5, x: 0, y: 2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.blue.opacity(0.18), lineWidth: 1)
-        )
-        .padding(.horizontal, 10)
     }
 
     private func openReleasePage() {

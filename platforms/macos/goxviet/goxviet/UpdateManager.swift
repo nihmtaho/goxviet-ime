@@ -9,6 +9,18 @@ import Foundation
 import AppKit
 import Combine
 
+// MARK: - Update State
+
+enum UpdateState: Equatable {
+    case idle
+    case checking
+    case updateAvailable
+    case downloading
+    case readyToInstall
+    case upToDate
+    case error
+}
+
 final class UpdateManager: NSObject, ObservableObject {
     static let shared = UpdateManager()
 
@@ -19,6 +31,10 @@ final class UpdateManager: NSObject, ObservableObject {
     @Published private(set) var lastChecked: Date?
     @Published private(set) var downloadURL: URL?
     @Published private(set) var isInstalling: Bool = false
+    
+    // New properties for enhanced UI
+    @Published private(set) var updateState: UpdateState = .idle
+    @Published private(set) var downloadProgress: Double = 0.0
 
     private let session: URLSession
     private var downloadTask: URLSessionDownloadTask?
@@ -71,6 +87,7 @@ final class UpdateManager: NSObject, ObservableObject {
 
         DispatchQueue.main.async {
             self.isChecking = true
+            self.updateState = .checking
             self.statusMessage = "Checking for updates..."
         }
 
@@ -107,12 +124,17 @@ final class UpdateManager: NSObject, ObservableObject {
 
     func downloadUpdate() {
         guard let downloadURL = downloadURL else {
-            presentAlert(title: "Error", message: "Download URL not available")
+            DispatchQueue.main.async {
+                self.updateState = .error
+                self.statusMessage = "Download URL not available"
+            }
             return
         }
 
         DispatchQueue.main.async {
             self.isInstalling = true
+            self.updateState = .downloading
+            self.downloadProgress = 0.0
             self.statusMessage = "Downloading..."
         }
 
@@ -128,6 +150,8 @@ final class UpdateManager: NSObject, ObservableObject {
         downloadTask = nil
         DispatchQueue.main.async {
             self.isInstalling = false
+            self.updateState = .idle
+            self.downloadProgress = 0.0
             self.statusMessage = "Download cancelled"
         }
     }
@@ -163,16 +187,15 @@ final class UpdateManager: NSObject, ObservableObject {
         if isNewerVersion(latestVersion, than: currentVersion) {
             DispatchQueue.main.async {
                 self.updateAvailable = true
+                self.updateState = .updateAvailable
                 self.statusMessage = "New version available: \(latestVersion)"
             }
             handleNewVersion(latest: latestVersion, release: release, userInitiated: userInitiated)
         } else {
             DispatchQueue.main.async {
                 self.updateAvailable = false
+                self.updateState = .upToDate
                 self.statusMessage = "You are up to date"
-                if userInitiated {
-                    self.presentAlert(title: "Up to Date", message: "GoxViet \(currentVersion) is the latest version available.")
-                }
             }
         }
     }
@@ -180,56 +203,32 @@ final class UpdateManager: NSObject, ObservableObject {
     private func handleNewVersion(latest: String, release: ReleaseResponse, userInitiated: Bool) {
         let alreadyNotified = lastNotifiedVersion == latest
 
-        // Show alert only if user asked explicitly or we have not notified for this version yet
         if userInitiated || !alreadyNotified {
             lastNotifiedVersion = latest
-            presentUpdateAvailableAlert(version: latest, release: release)
-        } else {
-            DispatchQueue.main.async {
-                self.statusMessage = "Update available: \(latest)"
+            // If it's a background block, we might want to notify via Notification Center
+            // but for now, we just ensure the window is open if manual, 
+            // and background just updates the statusMessage.
+            if !userInitiated {
+                 // For background, we could trigger a system notification here in the future
+                 Log.info("New version available in background: \(latest)")
             }
+        }
+        
+        DispatchQueue.main.async {
+            self.statusMessage = "Update available: \(latest)"
         }
     }
 
     private func finishCheckWithError(_ message: String, userInitiated: Bool) {
         DispatchQueue.main.async {
             self.isChecking = false
+            self.updateState = .error
             self.statusMessage = message
-            if userInitiated {
-                self.presentAlert(title: "Update Check Failed", message: message)
-            }
         }
     }
 
-    private func presentUpdateAvailableAlert(version: String, release: ReleaseResponse) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Update Available"
-            alert.informativeText = "GoxViet \(version) is available. Current version: \(self.currentVersion() ?? "unknown")."
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "Download & Install")
-            alert.addButton(withTitle: "Later")
-
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                self.downloadUpdate()
-            default:
-                break
-            }
-        }
-    }
-
-    private func presentAlert(title: String, message: String) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = title
-            alert.informativeText = message
-            alert.alertStyle = .informational
-            alert.runModal()
-        }
-    }
-
+    // Old alert methods removed in favor of dedicated UpdateWindowView flow
+    
     // MARK: - Version Helpers
 
     private func currentVersion() -> String? {
@@ -498,7 +497,18 @@ extension UpdateManager: URLSessionDownloadDelegate {
                 try FileManager.default.removeItem(at: dmgPath)
             }
             try FileManager.default.copyItem(at: location, to: dmgPath)
-            installDMG(at: dmgPath)
+            
+            // Update state to ready to install
+            DispatchQueue.main.async {
+                self.updateState = .readyToInstall
+                self.downloadProgress = 1.0
+                self.statusMessage = "Download complete - Ready to install"
+            }
+            
+            // Auto-install after a brief delay to show completion
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                self.installDMG(at: dmgPath)
+            }
         } catch {
             finishCheckWithError("Cannot save installer: \(error.localizedDescription)", userInitiated: true)
         }
@@ -509,6 +519,7 @@ extension UpdateManager: URLSessionDownloadDelegate {
                     totalBytesExpectedToWrite: Int64) {
         let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
         DispatchQueue.main.async {
+            self.downloadProgress = progress
             self.statusMessage = "Downloading: \(Int(progress * 100))%"
         }
     }
@@ -518,6 +529,8 @@ extension UpdateManager: URLSessionDownloadDelegate {
         if (error as NSError).code == NSURLErrorCancelled {
             DispatchQueue.main.async {
                 self.isInstalling = false
+                self.updateState = .idle
+                self.downloadProgress = 0.0
                 self.statusMessage = "Download cancelled"
             }
         } else {

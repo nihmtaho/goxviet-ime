@@ -7,11 +7,6 @@
 
 import SwiftUI
 
-// Notification for opening Settings window
-extension Notification.Name {
-    static let openSettingsWindow = Notification.Name("openSettingsWindow")
-}
-
 @main
 struct GoxVietApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -37,6 +32,15 @@ struct GoxVietApp: App {
                 // SwiftUI provides standard window management including Cmd+W
             }
         }
+        
+        // Update window - managed via WindowGroup
+        WindowGroup(id: "update") {
+            UpdateWindowManager()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 480, height: 520)
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
     }
 }
 
@@ -53,7 +57,7 @@ struct SettingsWindowManager: View {
                 NSApp.setActivationPolicy(.regular)
                 Log.info("Settings opened - showing in dock")
                 
-                // Setup notification observer only once
+                // Setup notification observers only once
                 if !hasSetupObserver {
                     hasSetupObserver = true
                     NotificationCenter.default.addObserver(
@@ -62,6 +66,14 @@ struct SettingsWindowManager: View {
                         queue: .main
                     ) { [self] _ in
                         handleOpenSettingsRequest()
+                    }
+                    
+                    NotificationCenter.default.addObserver(
+                        forName: .openUpdateWindow,
+                        object: nil,
+                        queue: .main
+                    ) { [self] _ in
+                        handleOpenUpdateRequest()
                     }
                 }
             }
@@ -95,6 +107,27 @@ struct SettingsWindowManager: View {
         }
     }
     
+    private func handleOpenUpdateRequest() {
+        // Shared logic to open Update window
+        var updateWindowExists = false
+        for window in NSApp.windows {
+            if let identifier = window.identifier?.rawValue,
+               identifier.contains("update") || identifier.contains("AppWindow-update") {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                updateWindowExists = true
+                Log.info("Update window already exists - bringing to front")
+                break
+            }
+        }
+        
+        if !updateWindowExists {
+            openWindow(id: "update")
+            NSApp.activate(ignoringOtherApps: true)
+            Log.info("Created new Update window")
+        }
+    }
+    
     private func handleSettingsClosed() {
         Log.info("Settings closed - restoring hideFromDock state")
         
@@ -104,5 +137,81 @@ struct SettingsWindowManager: View {
         NSApp.setActivationPolicy(policy)
         
         Log.info("Activation policy set to: \(hideFromDock ? ".accessory (hidden)" : ".regular (visible)")")
+    }
+}
+
+// Wrapper view that manages Update window opening via Environment
+struct UpdateWindowManager: View {
+    @Environment(\.openWindow) private var openWindow
+    @State private var hasSetupObserver = false
+    
+    var body: some View {
+        UpdateWindowView()
+            .frame(width: 480, height: 520)
+            .onAppear {
+                Log.info("Update window opened")
+                
+                // Setup notification observers
+                if !hasSetupObserver {
+                    hasSetupObserver = true
+                    NotificationCenter.default.addObserver(
+                        forName: .openUpdateWindow,
+                        object: nil,
+                        queue: .main
+                    ) { [self] _ in
+                        handleOpenUpdateRequest()
+                    }
+                    
+                    NotificationCenter.default.addObserver(
+                        forName: .openSettingsWindow,
+                        object: nil,
+                        queue: .main
+                    ) { [self] _ in
+                        handleOpenSettingsRequest()
+                    }
+                }
+            }
+    }
+    
+    private func handleOpenUpdateRequest() {
+        // Check if Update window already exists
+        var updateWindowExists = false
+        for window in NSApp.windows {
+            if let identifier = window.identifier?.rawValue,
+               identifier.contains("update") || identifier.contains("AppWindow-update") {
+                // Window exists, just bring it to front
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                updateWindowExists = true
+                Log.info("Update window already exists - bringing to front")
+                break
+            }
+        }
+        
+        // Only create new window if it doesn't exist
+        if !updateWindowExists {
+            openWindow(id: "update")
+            NSApp.activate(ignoringOtherApps: true)
+            Log.info("Created new Update window")
+        }
+    }
+    
+    private func handleOpenSettingsRequest() {
+        var settingsWindowExists = false
+        for window in NSApp.windows {
+            if let identifier = window.identifier?.rawValue,
+               identifier.contains("settings") || identifier.contains("AppWindow-settings") {
+                NSApp.setActivationPolicy(.regular)
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                settingsWindowExists = true
+                break
+            }
+        }
+        
+        if !settingsWindowExists {
+            openWindow(id: "settings")
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }

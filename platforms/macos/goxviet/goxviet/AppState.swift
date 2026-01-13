@@ -381,4 +381,6 @@ extension Notification.Name {
     static let shortcutRecorded = Notification.Name("shortcutRecorded")
     static let shortcutRecordingCancelled = Notification.Name("shortcutRecordingCancelled")
     static let showUpdateWindow = Notification.Name("showUpdateWindow")
+    static let openUpdateWindow = Notification.Name("openUpdateWindow")
+    static let openSettingsWindow = Notification.Name("openSettingsWindow")
 }
