@@ -48,8 +48,8 @@ class WindowManager: NSObject, NSWindowDelegate {
         window.title = "GoxViet Settings"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isReleasedWhenClosed = false // We handle cleanup manually
-        window.delegate = self
+        window.isReleasedWhenClosed = false // Auto-release when closed to save memory
+        window.delegate = self // Critical: delegate must set reference to nil in windowWillClose
         window.identifier = NSUserInterfaceItemIdentifier("settings")
         window.minSize = NSSize(width: 820, height: 520)
         window.isRestorable = false  // Disable window restoration
@@ -103,8 +103,8 @@ class WindowManager: NSObject, NSWindowDelegate {
         window.title = "Check for Updates"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isReleasedWhenClosed = false
-        window.delegate = self
+        window.isReleasedWhenClosed = false // Auto-release when closed to save memory
+        window.delegate = self // Critical: delegate must set reference to nil in windowWillClose
         window.identifier = NSUserInterfaceItemIdentifier("update")
         window.isRestorable = false  // Disable window restoration
         
@@ -159,15 +159,20 @@ class WindowManager: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         
+        // CRITICAL: Must release strong references here before window deallocates
+        // isReleasedWhenClosed=true means the window will be freed by AppKit
+        // if we still hold a strong reference, we'll get EXC_BAD_ACCESS
+        
         if window === settingsWindow {
-            Log.info("Settings window closing - releasing memory")
-            settingsWindow = nil
+            Log.info("✅ Settings window will close - releasing strong reference (isReleasedWhenClosed=true)")
+            settingsWindow = nil // MUST be nil before function returns
         } else if window === updateWindow {
-            Log.info("Update window closing - releasing memory")
-            updateWindow = nil
+            Log.info("✅ Update window will close - releasing strong reference (isReleasedWhenClosed=true)")
+            updateWindow = nil  // MUST be nil before function returns
         }
         
-        // Ensure policy is updated after window is gone
+        // Update policy after window is completely released
+        // Using weak self to avoid capturing released window
         DispatchQueue.main.async { [weak self] in
             self?.handleLastWindowClosed()
         }

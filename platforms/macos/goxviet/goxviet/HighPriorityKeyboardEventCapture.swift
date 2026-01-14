@@ -99,11 +99,10 @@ class HighPriorityKeyboardEventCapture {
     // MARK: - Accessibility Permission
     
     private func isAccessibilityEnabled() -> Bool {
-        let options = [
-            kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true
-        ] as [String: Any]
-        
-        return AXIsProcessTrustedWithOptions(options as CFDictionary)
+        // Use AXIsProcessTrusted() instead of AXIsProcessTrustedWithOptions to avoid
+        // showing the system permission dialog. AppDelegate has a custom dialog with
+        // better UX and detailed instructions for granting permission.
+        return AXIsProcessTrusted()
     }
     
     private func promptForAccessibilityPermission() {

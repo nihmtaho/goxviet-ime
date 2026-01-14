@@ -79,7 +79,12 @@ pub extern "C" fn ime_init() {
 pub extern "C" fn ime_key(key: u16, caps: bool, ctrl: bool) -> *mut Result {
     let mut guard = lock_engine();
     if let Some(ref mut e) = *guard {
+        let initial_english = e.is_english_word;
         let r = e.on_key(key, caps, ctrl);
+        println!(
+            "FFI: key={}, is_english: {} -> {}",
+            key, initial_english, e.is_english_word
+        );
         Box::into_raw(Box::new(r))
     } else {
         std::ptr::null_mut()
@@ -191,6 +196,32 @@ pub extern "C" fn ime_modern(modern: bool) {
     let mut guard = lock_engine();
     if let Some(ref mut e) = *guard {
         e.set_modern_tone(modern);
+    }
+}
+
+/// Get the current buffer as a C string.
+///
+/// # Safety
+/// Returns a pointer to a static buffer. Do not free.
+#[no_mangle]
+pub unsafe extern "C" fn ime_get_buffer() -> *const std::os::raw::c_char {
+    static mut BUFFER: [u8; 256] = [0; 256];
+    let guard = lock_engine();
+    if let Some(ref e) = *guard {
+        let s = e.get_buffer();
+        let c_str = std::ffi::CString::new(s).unwrap_or_default();
+        let bytes = c_str.as_bytes_with_nul();
+        let len = bytes.len().min(256);
+        #[allow(static_mut_refs)]
+        {
+            for i in 0..len {
+                let ptr = BUFFER.as_mut_ptr();
+                *ptr.add(i) = bytes[i];
+            }
+            BUFFER.as_ptr() as *const std::os::raw::c_char
+        }
+    } else {
+        std::ptr::null()
     }
 }
 
