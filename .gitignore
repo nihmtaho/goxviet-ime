@@ -3,8 +3,8 @@
 # ============================================
 
 .github/instructions/*
-!.github/ISSUE_TEMPLATE/*.md
-!.github/workflows/*.{yml, .md}
+!.github/ISSUE_TEMPLATE/
+!.github/workflows/
 !.github/instructions/*.instructions.md
 
 # Documentation & Examples (không track)

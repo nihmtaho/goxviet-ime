@@ -1,43 +1,28 @@
 ---
-name: Enhancement
+name: "⚡ Enhancement"
 about: Suggest an improvement to an existing feature or performance optimization
 title: "perf(scope): <short description>"
 labels: [enhancement]
 assignees: []
 ---
 
-## Current Behavior
+## 💡 Current Behavior
 
-<!--
-Mô tả hành vi hiện tại hoặc điểm chưa tối ưu.
--->
+<!-- Mô tả hành vi hiện tại hoặc điểm chưa tối ưu. -->
 
-## Proposed Enhancement
+## 🚀 Proposed Enhancement
 
-<!--
-Mô tả cải tiến bạn đề xuất (logic, hiệu năng, UX, API, ...).
--->
+<!-- Mô tả cải tiến bạn đề xuất (logic, hiệu năng, UX, API, ...). -->
 
-## Benefit
+## 🎯 Benefit & Impact
 
-<!--
-Lợi ích mang lại: tốc độ, trải nghiệm, bảo trì, v.v.
--->
+- **Benefits:** <!-- Tốc độ, trải nghiệm, bảo trì... -->
+- **Impact:** <!-- Ảnh hưởng tới các module khác, backward compatibility, FFI... -->
 
-## Impact
+## 📁 Additional Context
 
-<!--
-Ảnh hưởng tới các module khác, backward compatibility, FFI, ...
--->
+<!-- Bổ sung thông tin, benchmark, link tham khảo, v.v. -->
 
-## Additional Notes
-
-<!--
-Bổ sung thông tin, benchmark, link tham khảo, v.v.
--->
-
-## Labels
-
-<!--
-Đề xuất label: enhancement, perf, core, platform-macos, ...
--->
+---
+> [!TIP]
+> Đề xuất label: `enhancement`, `perf`, `core`, `platform-macos`.
