@@ -509,8 +509,9 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if role == "AXComboBox" { Log.method("sel:combo"); return (.selection, (0, 0, 0)) }
     if role == "AXSearchField" { Log.method("sel:search"); return (.selection, (0, 0, 0)) }
     
-    // Spotlight - use autocomplete method with Forward Delete to clear suggestions
-    if bundleId == "com.apple.Spotlight" { Log.method("auto:spotlight"); return (.autocomplete, (0, 0, 0)) }
+    // Spotlight - use AX API direct method to prevent character duplication (dd → dđ bug)
+    // AX API bypasses autocomplete conflicts and ensures stable text injection
+    if bundleId == "com.apple.Spotlight" { Log.method("ax:spotlight"); return (.axDirect, (0, 0, 0)) }
     
     // Chromium-based browser address bars - use autocomplete method
     // Forward Delete clears suggestion, Backspace removes user-typed chars

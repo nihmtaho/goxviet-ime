@@ -20,6 +20,10 @@
   - Replaced linear search with binary search for tone targets
   - VNI typing latency: 15-18ms → 8-11ms (expected)
   - Achieved performance parity with Telex method
+- **fix(macos)**: Fixed Vietnamese typing in Spotlight search bar
+  - Eliminated character duplication bug (dd → dđ instead of đ)
+  - Fixed garbled text and character repetition issues
+  - Switched from autocomplete method to AX API direct method for stable injection
 
 
 ## [1.5.2] - 2026-01-05
