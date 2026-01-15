@@ -171,31 +171,52 @@ class TextInjector {
             return false
         }
         
-        let cursor = range.location
-        let selection = range.length
-        
+        // Work in UTF-16 units to align with AX ranges
+        let nsText = fullText as NSString
+        let length = nsText.length
+        let cursor = min(max(range.location, 0), length)
+        let selection = min(max(range.length, 0), length - cursor)
+
         // Handle autocomplete: when selection > 0, text after cursor is autocomplete suggestion
-        // Example: "a|rc://chrome-urls" where "|" is cursor, "rc://..." is selected suggestion
-        let userText = (selection > 0 && cursor <= fullText.count)
-            ? String(fullText.prefix(cursor))
-            : fullText
-        
+        let hasAutocompleteSuggestion = selection > 0
+
         // Calculate replacement: delete `bs` chars before cursor, insert `text`
         let deleteStart = max(0, cursor - bs)
-        let prefix = String(userText.prefix(deleteStart))
-        let suffix = String(userText.dropFirst(cursor))
+        let prefix = nsText.substring(to: deleteStart)
+        
+        // CRITICAL FIX: When autocomplete suggestion exists, delete it completely
+        // Text structure:
+        // - prefix: [0, deleteStart)
+        // - user typed: [deleteStart, cursor)
+        // - SUGGESTION: [cursor, cursor+selection)  <- DELETE THIS
+        // - suffix: [cursor+selection, end)
+        //
+        // Strategy: Only keep prefix + text, never include suggestion or post-suggestion text
+        // This prevents browser from re-triggering autocomplete on what follows
+        let suffix = !hasAutocompleteSuggestion
+            ? nsText.substring(from: cursor)
+            : ""
+        
         let newText = (prefix + text + suffix).precomposedStringWithCanonicalMapping
         
-        // Write new value
+        // Debug logging
+        Log.info("AX: cursor=\(cursor), selection=\(selection), hasAutocomplete=\(hasAutocompleteSuggestion)")
+        Log.info("  prefix: '\(prefix)' text: '\(text)' suffix: '\(suffix)'")
+        Log.info("  newText: '\(newText)'")
+        
+        // Step 1: Write new value (WITHOUT suggestion content)
+        // This deletes backspace chars, inserts new text, and OMITS the suggestion entirely
         guard AXUIElementSetAttributeValue(axEl, kAXValueAttribute as CFString, newText as CFTypeRef) == .success else {
             Log.info("AX: write failed")
             return false
         }
         
-        // Update cursor to end of inserted text
-        var newCursor = CFRange(location: deleteStart + text.count, length: 0)
+        // Step 2: Set cursor position to end of inserted text (no selection)
+        let newCursorLocation = deleteStart + text.utf16.count
+        var newCursor = CFRange(location: newCursorLocation, length: 0)
         if let newRange = AXValueCreate(.cfRange, &newCursor) {
             AXUIElementSetAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, newRange)
+            Log.info("AX: cursor set to \(newCursorLocation)")
         }
         
         Log.send("ax", bs, text)
@@ -392,8 +413,8 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if bundleId == "com.apple.Spotlight" { Log.method("auto:spotlight"); return (.autocomplete, (0, 0, 0)) }
     
     // Chromium-based browser address bars - use AX API direct manipulation
-    // Backspace method fails due to Chromium's autocomplete behavior (issue #26)
-    // AX API bypasses autocomplete by directly setting text field value
+    // Reason: AX API allows us to clear suggestion BEFORE writing text
+    // This prevents browser from re-triggering autocomplete
     if BundleConstants.chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
         Log.method("ax:chromium")
         return (.axDirect, (0, 0, 0))
