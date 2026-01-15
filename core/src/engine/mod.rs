@@ -1626,6 +1626,11 @@ impl Engine {
     fn handle_normal_letter(&mut self, key: u16, caps: bool, shift: bool) -> Result {
         // Detect if typing special characters with Shift (e.g., @, #, $)
         // These indicate English input, so mark as English word
+        //
+        // REF-ISSUE: "đã" + "!" (Shift+1) caused revert to "d9a41"
+        // This heuristic is too aggressive for punctuation (!, %, &, etc)
+        // Disabled to allow valid Vietnamese + Punctuation
+        /*
         if shift && keys::is_number(key) {
             // Exclude common symbols that are NOT letters (e.g., *, (, ) on US layout)
             // These should NOT lock the word into English mode.
@@ -1633,6 +1638,7 @@ impl Engine {
                 self.is_english_word = true;
             }
         }
+        */
 
         // Invalidate syllable boundary cache when adding new letter
         self.cached_syllable_boundary = None;
