@@ -34,16 +34,16 @@
 //! }
 //! ```
 
-use crate::engine::buffer::Buffer;
 use crate::engine::buffer::raw_input_buffer::RawInputBuffer;
+use crate::engine::buffer::Buffer;
 
 /// Ring buffer capacity (stores last N committed words)
 ///
 /// This value is chosen to balance memory usage with practical needs:
-/// - 10 words covers most editing scenarios
-/// - Total memory: ~10 * (256 + 264) ≈ 5.2KB
-/// - Larger values would increase memory without much benefit
-pub const HISTORY_CAPACITY: usize = 10;
+/// - 3 words covers typical backspace-after-space scenarios
+/// - Total memory: ~3 * (256 + 264) ≈ 1.6KB
+/// - Reduced from 10 to optimize memory footprint (70% reduction)
+pub const HISTORY_CAPACITY: usize = 3;
 
 /// Ring buffer for word history
 ///
@@ -54,12 +54,12 @@ pub const HISTORY_CAPACITY: usize = 10;
 ///
 /// ```text
 /// ┌─────────────────────────────────────────────┐
-/// │ buffers[0..10]     │ ~2560 bytes            │
-/// │ raw_inputs[0..10]  │ ~2640 bytes            │
+/// │ buffers[0..3]      │ ~768 bytes             │
+/// │ raw_inputs[0..3]   │ ~792 bytes             │
 /// │ head: usize        │ 8 bytes                │
 /// │ len: usize         │ 8 bytes                │
 /// └─────────────────────────────────────────────┘
-/// Total: ~5.2KB (stack-allocated)
+/// Total: ~1.6KB (stack-allocated)
 /// ```
 ///
 /// # Thread Safety
@@ -343,7 +343,7 @@ mod tests {
     fn test_overflow_wraps_around() {
         let mut history = WordHistory::new();
 
-        // Push more than capacity
+        // Push more than capacity (15 entries, but capacity is 3)
         for i in 0..15 {
             let s: String = std::iter::repeat('a').take(i + 1).collect();
             history.push(make_buffer(&s), make_raw_input(&s));
@@ -358,7 +358,8 @@ mod tests {
         assert_eq!(buf.len(), 15);
 
         // Pop all and verify LIFO order
-        for i in (6..=15).rev() {
+        // With capacity=3, we should have entries 13, 14, 15 (the last 3 pushed)
+        for i in (13..=15).rev() {
             let (buf, _) = history.pop().unwrap();
             assert_eq!(buf.len(), i, "Expected buffer with {} chars", i);
         }

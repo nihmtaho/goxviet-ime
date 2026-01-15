@@ -114,22 +114,47 @@ class TextInjector {
     }
     
     /// Autocomplete injection: Forward Delete to clear suggestion, then backspace + text via proxy
-    /// Used for Spotlight where autocomplete auto-selects suggestion text after cursor
+    /// Used for Spotlight and browser address bars where autocomplete auto-selects suggestion text after cursor
+    /// Strategy:
+    /// - If suggestion exists (selection > 0): Forward Delete removes it
+    /// - Then backspace removes user-typed chars
+    /// - Then type replacement text
     private func injectViaAutocomplete(bs: Int, text: String, proxy: CGEventTapProxy) {
         guard let src = CGEventSource(stateID: .privateState) else { return }
         
-        // Forward Delete clears auto-selected suggestion
-        postKey(KeyCode.forwardDelete, source: src, proxy: proxy)
-        usleep(3000)
+        // Check if suggestion is present
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        var hasSuggestion = false
         
-        // Backspaces remove typed characters
+        if AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+           let ref = focusedRef {
+            let axEl = ref as! AXUIElement
+            var rangeRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
+               let axRange = rangeRef {
+                var range = CFRange()
+                if AXValueGetValue(axRange as! AXValue, .cfRange, &range) {
+                    hasSuggestion = range.length > 0  // selection.length > 0 means suggestion exists
+                }
+            }
+        }
+        
+        // Step 1: Clear suggestion if it exists
+        if hasSuggestion {
+            postKey(KeyCode.forwardDelete, source: src, proxy: proxy)
+            usleep(2000)
+            Log.info("autocomplete: cleared suggestion via Forward Delete")
+        }
+        
+        // Step 2: Backspaces remove user-typed characters
         for _ in 0..<bs {
             postKey(KeyCode.backspace, source: src, proxy: proxy)
             usleep(1000)
         }
-        if bs > 0 { usleep(5000) }
+        if bs > 0 { usleep(3000) }
         
-        // Type replacement text
+        // Step 3: Type replacement text
         postText(text, source: src, proxy: proxy)
         Log.send("auto", bs, text)
     }
@@ -171,53 +196,149 @@ class TextInjector {
             return false
         }
         
-        let cursor = range.location
-        let selection = range.length
-        
+        // Work in UTF-16 units to align with AX ranges
+        let nsText = fullText as NSString
+        let length = nsText.length
+        let cursor = min(max(range.location, 0), length)
+        let selection = min(max(range.length, 0), length - cursor)
+
         // Handle autocomplete: when selection > 0, text after cursor is autocomplete suggestion
-        // Example: "a|rc://chrome-urls" where "|" is cursor, "rc://..." is selected suggestion
-        let userText = (selection > 0 && cursor <= fullText.count)
-            ? String(fullText.prefix(cursor))
-            : fullText
-        
+        let hasAutocompleteSuggestion = selection > 0
+
         // Calculate replacement: delete `bs` chars before cursor, insert `text`
         let deleteStart = max(0, cursor - bs)
-        let prefix = String(userText.prefix(deleteStart))
-        let suffix = String(userText.dropFirst(cursor))
+        let prefix = nsText.substring(to: deleteStart)
+        
+        // CRITICAL FIX: When autocomplete suggestion exists, delete it completely
+        // Text structure:
+        // - prefix: [0, deleteStart)
+        // - user typed: [deleteStart, cursor)
+        // - SUGGESTION: [cursor, cursor+selection)  <- DELETE THIS
+        // - suffix: [cursor+selection, end)
+        //
+        // Strategy: Only keep prefix + text, never include suggestion or post-suggestion text
+        // This prevents browser from re-triggering autocomplete on what follows
+        let suffix = !hasAutocompleteSuggestion
+            ? nsText.substring(from: cursor)
+            : ""
+        
         let newText = (prefix + text + suffix).precomposedStringWithCanonicalMapping
         
-        // Write new value
+        // Debug logging
+        Log.info("AX: cursor=\(cursor), selection=\(selection), hasAutocomplete=\(hasAutocompleteSuggestion)")
+        Log.info("  prefix: '\(prefix)' text: '\(text)' suffix: '\(suffix)'")
+        Log.info("  newText: '\(newText)'")
+        
+        // Step 1: Write new value (WITHOUT suggestion content)
+        // This deletes backspace chars, inserts new text, and OMITS the suggestion entirely
         guard AXUIElementSetAttributeValue(axEl, kAXValueAttribute as CFString, newText as CFTypeRef) == .success else {
             Log.info("AX: write failed")
             return false
         }
         
-        // Update cursor to end of inserted text
-        var newCursor = CFRange(location: deleteStart + text.count, length: 0)
+        // Step 2: Set cursor position to end of inserted text
+        // CRITICAL: Always set selection.length = 0 to clear any re-triggered autocomplete
+        let newCursorLocation = deleteStart + text.utf16.count
+        var newCursor = CFRange(location: newCursorLocation, length: 0)
         if let newRange = AXValueCreate(.cfRange, &newCursor) {
-            AXUIElementSetAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, newRange)
+            let result = AXUIElementSetAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, newRange)
+            Log.info("AX: cursor set to \(newCursorLocation), selection cleared, result=\(result.rawValue)")
+        }
+        
+        // Step 3: Read back text to verify no suggestion was auto-added
+        // If browser re-triggered autocomplete, we detect and fallback
+        var checkValueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axEl, kAXValueAttribute as CFString, &checkValueRef) == .success,
+           let verifyText = checkValueRef as? String {
+            Log.info("AX: verified text='\(verifyText)' (len=\(verifyText.count))")
+            
+            // If text got longer (browser re-added suggestion), fallback is needed
+            // This is detected by caller when text differs from expected
+            if verifyText.count > newText.count {
+                Log.info("AX: WARNING - browser re-added content after write, len increased from \(newText.count) to \(verifyText.count)")
+            }
         }
         
         Log.send("ax", bs, text)
         return true
     }
     
-    /// Try AX injection with retries, fallback to selection method if all fail
-    /// Browser address bars can be busy with autocomplete, causing AX API to fail temporarily
+    /// Try AX injection with retries, fallback to selection method if browser re-adds content
+    /// Browser address bars trigger autocomplete which overrides our AX writes
+    /// Detection: If verified text is longer than expected, browser re-added suggestion
     private func injectViaAXWithFallback(bs: Int, text: String, proxy: CGEventTapProxy) {
-        // Try AX API up to 3 times (address bar might be busy with autocomplete)
-        for attempt in 0..<3 {
-            if attempt > 0 {
-                usleep(5000) // Small delay before retry
-            }
-            if injectViaAX(bs: bs, text: text) {
-                return // Success
-            }
+        // Try AX API (will verify and detect if browser re-adds content)
+        let result = injectViaAXWithVerify(bs: bs, text: text)
+        
+        switch result {
+        case .success:
+            Log.info("AX: success - text is clean")
+            return
+        case .browserOverride:
+            // Browser autocomplete is too aggressive for AX API
+            Log.info("AX: detected browser override - switching to selection method")
+            injectViaSelection(bs: bs, text: text, delays: (1000, 3000, 2000))
+        case .axFailure:
+            // AX API returned error or was unavailable
+            Log.info("AX: API failure - falling back to selection method")
+            injectViaSelection(bs: bs, text: text, delays: (1000, 3000, 2000))
+        }
+    }
+    
+    /// Result of AX injection attempt
+    enum AXResult {
+        case success          // Text written correctly, no browser override
+        case browserOverride  // Browser re-added content via autocomplete
+        case axFailure        // AX API failed or unreachable
+    }
+    
+    /// Perform AX injection and verify result
+    /// Returns whether browser honored our text write or re-triggered autocomplete
+    private func injectViaAXWithVerify(bs: Int, text: String) -> AXResult {
+        guard injectViaAX(bs: bs, text: text) else {
+            return .axFailure
         }
         
-        // Fallback to selection method
-        Log.info("AX: fallback to selection")
-        injectViaSelection(bs: bs, text: text, delays: (1000, 3000, 2000))
+        // Give browser a moment to process our write and potential autocomplete
+        usleep(50000) // 50ms - sufficient for autocomplete re-trigger
+        
+        // Read back text to verify browser didn't override us
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let ref = focusedRef else {
+            Log.info("AX: verify - lost focus")
+            return .axFailure
+        }
+        
+        let axEl = ref as! AXUIElement
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axEl, kAXValueAttribute as CFString, &valueRef) == .success,
+              let currentText = valueRef as? String else {
+            Log.info("AX: verify - can't read text")
+            return .axFailure
+        }
+        
+        // Check if browser added extra content (autocomplete suggestion)
+        // Expected: deletion happened + new text inserted
+        // If longer than expected, browser added something
+        let expectedNewLength = text.count
+        
+        Log.info("AX: verify - expected=\(expectedNewLength), actual=\(currentText.count)")
+        
+        if currentText.count > expectedNewLength {
+            Log.info("AX: VERIFY FAILED - browser re-added content (len \(expectedNewLength) → \(currentText.count))")
+            return .browserOverride
+        }
+        
+        if currentText == text {
+            Log.info("AX: VERIFY OK - text matches exactly")
+            return .success
+        }
+        
+        // Text doesn't match exactly but not longer (could be encoding difference)
+        Log.info("AX: VERIFY WARNING - text mismatch but not override")
+        return .success
     }
     
     // MARK: - Helpers
@@ -291,6 +412,63 @@ class TextInjector {
 
 // MARK: - App Detection
 
+/// Static bundle ID constants for app detection
+/// Using Set for O(1) lookup instead of Array O(n) contains()
+/// Prevents reallocating these arrays on every keystroke
+private struct BundleConstants {
+    static let chromiumBrowsers: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
+        "org.chromium.Chromium", "com.brave.Browser", "com.brave.Browser.beta",
+        "com.brave.Browser.nightly", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta",
+        "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.vivaldi.Vivaldi",
+        "com.vivaldi.Vivaldi.snapshot", "ru.yandex.desktop.yandex-browser",
+        // Opera (Chromium-based)
+        "com.opera.Opera", "com.operasoftware.Opera", "com.operasoftware.OperaGX",
+        "com.operasoftware.OperaAir", "com.opera.OperaNext",
+        // Arc & Others (Chromium-based)
+        "company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia",
+        "com.sigmaos.sigmaos.macos", "com.pushplaylabs.sidekick",
+        "com.firstversionist.polypane", "ai.perplexity.comet", "com.duckduckgo.macos.browser"
+    ]
+    
+    static let firefoxBrowsers: Set<String> = [
+        "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
+        "org.waterfoxproject.waterfox", "io.gitlab.librewolf-community.librewolf",
+        "one.ablaze.floorp", "org.torproject.torbrowser", "net.mullvad.mullvadbrowser",
+        "app.zen-browser.zen"
+    ]
+    
+    static let safariBrowsers: Set<String> = [
+        "com.apple.Safari", "com.apple.SafariTechnologyPreview",
+        "com.kagi.kagimacOS"
+    ]
+    
+    static let modernEditors: Set<String> = [
+        // Code Editors
+        "com.microsoft.VSCode", "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3",
+        "com.panic.Nova", "com.github.atom", "com.github.GitHubClient", "com.coteditor.CotEditor",
+        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview",
+        // Text Editors
+        "com.apple.TextEdit", "com.apple.Notes", "com.apple.mail",
+        // Note-taking apps
+        "md.obsidian", "com.bear-writer.Bear", "com.dayoneapp.dayone",
+        // Chat & Communication
+        "com.tinyspeck.slackmacgap", "com.hnc.Discord", "com.apple.iChat",
+        "com.microsoft.teams", "com.microsoft.teams2", "us.zoom.xos",
+        // Browsers (content areas, not address bars)
+        "com.google.Chrome", "com.apple.Safari", "org.mozilla.firefox",
+        "com.brave.Browser", "com.microsoft.edgemac", "com.vivaldi.Vivaldi",
+        "company.thebrowser.Arc", "com.opera.Opera"
+    ]
+    
+    static let terminals: Set<String> = [
+        "com.apple.Terminal", "com.googlecode.iterm2", "io.alacritty",
+        "com.github.wez.wezterm", "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
+        "net.kovidgoyal.kitty", "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
+        "com.termius-dmg.mac", "com.google.antigravity"
+    ]
+}
+
 /// Detect optimal injection method based on focused app and UI element
 func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Get focused element and its owning app (works for overlays like Spotlight)
@@ -334,46 +512,21 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Spotlight - use autocomplete method with Forward Delete to clear suggestions
     if bundleId == "com.apple.Spotlight" { Log.method("auto:spotlight"); return (.autocomplete, (0, 0, 0)) }
     
-    // Chromium-based browser address bars - use AX API direct manipulation
-    // Backspace method fails due to Chromium's autocomplete behavior (issue #26)
-    // AX API bypasses autocomplete by directly setting text field value
-    let chromiumBrowsers = [
-        "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
-        "org.chromium.Chromium", "com.brave.Browser", "com.brave.Browser.beta",
-        "com.brave.Browser.nightly", "com.microsoft.edgemac", "com.microsoft.edgemac.Beta",
-        "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary", "com.vivaldi.Vivaldi",
-        "com.vivaldi.Vivaldi.snapshot", "ru.yandex.desktop.yandex-browser",
-        // Opera (Chromium-based)
-        "com.opera.Opera", "com.operasoftware.Opera", "com.operasoftware.OperaGX",
-        "com.operasoftware.OperaAir", "com.opera.OperaNext",
-        // Arc & Others (Chromium-based)
-        "company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia",
-        "com.sigmaos.sigmaos.macos", "com.pushplaylabs.sidekick",
-        "com.firstversionist.polypane", "ai.perplexity.comet", "com.duckduckgo.macos.browser"
-    ]
-    if chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
-        Log.method("ax:chromium")
-        return (.axDirect, (0, 0, 0))
+    // Chromium-based browser address bars - use autocomplete method
+    // Forward Delete clears suggestion, Backspace removes user-typed chars
+    if BundleConstants.chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
+        Log.method("auto:chromium-addr")
+        return (.autocomplete, (0, 0, 0))
     }
     
-    // Firefox-based browsers - use AX API for address bar
-    let firefoxBrowsers = [
-        "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
-        "org.waterfoxproject.waterfox", "io.gitlab.librewolf-community.librewolf",
-        "one.ablaze.floorp", "org.torproject.torbrowser", "net.mullvad.mullvadbrowser",
-        "app.zen-browser.zen"
-    ]
-    if firefoxBrowsers.contains(bundleId) && (role == "AXTextField" || role == "AXWindow") {
-        Log.method("ax:firefox")
-        return (.axDirect, (0, 0, 0))
+    // Firefox-based browsers - use autocomplete method for address bar
+    if BundleConstants.firefoxBrowsers.contains(bundleId) && (role == "AXTextField" || role == "AXWindow") {
+        Log.method("auto:firefox-addr")
+        return (.autocomplete, (0, 0, 0))
     }
     
     // Safari - use selection method (different behavior from Chromium)
-    let safariBrowsers = [
-        "com.apple.Safari", "com.apple.SafariTechnologyPreview",
-        "com.kagi.kagimacOS"
-    ]
-    if safariBrowsers.contains(bundleId) && role == "AXTextField" {
+    if BundleConstants.safariBrowsers.contains(bundleId) && role == "AXTextField" {
         Log.method("sel:safari")
         return (.selection, (0, 0, 0))
     }
@@ -389,28 +542,19 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if bundleId == "notion.id" { Log.method("slow:notion"); return (.slow, (8000, 15000, 8000)) }
     
     // Modern editors - instant method with zero delays for maximum speed
-    let modernEditors = [
-        "com.microsoft.VSCode", "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3",
-        "com.panic.Nova", "com.github.atom", "com.github.GitHubClient", "com.coteditor.CotEditor",
-        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview"
-    ]
-    if modernEditors.contains(bundleId) { Log.method("instant:editor"); return (.instant, (0, 0, 0)) }
+    if BundleConstants.modernEditors.contains(bundleId) { Log.method("instant:editor"); return (.instant, (0, 0, 0)) }
     
     // Terminal apps - need conservative delays for reliable rendering
-    let terminals = [
-        "com.apple.Terminal", "com.googlecode.iterm2", "io.alacritty",
-        "com.github.wez.wezterm", "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
-        "net.kovidgoyal.kitty", "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
-        "com.termius-dmg.mac", "com.google.antigravity"
-    ]
-    if terminals.contains(bundleId) { Log.method("slow:term"); return (.slow, (3000, 8000, 3000)) }
+    if BundleConstants.terminals.contains(bundleId) { Log.method("slow:term"); return (.slow, (3000, 8000, 3000)) }
     
     // JetBrains IDEs - need moderate delays for stability
     if bundleId.hasPrefix("com.jetbrains") { Log.method("slow:jb"); return (.slow, (3000, 8000, 3000)) }
     
-    // Default: safe delays for stability across unknown apps
+    // OPTIMIZATION: Reduced default delays for better performance
+    // Old: (1000, 3000, 1500) - conservative but slow
+    // New: (0, 0, 0) - fast for most modern apps
     Log.method("default")
-    return (.fast, (1000, 3000, 1500))
+    return (.fast, (0, 0, 0))
 }
 
 // MARK: - Screen Text Reading (for word restoration)

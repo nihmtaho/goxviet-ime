@@ -53,20 +53,36 @@ pub fn has_complete_uo_compound(buf: &Buffer) -> bool {
 ///
 /// Returns Some(position) of the 'o' that was modified, None if no change.
 pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
-    // Look for pattern: U with horn + O without horn (anywhere in buffer)
     for i in 0..buf.len().saturating_sub(1) {
-        let c1 = buf.get(i)?;
-        let c2 = buf.get(i + 1)?;
+        let (k1, t1, k2, t2) = match (buf.get(i), buf.get(i + 1)) {
+            (Some(c1), Some(c2)) => (c1.key, c1.tone, c2.key, c2.tone),
+            _ => continue,
+        };
 
         // Check: U with horn + O plain → always normalize to ươ
-        let is_u_with_horn = c1.key == keys::U && c1.tone == tone::HORN;
-        let is_o_plain = c2.key == keys::O && c2.tone == tone::NONE;
-
-        if is_u_with_horn && is_o_plain {
-            // Apply horn to O to form the ươ compound
+        if k1 == keys::U && t1 == tone::HORN && k2 == keys::O && t2 == tone::NONE {
             if let Some(c) = buf.get_mut(i + 1) {
                 c.tone = tone::HORN;
                 return Some(i + 1);
+            }
+        }
+
+        // Check: U plain + O with horn → normalize to ươ (except after Q for "quơ")
+        if k1 == keys::U && t1 == tone::NONE && k2 == keys::O && t2 == tone::HORN {
+            let mut is_special_initial = false;
+            if i > 0 {
+                if let Some(prev) = buf.get(i - 1) {
+                    if prev.key == keys::Q {
+                        is_special_initial = true;
+                    }
+                }
+            }
+
+            if !is_special_initial {
+                if let Some(c) = buf.get_mut(i) {
+                    c.tone = tone::HORN;
+                    return Some(i);
+                }
             }
         }
     }
@@ -152,6 +168,18 @@ mod tests {
         let mut buf = make_buffer(&[(keys::U, 0), (keys::O, 0)]);
         let result = normalize_uo_compound(&mut buf);
         assert_eq!(result, None);
+
+        // uơ → ươ
+        let mut buf = make_buffer(&[(keys::U, 0), (keys::O, tone::HORN)]);
+        let result = normalize_uo_compound(&mut buf);
+        assert_eq!(result, Some(0));
+        assert_eq!(buf.get(0).unwrap().tone, tone::HORN);
+
+        // quơ → quơ (no change)
+        let mut buf = make_buffer(&[(keys::Q, 0), (keys::U, 0), (keys::O, tone::HORN)]);
+        let result = normalize_uo_compound(&mut buf);
+        assert_eq!(result, None);
+        assert_eq!(buf.get(1).unwrap().tone, 0); // U stays plain
     }
 
     #[test]

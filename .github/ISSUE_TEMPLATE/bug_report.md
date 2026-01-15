@@ -1,69 +1,49 @@
 ---
-name: Bug Report
+name: "🐛 Bug Report"
 about: Report a bug, logic error, or platform issue for GoxViet IME
 title: "[type(scope)]: <short description>"
 labels: []
 assignees: []
 ---
 
-## Summary
+## 📝 Summary
 
-<!--
-Ngắn gọn mô tả vấn đề gặp phải. Ví dụ: "Auto restore English does not work with SPACE"
+<!-- Ngắn gọn mô tả vấn đề gặp phải. -->
+
+## 🕹 Steps to Reproduce
+
+<!-- 
+Liệt kê từng bước để tái hiện lỗi:
+1. Gõ chuỗi characters...
+2. Nhấn phím...
+3. Quan sát kết quả...
 -->
 
-## Steps to Reproduce
+## 📊 Comparison
 
-<!--
-Liệt kê từng bước để tái hiện lỗi. Ví dụ:
-1. Mở ứng dụng X
-2. Gõ chuỗi [w,i,t,h, ]
-3. Quan sát kết quả
--->
+| 🛑 Actual Result | ✅ Expected Result |
+| :--- | :--- |
+| `actual` | `expected` |
 
-## Actual Result
-
-<!--
-Kết quả thực tế nhận được. Ví dụ: "ưith "
--->
-
-## Expected Result
-
-<!--
-Kết quả mong muốn. Ví dụ: "with "
--->
-
-## Examples / Test Cases
+### 🔍 Test Cases / Examples
 
 | Input sequence | Actual result | Expected result |
-|---|---|---|
-| [input]        | "actual"      | "expected"     |
+| :--- | :--- | :--- |
+| `[input]` | `actual` | `expected` |
 
-<!--
-Thêm nhiều dòng nếu cần.
--->
+---
 
-## Impact
+## 💻 Environment
 
-<!--
-Ảnh hưởng tới người dùng, hiệu năng, hoặc các module liên quan.
--->
+- **OS:** macOS / Windows / etc.
+- **Application:** VSCode, Chrome, Terminal, etc.
+- **GoxViet Version:** vX.Y.Z
+- **Input Method:** Telex / VNI
 
-## Environment
+## 📁 Additional Context
 
-- OS: [macOS/Windows/Browser/...]
-- App/Platform: [VSCode, Chrome, Terminal, ...]
-- GoxViet version: [x.y.z]
-- Input method: [Telex/VNI/...]
+<!-- Bổ sung thông tin, log, ảnh chụp màn hình, hoặc link liên quan. -->
 
-## Additional Notes
-
-<!--
-Bổ sung thông tin, log, ảnh chụp màn hình, link PR/commit liên quan nếu có.
--->
-
-## Labels
-
-<!--
-Đề xuất label: bug, core, telex, english-detection, auto-restore, platform-macos, platform-windows, chromium, address-bar, vietnamese-logic, ...
--->
+---
+> [!TIP]
+> Đề xuất label nếu có thể: `bug`, `core`, `telex`, `vni`, `auto-restore`, `platform-macos`.
