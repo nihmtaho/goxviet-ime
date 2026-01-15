@@ -237,17 +237,48 @@ pub extern "C" fn ime_clear() {
     }
 }
 
+/// Clear all state including word history.
+///
+/// Call when cursor position changes (mouse click, selection-delete, arrow keys).
+/// This prevents restoring stale state from history after navigation.
+/// No-op if engine not initialized.
+#[no_mangle]
+pub extern "C" fn ime_clear_all() {
+    let mut guard = lock_engine();
+    if let Some(ref mut e) = *guard {
+        e.clear_all();
+    }
+}
+
 /// Free a result pointer returned by `ime_key`.
 ///
 /// # Safety
 /// * `r` must be a pointer returned by `ime_key`, or null
 /// * Must be called exactly once per non-null `ime_key` return
 /// * Do not use `r` after calling this function
+///
+/// # Memory Management
+/// This function:
+/// 1. Reconstructs the Vec from raw parts (if chars is non-null)
+/// 2. Drops the Vec (freeing heap memory)
+/// 3. Drops the Box<Result> (freeing Result struct)
 #[no_mangle]
 pub unsafe extern "C" fn ime_free(r: *mut Result) {
-    if !r.is_null() {
-        drop(Box::from_raw(r));
+    if r.is_null() {
+        return;
     }
+
+    // Take ownership of Result
+    let result = Box::from_raw(r);
+
+    // Reconstruct and drop Vec if chars were allocated
+    if !result.chars.is_null() && result.capacity > 0 {
+        // SAFETY: We created this Vec in Result::send()
+        // Reconstruct Vec with exact same parameters
+        let _ = Vec::from_raw_parts(result.chars, result.count as usize, result.capacity);
+        // Vec drops here, freeing heap memory
+    }
+    // Box<Result> drops here, freeing Result struct
 }
 
 // ============================================================
@@ -425,7 +456,11 @@ mod tests {
         let r2 = ime_key(keys::S, false, false);
         assert!(!r2.is_null());
         unsafe {
-            assert_eq!((*r2).chars[0], 'á' as u32);
+            let result = &*r2;
+            assert_eq!(result.action, 1);
+            assert_eq!(result.count, 1);
+            // Access heap-allocated chars via pointer
+            assert_eq!(*result.chars.offset(0), 'á' as u32);
             ime_free(r2);
         }
 

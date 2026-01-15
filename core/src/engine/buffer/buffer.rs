@@ -1,6 +1,6 @@
 //! Typing buffer
 
-pub const MAX: usize = 64;
+pub const MAX: usize = 256;
 
 use crate::utils;
 
@@ -151,25 +151,19 @@ impl Buffer {
     /// Convert buffer to lowercase string (for shortcut matching)
     #[inline]
     pub fn to_lowercase_string(&self) -> String {
-        let mut result = String::with_capacity(self.len);
-        for c in &self.data[..self.len] {
-            if let Some(ch) = utils::key_to_char(c.key, false) {
-                result.push(ch);
-            }
-        }
-        result
+        self.data[..self.len]
+            .iter()
+            .filter_map(|c| utils::key_to_char(c.key, false))
+            .collect()
     }
 
     /// Convert buffer to string preserving case (for shortcut case matching)
     #[inline]
     pub fn to_string_preserve_case(&self) -> String {
-        let mut result = String::with_capacity(self.len);
-        for c in &self.data[..self.len] {
-            if let Some(ch) = utils::key_to_char(c.key, c.caps) {
-                result.push(ch);
-            }
-        }
-        result
+        self.data[..self.len]
+            .iter()
+            .filter_map(|c| utils::key_to_char(c.key, c.caps))
+            .collect()
     }
 
     /// Convert buffer to full Vietnamese string with diacritics (for shortcut matching)
@@ -179,24 +173,21 @@ impl Buffer {
     #[inline]
     pub fn to_full_string(&self) -> String {
         use crate::data::{chars, keys};
-        let mut result = String::with_capacity(self.len * 3); // Vietnamese chars can be up to 3 bytes in UTF-8
-        for c in &self.data[..self.len] {
-            // Handle đ/Đ (stroked D)
-            if c.key == keys::D && c.stroke {
-                result.push(chars::get_d(c.caps));
-                continue;
-            }
-            // Try to get full Vietnamese character with diacritics
-            if let Some(ch) = chars::to_char(c.key, c.caps, c.tone, c.mark) {
-                result.push(ch);
-                continue;
-            }
-            // Fallback to basic character
-            if let Some(ch) = utils::key_to_char(c.key, c.caps) {
-                result.push(ch);
-            }
-        }
-        result
+        self.data[..self.len]
+            .iter()
+            .filter_map(|c| {
+                // Handle đ/Đ (stroked D)
+                if c.key == keys::D && c.stroke {
+                    return Some(chars::get_d(c.caps));
+                }
+                // Try to get full Vietnamese character with diacritics
+                if let Some(ch) = chars::to_char(c.key, c.caps, c.tone, c.mark) {
+                    return Some(ch);
+                }
+                // Fallback to basic character
+                utils::key_to_char(c.key, c.caps)
+            })
+            .collect()
     }
 }
 
