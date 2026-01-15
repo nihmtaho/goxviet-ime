@@ -719,7 +719,13 @@ impl Engine {
         // Validate: is this valid Vietnamese?
         // Use is_valid_with_tones to check modifier requirements (e.g., E+U needs circumflex)
         let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        if VietnameseSyllableValidator::validate(&buffer_keys).is_valid {
+        let buffer_tones: Vec<u8> = self.buf.iter().map(|c| c.tone).collect(); // Collect tones
+
+        let struct_valid = VietnameseSyllableValidator::validate(&buffer_keys).is_valid;
+        let tone_valid =
+            vietnamese::validation::is_valid_tone_placement(&buffer_keys, &buffer_tones);
+
+        if struct_valid && tone_valid {
             self.last_transform = Some(Transform::WAsVowel);
 
             // W shortcut adds ư without replacing anything on screen
@@ -749,16 +755,20 @@ impl Engine {
             let last_pos = self.buf.len().checked_sub(1)?;
             let last_char = self.buf.get(last_pos)?;
 
-            // Check if last char is un-stroked 'd'
-            if last_char.key != keys::D || last_char.stroke {
-                return None;
-            }
-
-            // Check revert: dd → d (undo stroke)
+            // CRITICAL FIX: Check revert BEFORE verifying if char is already stroked
+            // Case: "đ" + "d" → should revert to "dd" (currently fails because "đ" has stroke=true)
             if let Some(Transform::Stroke(last_key)) = self.last_transform {
                 if last_key == key {
+                    // Only revert if we are operating on the same char that was just transformed
+                    // In Telex, this is always the last char
                     return Some(self.revert_stroke(key, last_pos));
                 }
+            }
+
+            // Check if last char is un-stroked 'd'
+            // If already stroked (and not revertible above), we can't stroke again
+            if last_char.key != keys::D || last_char.stroke {
+                return None;
             }
 
             // FAST PATH: If no vowels yet, apply stroke immediately (O(1))
@@ -838,17 +848,18 @@ impl Engine {
         tone_type: ToneType,
         targets: &[u16],
     ) -> Option<Result> {
-        // CRITICAL: Skip Vietnamese transform if English word detected
-        // This prevents "trans" + "s" → "tráns" (should be "transs")
-        if self.is_english_word {
-            return None;
-        }
-
         // Check revert first (same key pressed twice)
+        // CRITICAL: Check revert BEFORE English detection to assume explicit user intent
         if let Some(Transform::Tone(last_key, _)) = self.last_transform {
             if last_key == key {
                 return Some(self.revert_tone(key, caps));
             }
+        }
+
+        // CRITICAL: Skip Vietnamese transform if English word detected
+        // This prevents "trans" + "s" → "tráns" (should be "transs")
+        if self.is_english_word {
+            return None;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -1221,16 +1232,17 @@ impl Engine {
             return None;
         }
 
-        // CRITICAL: Skip Vietnamese transform if English word detected
-        if self.is_english_word {
-            return None;
-        }
-
         // Check revert first
+        // CRITICAL: Check revert BEFORE English detection
         if let Some(Transform::Mark(last_key, _)) = self.last_transform {
             if last_key == key {
                 return Some(self.revert_mark(key, caps));
             }
+        }
+
+        // CRITICAL: Skip Vietnamese transform if English word detected
+        if self.is_english_word {
+            return None;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -1333,6 +1345,20 @@ impl Engine {
         let has_gi = self.has_gi_initial();
         let pos =
             Phonology::find_tone_position(&vowels, has_final, self.modern_tone, has_qu, has_gi);
+
+        // CRITICAL: Validate tone placement BEFORE get_mut (to avoid borrow checker issues)
+        // This prevents invalid combinations like "new" + w → "neư"
+        // E+U requires circumflex on E ("êu" valid, "eu"/"eư" invalid)
+        let mut simulated_tones: Vec<u8> = self.buf.iter().map(|ch| ch.tone).collect();
+        if pos < simulated_tones.len() {
+            simulated_tones[pos] = mark_val;
+        }
+
+        let buffer_keys: Vec<u16> = self.buf.iter().map(|ch| ch.key).collect();
+        if !vietnamese::validation::is_valid_tone_placement(&buffer_keys, &simulated_tones) {
+            // Invalid tone placement - skip transform
+            return None;
+        }
 
         if let Some(c) = self.buf.get_mut(pos) {
             c.mark = mark_val;
@@ -1510,13 +1536,12 @@ impl Engine {
                     c.tone = tone::NONE;
                     let result = self.revert_and_rebuild(pos, key, caps);
 
-                    // CRITICAL: Check if result is English pattern after revert
-                    // This prevents "ver" + "r" → "vẻr" (should be "verr")
-                    if self.has_english_word_pattern() {
-                        self.is_english_word = true;
-                    } else {
-                        self.is_english_word = false;
-                    }
+                    // CRITICAL FIX: Always mark as English after tone revert
+                    // This prevents "off" → "òf" bug (o+f+f+f should be "off", not "òf")
+                    // Rationale: If user reverted a tone (double modifier key), they're typing English
+                    // Example: "o" + "f" → "ò", then "f" again → revert to "of"
+                    //          If they type "f" third time, it should be "off" (English), not "òf"
+                    self.is_english_word = true;
 
                     return result;
                 }
@@ -1536,12 +1561,9 @@ impl Engine {
                     c.mark = mark::NONE;
                     let result = self.revert_and_rebuild(pos, key, caps);
 
-                    // Check if result is English pattern after revert
-                    if self.has_english_word_pattern() {
-                        self.is_english_word = true;
-                    } else {
-                        self.is_english_word = false;
-                    }
+                    // CRITICAL FIX: Always mark as English after mark revert
+                    // Same rationale as revert_tone - double modifier = English typing
+                    self.is_english_word = true;
 
                     return result;
                 }
@@ -1556,10 +1578,18 @@ impl Engine {
         self.last_transform = None;
 
         if let Some(c) = self.buf.get_mut(pos) {
-            if c.key == keys::D && !c.stroke {
-                // Un-stroked d found at pos - this means we need to add another d
+            // Fix: Check if char IS stroked (đ) to revert it
+            if c.key == keys::D && c.stroke {
+                c.stroke = false; // Clear stroke
+
+                // Add the key back to buffer
+                // For "đ" -> "dd", we unstroke 'd' and add 'd'.
                 let caps = c.caps;
                 self.buf.push(Char::new(key, caps));
+
+                // CRITICAL FIX: Mark as English to prevent re-stroke loop
+                self.is_english_word = true;
+
                 return self.rebuild_from(pos);
             }
         }
@@ -3228,7 +3258,7 @@ mod tests {
             assert_ne!(r.action, 0, "With transforms, should restore on space");
 
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3249,7 +3279,7 @@ mod tests {
             );
 
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3293,7 +3323,7 @@ mod tests {
             // Transforms applied → should restore to "improvement "
             assert_ne!(r.action, 0, "With transforms, should restore on space");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3308,7 +3338,7 @@ mod tests {
                 "Path B: should restore on space (phonotactic detection)"
             );
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3337,7 +3367,7 @@ mod tests {
         if has_transforms {
             assert_ne!(r.action, 0, "With transforms, should restore");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3376,7 +3406,7 @@ mod tests {
         if has_transforms {
             assert_ne!(r.action, 0, "With transforms, should restore");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3407,7 +3437,7 @@ mod tests {
         if has_transforms {
             assert_ne!(r.action, 0, "With transforms, should restore");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3459,7 +3489,7 @@ mod tests {
             // MUST restore to "improve " - this is the bug fix verification
             assert_ne!(r.action, 0, "FIXED: should restore on space");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3476,7 +3506,7 @@ mod tests {
                 "Path B: should restore on space (phonotactic detection)"
             );
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
