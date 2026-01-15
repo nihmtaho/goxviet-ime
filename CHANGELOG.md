@@ -1,5 +1,17 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [2.0.0] - 2026-01-15
+
+### Added
+- 
+
+### Changed
+- 
+
+### Fixed
+- 
+
+
 ## [1.5.2] - 2026-01-05
 
 ### Added
