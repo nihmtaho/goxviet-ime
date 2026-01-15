@@ -3,13 +3,19 @@
 ## [2.0.0] - 2026-01-15
 
 ### Added
-- 
+- Tích hợp engine mới giúp tăng tốc độ xử lý và tối ưu hiệu năng toàn ứng dụng
+- Cập nhật giao diện người dùng cho trải nghiệm mượt mà hơn
 
 ### Changed
-- 
+- Cải thiện thuật toán nhận diện tiếng Anh, giảm false positive khi gõ Telex
+- Sửa lỗi nhận diện prefix/suffix cho các từ tiếng Anh phổ biến
+- Xóa các tài liệu thừa, tối ưu cấu trúc dự án
 
 ### Fixed
-- 
+- Fixed [Bug] Lỗi gõ VNI #33
+- Fixed bug(telex): Telex đôi khi nhận nhầm từ tiếng Anh
+- Fixed bug(telex): nhập số bị chuyển thành dấu hoặc ký tự đặc biệt #30
+- Fixed bug: backspace deletes autocomplete suggestion instead of typed text in browsers #36
 
 
 ## [1.5.2] - 2026-01-05
