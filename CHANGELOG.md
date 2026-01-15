@@ -24,6 +24,9 @@
   - Eliminated character duplication bug (dd → dđ instead of đ)
   - Fixed garbled text and character repetition issues
   - Switched from autocomplete method to AX API direct method for stable injection
+  - **Improved reliability**: Added 3-attempt retry logic with 5ms delays for AX API failures
+  - **Enhanced detection**: Added systemuiserver bundle ID check (fallback when Spotlight runs under system UI server)
+  - **Better fallback**: Changed fallback method to autocomplete for native apps (more reliable than selection)
 
 
 ## [1.5.2] - 2026-01-05
