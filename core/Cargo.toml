@@ -2,7 +2,7 @@
 name = "goxviet-core"
 version = "1.5.2"
 edition = "2021"
-authors = ["GoxViet Contributors"]
+authors = ["nihmtaho"]
 license = "MIT"
 description = "Gõ Việt - Vietnamese input method core engine"
 
@@ -35,4 +35,8 @@ harness = false
 
 [[bench]]
 name = "memory_bench"
+harness = false
+
+[[bench]]
+name = "english_detection_bench"
 harness = false

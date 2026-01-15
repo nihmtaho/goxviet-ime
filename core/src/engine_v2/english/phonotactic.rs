@@ -1,0 +1,738 @@
+//! Matrix-Based Phonotactic Analysis Engine
+//!
+//! 8-layer English phonotactic detection with Vietnamese validation.
+//! Provides confidence scores for each detection layer.
+
+use crate::data::keys;
+
+/// Phonotactic detection result with layer-wise confidence
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhonotacticResult {
+    /// Overall English confidence (0-100%)
+    pub english_confidence: u8,
+    /// Layer confidences (0-100%)
+    pub layer_scores: [u8; 8],
+    /// Which layers matched
+    pub matched_layers: u8, // bitmask
+}
+
+impl PhonotacticResult {
+    /// Check if any layer detected English (>0% confidence)
+    pub fn is_english(&self) -> bool {
+        self.matched_layers > 0
+    }
+
+    /// Get combined confidence (weighted average of matched layers)
+    pub fn combined_confidence(&self) -> u8 {
+        if self.matched_layers == 0 {
+            return 0;
+        }
+
+        let mut total = 0u32;
+        let mut count = 0u32;
+
+        for (i, &score) in self.layer_scores.iter().enumerate() {
+            if (self.matched_layers & (1 << i)) != 0 {
+                total += score as u32;
+                count += 1;
+            }
+        }
+
+        if count == 0 {
+            0
+        } else {
+            ((total / count).min(100)) as u8
+        }
+    }
+}
+
+/// Matrix-based phonotactic detection
+pub struct PhonotacticEngine;
+
+impl PhonotacticEngine {
+    /// Analyze sequence for English phonotactic patterns (8 layers)
+    pub fn analyze(keys: &[(u16, bool)]) -> PhonotacticResult {
+        let mut result = PhonotacticResult {
+            english_confidence: 0,
+            layer_scores: [0u8; 8],
+            matched_layers: 0,
+        };
+
+        if keys.is_empty() {
+            return result;
+        }
+
+        // Layer 1: Invalid initials (F, J, W, Z)
+        result.layer_scores[0] = Self::check_invalid_initials(keys);
+        if result.layer_scores[0] > 0 {
+            result.matched_layers |= 1 << 0;
+        }
+
+        // Layer 2: Onset clusters (bl, br, cl, cr, dr, fl, fr, gl, gr, pl, pr, etc.)
+        result.layer_scores[1] = Self::check_onset_clusters(keys);
+        if result.layer_scores[1] > 0 {
+            result.matched_layers |= 1 << 1;
+        }
+
+        // Layer 3: Double consonants (ll, ss, ff, rr, etc.)
+        result.layer_scores[2] = Self::check_double_consonants(keys);
+        if result.layer_scores[2] > 0 {
+            result.matched_layers |= 1 << 2;
+        }
+
+        // Layer 4: English suffixes (-tion, -ing, -ed, -ly, -er, -est)
+        result.layer_scores[3] = Self::check_suffixes(keys);
+        if result.layer_scores[3] > 0 {
+            result.matched_layers |= 1 << 3;
+        }
+
+        // Layer 5: Coda clusters (st, nd, nt, mp, ng, nk, etc.)
+        result.layer_scores[4] = Self::check_coda_clusters(keys);
+        if result.layer_scores[4] > 0 {
+            result.matched_layers |= 1 << 4;
+        }
+
+        // Layer 6: English prefixes (un-, re-, pre-, dis-, over-, etc.)
+        result.layer_scores[5] = Self::check_prefixes(keys);
+        if result.layer_scores[5] > 0 {
+            result.matched_layers |= 1 << 5;
+        }
+
+        // Layer 7: Vowel patterns (ea, ou, oo, ai, oi, etc.)
+        result.layer_scores[6] = Self::check_vowel_patterns(keys);
+        if result.layer_scores[6] > 0 {
+            result.matched_layers |= 1 << 6;
+        }
+
+        // Layer 8: Impossible bigrams (qb, qd, qf, zs, zn, etc.)
+        result.layer_scores[7] = Self::check_impossible_bigrams(keys);
+        if result.layer_scores[7] > 0 {
+            result.matched_layers |= 1 << 7;
+        }
+
+        // Calculate overall confidence (weighted by layer specificity)
+        // Weights updated 2026-01: L6 Prefix confidence increased to 95 for strong prefixes (imp-, rest-)
+        let weights = [100, 98, 95, 90, 91, 95, 85, 80];
+        let mut weighted_sum = 0u32;
+        let mut weight_sum = 0u32;
+
+        for (i, &score) in result.layer_scores.iter().enumerate() {
+            if (result.matched_layers & (1 << i)) != 0 {
+                weighted_sum += (score as u32) * (weights[i] as u32);
+                weight_sum += weights[i] as u32;
+            }
+        }
+
+        result.english_confidence = if weight_sum > 0 {
+            ((weighted_sum / weight_sum).min(100)) as u8
+        } else {
+            0
+        };
+
+        result
+    }
+
+    /// L1: Check for invalid initials (F, J, W, Z at word start, SH- prefix)
+    /// Vietnamese doesn't start with F, J, W, Z in native words
+    /// Vietnamese also doesn't have SH- consonant cluster
+    fn check_invalid_initials(keys: &[(u16, bool)]) -> u8 {
+        if keys.is_empty() {
+            return 0;
+        }
+
+        let first_key = keys[0].0;
+
+        // F, J, W, Z are NEVER valid Vietnamese initials
+        match first_key {
+            keys::F | keys::J | keys::W | keys::Z => 100, // Definitely English
+            _ => {
+                // Check for SH- prefix (Vietnamese doesn't have this cluster)
+                if keys.len() >= 2 && first_key == keys::S && keys[1].0 == keys::H {
+                    return 100; // Definitely English (sh-, short, shell, share, etc.)
+                }
+                0
+            }
+        }
+    }
+
+    /// L2: Check for consonant clusters (bl, br, cl, cr, dr, fl, etc.)
+    /// Vietnamese allows very limited clusters
+    fn check_onset_clusters(keys: &[(u16, bool)]) -> u8 {
+        // Valid English onset clusters
+        const CLUSTERS: &[&[u16; 2]] = &[
+            &[keys::B, keys::L], // bl
+            &[keys::B, keys::R], // br
+            &[keys::C, keys::L], // cl
+            &[keys::C, keys::R], // cr
+            &[keys::D, keys::R], // dr
+            &[keys::F, keys::L], // fl
+            &[keys::F, keys::R], // fr
+            &[keys::G, keys::L], // gl
+            &[keys::G, keys::R], // gr
+            &[keys::P, keys::L], // pl
+            &[keys::P, keys::R], // pr
+            &[keys::S, keys::C], // sc
+            &[keys::S, keys::K], // sk
+            &[keys::S, keys::L], // sl
+            &[keys::S, keys::M], // sm
+            &[keys::S, keys::N], // sn
+            &[keys::S, keys::P], // sp
+            &[keys::S, keys::T], // st
+            &[keys::S, keys::W], // sw
+            // Removed: th, tr (Vietnamese compatible)
+            &[keys::T, keys::W], // tw
+            &[keys::V, keys::R], // vr
+            &[keys::W, keys::H], // wh
+            &[keys::W, keys::R], // wr
+        ];
+
+        if keys.len() < 2 {
+            return 0;
+        }
+
+        let first = keys[0].0;
+        let second = keys[1].0;
+
+        for cluster in CLUSTERS {
+            if first == cluster[0] && second == cluster[1] {
+                return 98; // Extremely likely English
+            }
+        }
+
+        0
+    }
+
+    /// L3: Check for double consonants (ll, ss, ff, rr, etc.)
+    /// Vietnamese doesn't have doubled consonants in same syllable
+    fn check_double_consonants(keys: &[(u16, bool)]) -> u8 {
+        const DOUBLE_CONSONANTS: &[u16] = &[keys::V];
+
+        for i in 0..keys.len().saturating_sub(1) {
+            let curr = keys[i].0;
+            let next = keys[i + 1].0;
+
+            if curr == next && DOUBLE_CONSONANTS.contains(&curr) {
+                return 95; // Likely English
+            }
+        }
+
+        0
+    }
+
+    /// L4: Check for English suffixes
+    fn check_suffixes(keys: &[(u16, bool)]) -> u8 {
+        // Suffix patterns (last 3-4 keys)
+        const SUFFIXES_3: &[&[u16; 3]] = &[
+            &[keys::I, keys::N, keys::G],     // -ing
+            &[keys::E, keys::D, keys::SPACE], // -ed (placeholder)
+            &[keys::L, keys::Y, keys::SPACE], // -ly
+            &[keys::E, keys::R, keys::SPACE], // -er
+            &[keys::O, keys::R, keys::E],     // -ore (restore, score, more, store, before, core)
+                                              // Removed: est (conflicts with e+s tone + t)
+        ];
+
+        const SUFFIXES_4: &[&[u16; 4]] = &[
+            &[keys::T, keys::I, keys::O, keys::N], // -tion
+            &[keys::N, keys::E, keys::S, keys::S], // -ness
+            &[keys::M, keys::E, keys::N, keys::T], // -ment
+            &[keys::A, keys::B, keys::L, keys::E], // -able
+        ];
+
+        if keys.len() >= 3 {
+            for suffix in SUFFIXES_3 {
+                let start = keys.len() - 3;
+                if &keys[start..start + 3]
+                    .iter()
+                    .map(|k| k.0)
+                    .collect::<Vec<_>>()[..]
+                    == &suffix[..]
+                {
+                    return 90;
+                }
+            }
+        }
+
+        if keys.len() >= 4 {
+            for suffix in SUFFIXES_4 {
+                let start = keys.len() - 4;
+                if &keys[start..start + 4]
+                    .iter()
+                    .map(|k| k.0)
+                    .collect::<Vec<_>>()[..]
+                    == &suffix[..]
+                {
+                    return 90;
+                }
+            }
+        }
+
+        0
+    }
+
+    /// L5: Check for coda clusters (st, nd, nt, mp, ng, etc.)
+    /// These occur at word end in English
+    fn check_coda_clusters(keys: &[(u16, bool)]) -> u8 {
+        const CODA_PAIRS: &[&[u16; 2]] = &[
+            &[keys::S, keys::T], // st
+            &[keys::N, keys::D], // nd
+            &[keys::N, keys::T], // nt
+            &[keys::M, keys::P], // mp
+            // Removed: ng (Vietnamese compatible)
+            &[keys::N, keys::K], // nk
+            &[keys::L, keys::D], // ld
+            &[keys::L, keys::T], // lt
+            &[keys::R, keys::D], // rd
+            &[keys::R, keys::N], // rn
+            &[keys::R, keys::S], // rs
+            &[keys::R, keys::T], // rt
+            &[keys::F, keys::T], // ft
+            &[keys::L, keys::S], // ls
+            &[keys::L, keys::Z], // lz
+        ];
+
+        if keys.len() >= 2 {
+            for pair in CODA_PAIRS {
+                for i in 0..keys.len().saturating_sub(1) {
+                    let curr = keys[i].0;
+                    let next = keys[i + 1].0;
+                    
+                    if curr == pair[0] && next == pair[1] {
+                        // Found a coda pair, but need to check context
+                        // Reject coda if it's followed by a vowel that starts a new syllable
+                        // (This prevents false positives like "syntax" = "sy-ntax")
+                        if i + 2 < keys.len() {
+                            let after_coda = keys[i + 2].0;
+                            
+                            // Special check: reject "nt" specifically when followed by vowel
+                            // because "nt" + vowel usually indicates next syllable's initial "nt" cluster
+                            // which doesn't exist in English (Vietnamese has this in "tion" → "tion" as separate)
+                            if curr == keys::N && next == keys::T && Self::is_vowel(after_coda) {
+                                continue; // Skip this false positive
+                            }
+                            
+                            // Other codas before vowel might still be valid syllable boundaries
+                            // like "mp" before vowel in "improve"
+                        }
+                        
+                        return 91; // Coda cluster found
+                    }
+                }
+            }
+        }
+
+        0
+    }
+
+    /// Check if a key is a vowel
+    fn is_vowel(key: u16) -> bool {
+        matches!(
+            key,
+            keys::A | keys::E | keys::I | keys::O | keys::U | keys::Y
+        )
+    }
+
+    /// L6: Check for English prefixes (un-, re-, pre-, dis-, imp-, rest-, etc.)
+    fn check_prefixes(keys: &[(u16, bool)]) -> u8 {
+        const PREFIXES_2: &[&[u16; 2]] = &[
+            &[keys::U, keys::N], // un-
+            &[keys::R, keys::E], // re-
+        ];
+
+        const PREFIXES_3: &[&[u16; 3]] = &[
+            &[keys::P, keys::R, keys::E], // pre-
+            &[keys::D, keys::I, keys::S], // dis-
+            &[keys::O, keys::V, keys::E], // ove-
+            &[keys::I, keys::M, keys::P], // imp- (improve, import, implement)
+        ];
+
+        const PREFIXES_4: &[&[u16; 4]] = &[
+            &[keys::R, keys::E, keys::S, keys::T], // rest- (restore, restrict, restrain)
+        ];
+
+        if keys.len() >= 2 {
+            for prefix in PREFIXES_2 {
+                if keys[0].0 == prefix[0] && keys[1].0 == prefix[1] {
+                    return 75;
+                }
+            }
+        }
+
+        if keys.len() >= 3 {
+            for prefix in PREFIXES_3 {
+                if keys[0].0 == prefix[0] && keys[1].0 == prefix[1] && keys[2].0 == prefix[2] {
+                    return 95; // Very high confidence for strong 3-char prefixes (imp-, pre-, dis-)
+                }
+            }
+        }
+
+        if keys.len() >= 4 {
+            for prefix in PREFIXES_4 {
+                if keys[0].0 == prefix[0] && keys[1].0 == prefix[1] && keys[2].0 == prefix[2] && keys[3].0 == prefix[3] {
+                    return 95; // Very high confidence for 4-char prefixes (rest-)
+                }
+            }
+        }
+
+        0
+    }
+
+    /// L7: Check for English vowel patterns (ea, ou, oo, ai, oi, etc.)
+    fn check_vowel_patterns(keys: &[(u16, bool)]) -> u8 {
+        const VOWEL_PATTERNS: &[&[u16; 2]] = &[
+            &[keys::E, keys::A], // ea
+            &[keys::O, keys::U], // ou
+                                 // Removed: oo, ee, ai, oi, ue, au (Vietnamese/Telex ambiguity)
+        ];
+
+        for i in 0..keys.len().saturating_sub(1) {
+            let curr = keys[i].0;
+            let next = keys[i + 1].0;
+
+            for pattern in VOWEL_PATTERNS {
+                if curr == pattern[0] && next == pattern[1] {
+                    return 85;
+                }
+            }
+        }
+
+        0
+    }
+
+    /// L8: Check for impossible bigrams in Vietnamese
+    fn check_impossible_bigrams(keys: &[(u16, bool)]) -> u8 {
+        // These bigrams don't exist in Vietnamese
+        const IMPOSSIBLE: &[&[u16; 2]] = &[
+            &[keys::Q, keys::B], // qb
+            &[keys::Q, keys::D], // qd
+            &[keys::Q, keys::F], // qf
+            &[keys::Z, keys::S], // zs
+            &[keys::Z, keys::N], // zn
+            &[keys::J, keys::M], // jm
+            &[keys::F, keys::N], // fn
+            &[keys::W, keys::G], // wg
+            &[keys::X, keys::B], // xb
+            &[keys::V, keys::T], // vt
+        ];
+
+        for i in 0..keys.len().saturating_sub(1) {
+            let curr = keys[i].0;
+            let next = keys[i + 1].0;
+
+            for pair in IMPOSSIBLE {
+                if curr == pair[0] && next == pair[1] {
+                    return 80;
+                }
+            }
+        }
+
+        0
+    }
+}
+
+/// Vietnamese Syllable Validator (6 validation rules)
+pub struct VietnameseSyllableValidator;
+
+impl VietnameseSyllableValidator {
+    /// Validate Vietnamese syllable structure (6 rules)
+    pub fn validate(keys: &[u16]) -> ValidationResult {
+        let mut result = ValidationResult {
+            is_valid: true,
+            rules_passed: [true; 6],
+        };
+
+        if keys.is_empty() {
+            return result;
+        }
+
+        // Rule 1: No invalid initials (F, J, W, Z except in compounds)
+        result.rules_passed[0] = Self::rule1_valid_initials(keys);
+
+        // Rule 2: No impossible onset clusters
+        result.rules_passed[1] = Self::rule2_valid_onset(keys);
+
+        // Rule 3: No doubled consonants in same position
+        result.rules_passed[2] = Self::rule3_no_doubled_consonants(keys);
+
+        // Rule 4: Vowel patterns must be valid Vietnamese
+        result.rules_passed[3] = Self::rule4_valid_vowel_patterns(keys);
+
+        // Rule 5: Coda must follow Vietnamese rules (not English clusters)
+        result.rules_passed[4] = Self::rule5_valid_coda(keys);
+
+        // Rule 6: No impossible bigrams
+        result.rules_passed[5] = Self::rule6_no_impossible_bigrams(keys);
+
+        result.is_valid = result.rules_passed.iter().all(|&r| r);
+        result
+    }
+
+    fn rule1_valid_initials(keys: &[u16]) -> bool {
+        if keys.is_empty() {
+            return true;
+        }
+        // F, J, Z are never valid in Vietnamese native words
+        !matches!(keys[0], keys::F | keys::J | keys::Z)
+    }
+
+    fn rule2_valid_onset(keys: &[u16]) -> bool {
+        if keys.len() < 2 {
+            return true;
+        }
+
+        // Vietnamese allows: qu, kh, gh, gi, ch, tr, th, ph, etc.
+        // Invalid: bl, br, cl, cr, dr, fl, etc.
+        let forbidden = vec![
+            (keys::B, keys::L),
+            (keys::B, keys::R),
+            (keys::C, keys::L),
+            (keys::C, keys::R),
+            (keys::D, keys::R),
+            (keys::F, keys::L),
+            (keys::F, keys::R),
+            (keys::G, keys::L),
+            (keys::P, keys::L),
+            (keys::P, keys::R),
+            (keys::S, keys::C),
+            (keys::S, keys::K),
+            (keys::S, keys::L),
+            (keys::S, keys::P),
+            (keys::S, keys::T),
+            (keys::T, keys::R),
+            (keys::V, keys::R),
+            (keys::W, keys::R),
+        ];
+
+        let first = keys[0];
+        let second = keys[1];
+
+        !forbidden.iter().any(|&(f, s)| first == f && second == s)
+    }
+
+    fn rule3_no_doubled_consonants(keys: &[u16]) -> bool {
+        for i in 0..keys.len().saturating_sub(1) {
+            if keys[i] == keys[i + 1] {
+                // Double consonants are not valid in Vietnamese
+                match keys[i] {
+                    // Except ll, ss might appear in borrowed words
+                    keys::L | keys::S => {}
+                    _ => return false,
+                }
+            }
+        }
+        true
+    }
+
+    fn rule4_valid_vowel_patterns(keys: &[u16]) -> bool {
+        // Vietnamese vowel patterns are different from English
+        // ea, oo, ai are NOT common in Vietnamese
+        let invalid_patterns = vec![
+            (keys::E, keys::A), // ea
+            (keys::O, keys::O), // oo
+            (keys::A, keys::I), // ai
+            (keys::O, keys::I), // oi
+        ];
+
+        for i in 0..keys.len().saturating_sub(1) {
+            for &(a, b) in &invalid_patterns {
+                if keys[i] == a && keys[i + 1] == b {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn rule5_valid_coda(keys: &[u16]) -> bool {
+        if keys.len() < 2 {
+            return true;
+        }
+
+        // Vietnamese codas are limited to: p, t, c, ch, m, n, ng, nh
+        // Not: st, nd, nt, mp, etc. (English clusters)
+        let invalid_codas = vec![
+            (keys::S, keys::T),
+            (keys::N, keys::D),
+            (keys::M, keys::P),
+            (keys::L, keys::D),
+            (keys::R, keys::D),
+        ];
+
+        // Check last two keys
+        if keys.len() >= 2 {
+            let last_two = (keys[keys.len() - 2], keys[keys.len() - 1]);
+            for &(a, b) in &invalid_codas {
+                if last_two.0 == a && last_two.1 == b {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn rule6_no_impossible_bigrams(keys: &[u16]) -> bool {
+        let impossible = vec![
+            (keys::Q, keys::B),
+            (keys::Q, keys::D),
+            (keys::Q, keys::F),
+            (keys::Z, keys::S),
+            (keys::J, keys::M),
+            (keys::F, keys::N),
+        ];
+
+        for i in 0..keys.len().saturating_sub(1) {
+            let pair = (keys[i], keys[i + 1]);
+            if impossible.iter().any(|&(a, b)| pair.0 == a && pair.1 == b) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+/// Vietnamese syllable validation result
+#[derive(Debug, Clone, Copy)]
+pub struct ValidationResult {
+    /// Overall validation result
+    pub is_valid: bool,
+    /// Each rule result
+    pub rules_passed: [bool; 6],
+}
+
+impl ValidationResult {
+    /// Get count of passed rules
+    pub fn passed_count(&self) -> usize {
+        self.rules_passed.iter().filter(|&&r| r).count()
+    }
+
+    /// Get confidence percentage (6/6 rules = 100%)
+    pub fn confidence(&self) -> u8 {
+        ((self.passed_count() as u32 * 100) / 6) as u8
+    }
+}
+
+/// Auto-restore decision logic
+pub struct AutoRestoreDecider;
+
+impl AutoRestoreDecider {
+    /// Decide whether to restore English word
+    ///
+    /// # Returns
+    /// - true: restore to English (high confidence)
+    /// - false: keep Vietnamese transforms
+    pub fn should_restore(
+        phonotactic: &PhonotacticResult,
+        vietnamese_validation: &ValidationResult,
+        has_transforms: bool,
+    ) -> bool {
+        if !has_transforms {
+            return false;
+        }
+        
+        // CRITICAL FIX: If Vietnamese validation shows valid output, NEVER restore
+        // This fixes "trường" + space being restored to "truowfng"
+        // The raw input looks unusual due to Telex modifiers, but output is valid Vietnamese
+        if vietnamese_validation.is_valid {
+            return false;  // Trust the valid Vietnamese output
+        }
+
+        // Strong signal: multiple English layers detected
+        let english_layers = (phonotactic.matched_layers.count_ones() as u8).max(1);
+
+        // Vietnamese validation: how many rules passed
+        let viet_rules_passed = vietnamese_validation.passed_count();
+
+        // Decision matrix:
+        // 1. If 3+ English layers AND Vietnamese validates poorly -> RESTORE
+        // 2. If 5+ English layers -> RESTORE (very strong signal)
+        // 3. If high confidence English AND invalid Vietnamese -> RESTORE
+
+        let english_confidence = phonotactic.english_confidence;
+
+        // High English confidence (>75%) AND Vietnamese validation fails (≤3 rules)
+        if english_confidence > 75 && viet_rules_passed <= 3 {
+            return true;
+        }
+
+        // Multiple English layers (>2) AND very low Vietnamese confidence
+        if english_layers >= 3 && viet_rules_passed <= 2 {
+            return true;
+        }
+
+        // Exceptional case: phonotactic confidence > 80% and Vietnamese invalid
+        if english_confidence >= 80 && !vietnamese_validation.is_valid {
+            return true;
+        }
+
+        false
+    }
+
+    /// Get restore confidence (0-100%)
+    pub fn confidence(
+        phonotactic: &PhonotacticResult,
+        vietnamese_validation: &ValidationResult,
+    ) -> u8 {
+        let english = phonotactic.english_confidence as i32;
+        let viet_invalid_score = (100 - vietnamese_validation.confidence() as i32).max(0);
+
+        // Combine signals: English high + Vietnamese low = high restore confidence
+        (((english + viet_invalid_score) / 2).min(100)) as u8
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_layer1_invalid_initials() {
+        let keys = vec![(keys::F, false), (keys::O, false), (keys::R, false)];
+        let result = PhonotacticEngine::analyze(&keys);
+        assert!(
+            result.layer_scores[0] > 0,
+            "Should detect F as invalid initial"
+        );
+    }
+
+    #[test]
+    fn test_layer2_onset_clusters() {
+        let keys = vec![(keys::B, false), (keys::L, false), (keys::U, false)];
+        let result = PhonotacticEngine::analyze(&keys);
+        assert!(result.layer_scores[1] > 0, "Should detect BL cluster");
+    }
+
+    #[test]
+    fn test_vietnamese_valid_syllable() {
+        let keys = vec![keys::T, keys::O, keys::A, keys::N];
+        let result = VietnameseSyllableValidator::validate(&keys);
+        assert!(result.is_valid, "TOAN should be valid Vietnamese");
+    }
+
+    #[test]
+    fn test_vietnamese_invalid_initials() {
+        let keys = vec![keys::F, keys::O, keys::R];
+        let result = VietnameseSyllableValidator::validate(&keys);
+        assert!(
+            !result.rules_passed[0],
+            "FOR should fail rule 1 (invalid initial)"
+        );
+    }
+
+    #[test]
+    fn test_auto_restore_strong_english() {
+        let phonotactic = PhonotacticResult {
+            english_confidence: 95,
+            layer_scores: [100, 98, 0, 0, 0, 0, 0, 0],
+            matched_layers: 0b11,
+        };
+        let viet = ValidationResult {
+            is_valid: false,
+            rules_passed: [false, false, true, true, true, false],
+        };
+        assert!(
+            AutoRestoreDecider::should_restore(&phonotactic, &viet, true),
+            "Should restore high-confidence English"
+        );
+    }
+}

@@ -55,10 +55,33 @@ pub fn key_to_char(key: u16, caps: bool) -> Option<char> {
 }
 
 /// Collect vowels from buffer with phonological info
+/// Excludes 'i' when it's part of "gi" initial (e.g., "giống", "giàu")
 pub fn collect_vowels(buf: &Buffer) -> Vec<Vowel> {
+    // Check for "gi" initial: g + i + vowel
+    let has_gi_initial = has_gi_initial(buf);
+
     buf.iter()
         .enumerate()
-        .filter(|(_, c)| keys::is_vowel(c.key))
+        .filter(|(pos, c)| {
+            if !keys::is_vowel(c.key) {
+                return false;
+            }
+            // Skip 'i' in "gi" initial if it doesn't form a valid diphthong
+            // Valid 'i' diphthongs: ia, ie/iê, iu
+            // Invalid: io (so "gio" → skip 'i', tone goes on 'o')
+            if has_gi_initial && *pos == 1 && c.key == keys::I {
+                // Check if next character forms a diphthong with 'i'
+                if let Some(next) = buf.get(*pos + 1) {
+                    // 'i' forms diphthongs with: A, E, U (ia, iê, iu)
+                    // Does NOT form diphthong with: O
+                    let forms_diphthong = matches!(next.key, keys::A | keys::E | keys::U);
+                    return forms_diphthong;
+                }
+                // No next vowel, skip 'i' (it's just part of initial)
+                return false;
+            }
+            true
+        })
         .map(|(pos, c)| {
             let modifier = match c.tone {
                 tone::CIRCUMFLEX => Modifier::Circumflex,

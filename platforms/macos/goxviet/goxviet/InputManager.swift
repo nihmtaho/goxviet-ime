@@ -25,7 +25,8 @@ class InputManager {
     private var previousKeyTimestamp: TimeInterval = 0
     
     // NotificationCenter observer tokens for proper cleanup
-    private var observerTokens: [NSObjectProtocol] = []
+    private var toggleObserver: NSObjectProtocol?
+    private var shortcutObserver: NSObjectProtocol?
     
     private init() {
         self.bridge = RustBridge()
@@ -75,10 +76,14 @@ class InputManager {
     }
     
     private func cleanupObservers() {
-        for token in observerTokens {
+        if let token = toggleObserver {
             NotificationCenter.default.removeObserver(token)
+            toggleObserver = nil
         }
-        observerTokens.removeAll()
+        if let token = shortcutObserver {
+            NotificationCenter.default.removeObserver(token)
+            shortcutObserver = nil
+        }
     }
     
     // MARK: - Lifecycle
@@ -148,8 +153,8 @@ class InputManager {
         // Clear any existing observers first to prevent duplicates
         cleanupObservers()
         
-        // Add observer for Vietnamese toggle and store token
-        let toggleToken = NotificationCenter.default.addObserver(
+        // Add observer for Vietnamese toggle
+        toggleObserver = NotificationCenter.default.addObserver(
             forName: .toggleVietnamese,
             object: nil,
             queue: .main
@@ -160,10 +165,9 @@ class InputManager {
                 self?.toggleEnabled()
             }
         }
-        observerTokens.append(toggleToken)
         
-        // Add observer for shortcut changes and store token
-        let shortcutToken = NotificationCenter.default.addObserver(
+        // Add observer for shortcut changes
+        shortcutObserver = NotificationCenter.default.addObserver(
             forName: .shortcutChanged,
             object: nil,
             queue: .main
@@ -180,7 +184,6 @@ class InputManager {
             // Also reload text expansion shortcuts
             self?.reloadShortcuts()
         }
-        observerTokens.append(shortcutToken)
     }
     
     func setEnabled(_ enabled: Bool) {

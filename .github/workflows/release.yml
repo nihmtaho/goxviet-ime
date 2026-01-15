@@ -31,6 +31,7 @@ jobs:
   check-release:
     name: Check Release Exists
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       release_exists: ${{ steps.check_release.outputs.release_exists }}
     steps:
@@ -62,6 +63,7 @@ jobs:
     needs: check-release
     if: needs.check-release.outputs.release_exists != 'true'
     runs-on: macos-15-intel
+    timeout-minutes: 60
 
     steps:
       # ============================================
@@ -330,7 +332,7 @@ jobs:
         with:
           name: ${{ env.APP_NAME }}-${{ steps.version.outputs.version }}-macos
           path: ${{ steps.create_dmg.outputs.dmg_file }}
-          retention-days: 90
+          retention-days: 1
 
       - name: Generate release summary
         run: |
@@ -369,6 +371,7 @@ jobs:
   notify:
     name: Release Notification
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [check-release, build-macos]
     if: always()
 

@@ -1,8 +1,5 @@
 //! English detection and processing
 //!
-//! Multi-layer English word detection using phonotactic patterns.
+//! Using engine_v2 for optimized performance.
 
-pub mod phonotactic;
-pub mod english_detection;
-
-pub use phonotactic::PhonotacticEngine;
+pub use crate::engine_v2::english::phonotactic::PhonotacticEngine;

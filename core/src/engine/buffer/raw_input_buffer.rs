@@ -161,11 +161,14 @@ impl RawInputBuffer {
     /// // ... add some keystrokes ...
     /// let snapshot = buf.as_slice(); // Heap allocation here
     /// ```
+    #[inline]
     pub fn as_slice(&self) -> Vec<(u16, bool)> {
+        // Early return for empty buffer - avoid allocation
         if self.len == 0 {
             return Vec::new();
         }
 
+        // Use exact capacity to avoid over-allocation
         let mut result = Vec::with_capacity(self.len);
         result.extend_from_slice(&self.data[..self.len]);
         result
@@ -251,11 +254,11 @@ mod tests {
     #[test]
     fn test_push_and_pop() {
         let mut buf = RawInputBuffer::new();
-        
+
         buf.push(b'a' as u16, false);
         buf.push(b's' as u16, false);
         buf.push(b'A' as u16, true);
-        
+
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.pop(), Some((b'A' as u16, true)));
         assert_eq!(buf.pop(), Some((b's' as u16, false)));
@@ -269,7 +272,7 @@ mod tests {
         let mut buf = RawInputBuffer::new();
         buf.push(b'a' as u16, false);
         buf.push(b's' as u16, false);
-        
+
         buf.clear();
         assert_eq!(buf.len(), 0);
         assert!(buf.is_empty());
@@ -278,24 +281,24 @@ mod tests {
     #[test]
     fn test_capacity_overflow() {
         let mut buf = RawInputBuffer::new();
-        
+
         // Fill beyond capacity
         for i in 0..100 {
             buf.push(i as u16, false);
         }
-        
+
         // Should only keep last 64 elements
         assert_eq!(buf.len(), RAW_INPUT_CAPACITY);
-        
+
         // Check that we keep the most recent elements
         // Last element should be 99
         let last = buf.pop();
         assert_eq!(last, Some((99, false)));
-        
+
         // Second to last should be 98
         let second_last = buf.pop();
         assert_eq!(second_last, Some((98, false)));
-        
+
         // After popping 2, we should have 62 elements left
         assert_eq!(buf.len(), RAW_INPUT_CAPACITY - 2);
     }
@@ -306,7 +309,7 @@ mod tests {
         buf.push(b'v' as u16, false);
         buf.push(b'i' as u16, false);
         buf.push(b'e' as u16, false);
-        
+
         let slice = buf.as_slice();
         assert_eq!(slice.len(), 3);
         assert_eq!(slice[0], (b'v' as u16, false));
@@ -320,7 +323,7 @@ mod tests {
         buf.push(b't' as u16, false);
         buf.push(b'o' as u16, false);
         buf.push(b'n' as u16, false);
-        
+
         let collected: Vec<_> = buf.iter().collect();
         assert_eq!(collected.len(), 3);
         assert_eq!(collected[0], (b't' as u16, false));
@@ -333,7 +336,7 @@ mod tests {
         let mut buf = RawInputBuffer::new();
         buf.push(b'a' as u16, false);
         buf.push(b'b' as u16, false);
-        
+
         let mut iter = buf.iter();
         assert_eq!(iter.len(), 2);
         iter.next();
@@ -345,24 +348,24 @@ mod tests {
     #[test]
     fn test_capacity_overflow_iteration() {
         let mut buf = RawInputBuffer::new();
-        
+
         // Fill to capacity
         for i in 0..RAW_INPUT_CAPACITY {
             buf.push(i as u16, false);
         }
-        
+
         // Push beyond capacity - should shift out oldest elements
         buf.push(100, false);
         buf.push(101, false);
         buf.push(102, false);
-        
+
         // Should still have exactly CAPACITY elements
         assert_eq!(buf.len(), RAW_INPUT_CAPACITY);
-        
+
         // First element should be shifted out, so first is now element 3
         let first = buf.iter().next();
         assert_eq!(first, Some((3, false))); // Elements 0,1,2 were shifted out
-        
+
         // Last element should be 102
         let collected: Vec<_> = buf.iter().collect();
         assert_eq!(collected.last(), Some(&(102, false)));
@@ -371,19 +374,19 @@ mod tests {
     #[test]
     fn test_push_performance_characteristics() {
         let mut buf = RawInputBuffer::new();
-        
+
         // Test that push is fast when not full (should be O(1))
         for i in 0..RAW_INPUT_CAPACITY {
             buf.push(i as u16, false);
         }
-        
+
         // Verify all elements are there
         assert_eq!(buf.len(), RAW_INPUT_CAPACITY);
-        
+
         // Test that push still works when full (O(n) but acceptable)
         buf.push(999, false);
         assert_eq!(buf.len(), RAW_INPUT_CAPACITY);
-        
+
         // Verify oldest was shifted out
         assert_eq!(buf.iter().next(), Some((1, false)));
         assert_eq!(buf.iter().last(), Some((999, false)));
@@ -392,15 +395,15 @@ mod tests {
     #[test]
     fn test_iter_collect_optimization() {
         let mut buf = RawInputBuffer::new();
-        
+
         // ExactSizeIterator should optimize collect()
         for i in 0..10 {
             buf.push(i as u16, i % 2 == 0);
         }
-        
+
         let collected: Vec<_> = buf.iter().collect();
         assert_eq!(collected.len(), 10);
-        
+
         // Verify contents
         for (i, &(key, caps)) in collected.iter().enumerate() {
             assert_eq!(key, i as u16);
@@ -411,17 +414,17 @@ mod tests {
     #[test]
     fn test_memory_layout_assumptions() {
         use std::mem;
-        
+
         // Verify size assumptions for documentation
         let buf = RawInputBuffer::new();
-        
+
         // Buffer should be stack-allocated and reasonably sized
         let size = mem::size_of_val(&buf);
-        
+
         // Should be roughly 64 * size_of((u16, bool)) + overhead
         // (u16, bool) is typically 4 bytes due to padding
         assert!(size <= 512, "Buffer size {} exceeds 512 bytes", size);
-        
+
         // Verify it's not heap-allocated (would be much larger)
         assert!(size >= 64, "Buffer size {} is suspiciously small", size);
     }

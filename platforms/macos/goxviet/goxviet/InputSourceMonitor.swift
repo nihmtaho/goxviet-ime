@@ -283,11 +283,13 @@ class InputSourceMonitor {
             
             Log.info("Vietnamese input temporarily disabled (non-Latin input source active)")
             
-            // Post notification for UI update (optional visual indicator)
-            NotificationCenter.default.post(
-                name: .inputSourceAutoDisabled,
-                object: currentInputSourceId
-            )
+            // Post notification for UI update - defer to avoid layout recursion
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .inputSourceAutoDisabled,
+                    object: self.currentInputSourceId
+                )
+            }
         }
     }
     
@@ -304,11 +306,13 @@ class InputSourceMonitor {
         
         Log.info("Vietnamese input restored (Latin input source active)")
         
-        // Post notification for UI update
-        NotificationCenter.default.post(
-            name: .inputSourceAutoRestored,
-            object: nil
-        )
+        // Post notification for UI update - defer to avoid layout recursion
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .inputSourceAutoRestored,
+                object: nil
+            )
+        }
     }
     
     // MARK: - Public API

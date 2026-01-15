@@ -145,11 +145,13 @@ class PerAppModeManager {
         AppState.shared.setEnabledSilently(savedMode)
         ime_enabled(savedMode)
         
-        // Update UI
-        NotificationCenter.default.post(
-            name: .updateStateChanged,
-            object: savedMode
-        )
+        // Update UI - defer to avoid layout recursion during app switch
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .updateStateChanged,
+                object: savedMode
+            )
+        }
         
         let appName = AppState.shared.getAppName(bundleId: bundleId)
         Log.info("Mode restored for \(appName): \(savedMode ? "Vietnamese" : "English")")

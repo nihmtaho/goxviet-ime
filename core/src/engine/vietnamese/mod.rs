@@ -10,4 +10,3 @@ pub mod vowel_compound;
 
 pub use syllable::Syllable;
 pub use transform::{ModifierType, TransformResult};
-pub use validation::{ValidationResult, BufferSnapshot};

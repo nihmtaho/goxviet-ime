@@ -28,5 +28,7 @@
 	<string>GoxViet needs access to control your keyboard input for Vietnamese typing.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSQuitAlwaysKeepsWindows</key>
+	<false/>
 </dict>
 </plist>

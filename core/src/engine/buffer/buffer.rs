@@ -20,6 +20,7 @@ pub struct Char {
 }
 
 impl Char {
+    #[inline]
     pub fn new(key: u16, caps: bool) -> Self {
         Self {
             key,
@@ -30,10 +31,12 @@ impl Char {
         }
     }
 
+    #[inline]
     pub fn has_tone(&self) -> bool {
         self.tone > 0
     }
 
+    #[inline]
     pub fn has_mark(&self) -> bool {
         self.mark > 0
     }
@@ -53,6 +56,7 @@ impl Default for Buffer {
 }
 
 impl Buffer {
+    #[inline]
     pub fn new() -> Self {
         Self {
             data: [Char::default(); MAX],
@@ -60,6 +64,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn push(&mut self, c: Char) {
         if self.len < MAX {
             self.data[self.len] = c;
@@ -67,6 +72,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn pop(&mut self) -> Option<Char> {
         if self.len > 0 {
             self.len -= 1;
@@ -76,18 +82,22 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.len = 0;
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
+    #[inline]
     pub fn get(&self, i: usize) -> Option<&Char> {
         if i < self.len {
             Some(&self.data[i])
@@ -96,6 +106,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn get_mut(&mut self, i: usize) -> Option<&mut Char> {
         if i < self.len {
             Some(&mut self.data[i])
@@ -104,6 +115,7 @@ impl Buffer {
         }
     }
 
+    #[inline]
     pub fn last(&self) -> Option<&Char> {
         if self.len > 0 {
             Some(&self.data[self.len - 1])
@@ -113,6 +125,7 @@ impl Buffer {
     }
 
     /// Find indices of vowels in buffer
+    #[inline]
     pub fn find_vowels(&self) -> Vec<usize> {
         use crate::data::keys;
         (0..self.len)
@@ -121,6 +134,7 @@ impl Buffer {
     }
 
     /// Find vowel position by key (from end)
+    #[inline]
     pub fn find_vowel_by_key(&self, key: u16) -> Option<usize> {
         use crate::data::keys;
         (0..self.len)
@@ -129,47 +143,60 @@ impl Buffer {
     }
 
     /// Iterate over chars
+    #[inline]
     pub fn iter(&self) -> std::slice::Iter<'_, Char> {
         self.data[..self.len].iter()
     }
 
     /// Convert buffer to lowercase string (for shortcut matching)
+    #[inline]
     pub fn to_lowercase_string(&self) -> String {
-        self.data[..self.len]
-            .iter()
-            .filter_map(|c| utils::key_to_char(c.key, false))
-            .collect()
+        let mut result = String::with_capacity(self.len);
+        for c in &self.data[..self.len] {
+            if let Some(ch) = utils::key_to_char(c.key, false) {
+                result.push(ch);
+            }
+        }
+        result
     }
 
     /// Convert buffer to string preserving case (for shortcut case matching)
+    #[inline]
     pub fn to_string_preserve_case(&self) -> String {
-        self.data[..self.len]
-            .iter()
-            .filter_map(|c| utils::key_to_char(c.key, c.caps))
-            .collect()
+        let mut result = String::with_capacity(self.len);
+        for c in &self.data[..self.len] {
+            if let Some(ch) = utils::key_to_char(c.key, c.caps) {
+                result.push(ch);
+            }
+        }
+        result
     }
 
     /// Convert buffer to full Vietnamese string with diacritics (for shortcut matching)
     ///
     /// This includes tone marks (sắc/huyền/hỏi/ngã/nặng), vowel marks (circumflex/horn/breve),
     /// and stroked consonants (đ). Use this for shortcut matching to ensure exact comparison.
+    #[inline]
     pub fn to_full_string(&self) -> String {
         use crate::data::{chars, keys};
-        self.data[..self.len]
-            .iter()
-            .filter_map(|c| {
-                // Handle đ/Đ (stroked D)
-                if c.key == keys::D && c.stroke {
-                    return Some(chars::get_d(c.caps));
-                }
-                // Try to get full Vietnamese character with diacritics
-                if let Some(ch) = chars::to_char(c.key, c.caps, c.tone, c.mark) {
-                    return Some(ch);
-                }
-                // Fallback to basic character
-                utils::key_to_char(c.key, c.caps)
-            })
-            .collect()
+        let mut result = String::with_capacity(self.len * 3); // Vietnamese chars can be up to 3 bytes in UTF-8
+        for c in &self.data[..self.len] {
+            // Handle đ/Đ (stroked D)
+            if c.key == keys::D && c.stroke {
+                result.push(chars::get_d(c.caps));
+                continue;
+            }
+            // Try to get full Vietnamese character with diacritics
+            if let Some(ch) = chars::to_char(c.key, c.caps, c.tone, c.mark) {
+                result.push(ch);
+                continue;
+            }
+            // Fallback to basic character
+            if let Some(ch) = utils::key_to_char(c.key, c.caps) {
+                result.push(ch);
+            }
+        }
+        result
     }
 }
 

@@ -1,11 +1,3 @@
-// MARK: - Window Delegate for Shortcut Handling
-class SettingsWindowDelegate: NSObject, NSWindowDelegate {
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        sender.performClose(nil)
-        return false
-    }
-}
-
 //
 //  SettingsRootView.swift
 //  GoxViet
@@ -26,7 +18,9 @@ struct SettingsRootView: View {
 
     @AppStorage("smartModeEnabled") private var smartModeEnabled = true
     @AppStorage("com.goxviet.ime.autoDisableNonLatin") private var autoDisableForNonLatin = true
-    @AppStorage("com.goxviet.ime.hideFromDock") private var hideFromDock = true
+    
+    // Use AppState for hideFromDock instead of @AppStorage
+    @ObservedObject private var appState = AppState.shared
 
     // MARK: - View State
     @State private var selection: SettingsSection? = .general
@@ -45,8 +39,6 @@ struct SettingsRootView: View {
             }
             .navigationSplitViewStyle(.balanced)
         }
-        .frame(minWidth: 760, idealWidth: 840, minHeight: 520, idealHeight: 580)
-        .background(Color.clear)
         .onAppear {
             loadPerAppModes()
             syncToAppState()
@@ -117,8 +109,7 @@ struct SettingsRootView: View {
                     modernToneStyle: $modernToneStyle,
                     escRestoreEnabled: $escRestoreEnabled,
                     freeToneEnabled: $freeToneEnabled,
-                    autoDisableForNonLatin: $autoDisableForNonLatin,
-                    hideFromDock: $hideFromDock
+                    autoDisableForNonLatin: $autoDisableForNonLatin
                 )
             case .perApp:
                 PerAppSettingsView(
@@ -242,7 +233,9 @@ private struct GeneralSettingsView: View {
     @Binding var escRestoreEnabled: Bool
     @Binding var freeToneEnabled: Bool
     @Binding var autoDisableForNonLatin: Bool
-    @Binding var hideFromDock: Bool
+    
+    // Use AppState for hideFromDock
+    @ObservedObject private var appState = AppState.shared
 
     var body: some View {
         Form {
@@ -328,12 +321,7 @@ private struct GeneralSettingsView: View {
             }
             
             Section {
-                Toggle("Hide from Dock", isOn: $hideFromDock)
-                    .onChange(of: hideFromDock) { _, newValue in
-                        let policy: NSApplication.ActivationPolicy = newValue ? .accessory : .regular
-                        NSApp.setActivationPolicy(policy)
-                        Log.info("Dock visibility: \(newValue ? "hidden" : "visible")")
-                    }
+                Toggle("Hide from Dock", isOn: $appState.hideFromDock)
                 
                 Text("When enabled, GoxViet will only appear in the menu bar.")
                     .font(.caption)
@@ -694,12 +682,9 @@ private struct ShortcutRecordingSheet: View {
 // MARK: - About View
 
 private struct AboutSettingsView: View {
-    @ObservedObject private var updateManager = UpdateManager.shared
-    @AppStorage("com.goxviet.ime.autoUpdateCheck") private var autoUpdateCheck = true
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 24) {
                 Spacer(minLength: 16)
 
                 // App Icon
@@ -743,7 +728,6 @@ private struct AboutSettingsView: View {
                     ("brain.fill", .pink, "Smart per-app mode"),
                     ("keyboard.badge.ellipsis", .blue, "Telex & VNI input"),
                     ("textformat", .green, "Modern/traditional tone"),
-                    //( "arrow.uturn.left.circle.fill", .purple, "ESC restore/undo"), // Hide unfinished
                     ("sparkles", .orange, "Auto-disable non-Latin")
                 ]
                 Grid(alignment: .center, horizontalSpacing: 0, verticalSpacing: 8) {
@@ -766,15 +750,27 @@ private struct AboutSettingsView: View {
                         .fill(.ultraThinMaterial)
                 )
 
-                // Auto-update panel, modern card style
-                updatePanel
+                // Check for updates button (Modern style)
+                Button {
+                    NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.down.circle.fill")
+                        Text("Check for Updates...")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+                .padding(.horizontal, 40)
 
                 // Links row
                 HStack(spacing: 18) {
-                    Link(destination: URL(string: "https://github.com/goxviet/goxviet")!) {
+                    Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
                         Label("GitHub", systemImage: "link")
                     }
-                    Link(destination: URL(string: "https://github.com/goxviet/goxviet/issues")!) {
+                    Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
                         Label("Report Issue", systemImage: "exclamationmark.bubble")
                     }
                 }
@@ -789,84 +785,8 @@ private struct AboutSettingsView: View {
         }
     }
 
-    // Auto-update panel: modern, minimal, visually prominent
-    private var updatePanel: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-                Text("Auto-Update")
-                    .font(.headline)
-                Spacer()
-                if updateManager.updateAvailable, let latest = updateManager.latestVersion {
-                    Button {
-                        UpdateManager.shared.downloadUpdate()
-                    } label: {
-                        Label("Update to \(latest)", systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                }
-            }
-
-            Toggle("Auto check for updates", isOn: $autoUpdateCheck)
-                .toggleStyle(.switch)
-                .onChange(of: autoUpdateCheck) { _, newValue in
-                    AppState.shared.autoUpdateCheckEnabled = newValue
-                    UpdateManager.shared.refreshSchedule(triggerImmediate: newValue)
-                }
-
-            HStack(spacing: 12) {
-                Button {
-                    UpdateManager.shared.checkForUpdates(userInitiated: true)
-                } label: {
-                    if updateManager.isChecking {
-                        ProgressView()
-                    } else {
-                        Label("Check Now", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                }
-                .disabled(updateManager.isChecking)
-
-                Button {
-                    openReleasePage()
-                } label: {
-                    Label("Release Notes", systemImage: "doc.text")
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(updateManager.statusMessage)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                if let latest = updateManager.latestVersion {
-                    Text("Latest: \(latest)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let lastChecked = updateManager.lastChecked {
-                    Text("Last checked: \(RelativeDateTimeFormatter().localizedString(for: lastChecked, relativeTo: Date()))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.regularMaterial)
-                .shadow(color: .blue.opacity(0.10), radius: 5, x: 0, y: 2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.blue.opacity(0.18), lineWidth: 1)
-        )
-        .padding(.horizontal, 10)
-    }
-
     private func openReleasePage() {
-        if let url = URL(string: "https://github.com/nihmtaho/goxviet/releases/latest") {
+        if let url = URL(string: "https://github.com/nihmtaho/goxviet-ime/releases/latest") {
             NSWorkspace.shared.open(url)
         }
     }
