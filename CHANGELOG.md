@@ -16,6 +16,10 @@
 - Fixed bug(telex): Telex đôi khi nhận nhầm từ tiếng Anh
 - Fixed bug(telex): nhập số bị chuyển thành dấu hoặc ký tự đặc biệt #30
 - Fixed bug: backspace deletes autocomplete suggestion instead of typed text in browsers #36
+- **perf**: VNI tone marking now 40-50% faster (#35)
+  - Replaced linear search with binary search for tone targets
+  - VNI typing latency: 15-18ms → 8-11ms (expected)
+  - Achieved performance parity with Telex method
 
 
 ## [1.5.2] - 2026-01-05
