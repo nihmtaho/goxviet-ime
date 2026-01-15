@@ -1003,10 +1003,11 @@ impl Engine {
 
         // Check if we're switching from one tone to another (e.g., ô → ơ)
         // Find vowels that have a DIFFERENT tone (to switch) or NO tone (to add)
+        // OPTIMIZATION: Use binary_search instead of linear search (O(log n) vs O(n))
         let is_switching = self
             .buf
             .iter()
-            .any(|c| targets.contains(&c.key) && c.tone != tone::NONE && c.tone != tone_val);
+            .any(|c| targets.binary_search(&c.key).is_ok() && c.tone != tone::NONE && c.tone != tone_val);
 
         // Scan buffer for eligible target vowels
         let mut target_positions = Vec::new();
@@ -1031,7 +1032,7 @@ impl Engine {
                 // When switching, ONLY target vowels that already have a diacritic
                 // (don't add diacritics to plain vowels during switch)
                 for (i, c) in self.buf.iter().enumerate().rev() {
-                    if targets.contains(&c.key) && c.tone != tone::NONE && c.tone != tone_val {
+                    if targets.binary_search(&c.key).is_ok() && c.tone != tone::NONE && c.tone != tone_val {
                         target_positions.push(i);
                         break;
                     }
@@ -1135,7 +1136,7 @@ impl Engine {
                 }
 
                 for (i, c) in self.buf.iter().enumerate().rev() {
-                    if targets.contains(&c.key) && c.tone == tone::NONE {
+                    if targets.binary_search(&c.key).is_ok() && c.tone == tone::NONE {
                         target_positions.push(i);
                         break;
                     }
@@ -1154,7 +1155,7 @@ impl Engine {
             let has_tone_already = self
                 .buf
                 .iter()
-                .any(|c| targets.contains(&c.key) && c.tone == tone_val);
+                .any(|c| targets.binary_search(&c.key).is_ok() && c.tone == tone_val);
 
             // For Telex circumflex keys (a, e, o), DON'T absorb - let key append as raw letter
             // This prevents buffer/screen desync: absorbing returns send(0,&[]) which
@@ -1478,7 +1479,7 @@ impl Engine {
             .iter()
             .enumerate()
             .filter(|(_, c)| {
-                targets.contains(&c.key) && (c.tone == tone::NONE || c.tone != new_tone)
+                targets.binary_search(&c.key).is_ok() && (c.tone == tone::NONE || c.tone != new_tone)
             })
             .map(|(i, _)| i)
             .collect();
@@ -1496,7 +1497,7 @@ impl Engine {
                 self.buf
                     .get(pos)
                     .map(|c| {
-                        targets.contains(&c.key) && (c.tone == tone::NONE || c.tone != new_tone)
+                        targets.binary_search(&c.key).is_ok() && (c.tone == tone::NONE || c.tone != new_tone)
                     })
                     .unwrap_or(false)
             })
