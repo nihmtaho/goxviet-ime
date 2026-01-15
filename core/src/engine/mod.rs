@@ -1590,7 +1590,11 @@ impl Engine {
                 // CRITICAL FIX: Mark as English to prevent re-stroke loop
                 self.is_english_word = true;
 
-                return self.rebuild_from(pos);
+                // Calculate backspace based on OLD buffer length (before we pushed the new key)
+                // Old buffer length = current length - 1 (since we pushed 1 key)
+                // Backspace count = old chars from pos = (len - 1) - pos
+                let backspace_count = (self.buf.len() - 1).saturating_sub(pos);
+                return self.rebuild_from_with_backspace(pos, backspace_count);
             }
         }
         Result::none()
