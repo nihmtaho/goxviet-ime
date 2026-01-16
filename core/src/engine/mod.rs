@@ -273,8 +273,10 @@ impl Engine {
                 let mut restore_result = self.instant_restore_english();
 
                 // Add space to the result (Result.chars has capacity for more)
-                if (restore_result.count as usize) < 63 {
-                    restore_result.chars[restore_result.count as usize] = ' ' as u32;
+                if (restore_result.count as usize) < restore_result.capacity {
+                    unsafe {
+                        *restore_result.chars.offset(restore_result.count as isize) = ' ' as u32;
+                    }
                     restore_result.count += 1;
                 }
 
@@ -333,148 +335,52 @@ impl Engine {
         }
 
         if key == keys::DELETE {
-            // BUGFIX: If buffer is already empty, check for potential desync scenarios
-            // Case 1: User typed "gõ " + Cmd+A + backspace (external deletion)
-            //         - buf may still have content OR be empty (depending on timing)
-            //         - word_history has "gõ", spaces_after_commit = 1
-            //         - We should NOT restore from history
-            // Case 2: Normal backspace after space
-            //         - buf is empty, word_history has previous word
-            //         - spaces_after_commit > 0
-            //         - This is the intended restoration scenario
-            //
-            // Detection heuristic: If buf is empty AND we just pushed to history (spaces_after_commit = 1)
-            // with only 1 space typed, this likely means external deletion happened.
-            // Clear everything to prevent false restoration.
-            if self.buf.is_empty() {
-                if self.spaces_after_commit > 0 {
-                    // User pressed backspace with empty buffer and spaces counter > 0
-                    // This could be either:
-                    // A) Legitimate: deleting spaces after a word commit
-                    // B) Desync: external deletion (Cmd+A) before this backspace
-                    //
-                    // We can't reliably distinguish, so we take a conservative approach:
-                    // - Decrement the space counter
-                    // - Pass through the backspace to delete any actual space in the text field
-                    // - But DON'T restore from history yet (wait for counter to fully drain naturally)
-                    // - If counter reaches 0, clear history to prevent stale restoration
-                    self.spaces_after_commit -= 1;
-                    if self.spaces_after_commit == 0 {
-                        // Counter drained - clear history to prevent accidental restoration
-                        self.word_history.clear();
+            // BUGFIX: Simplified DELETE handling to fix Spotlight autocomplete bug
+            // Old approach: Complex syllable boundary rebuild → miscalculates backspace with autocomplete
+            // New approach: Simple buf.pop() + return none() → let OS handle deletion
+            // This matches example-project's proven approach
+
+            // Backspace-after-space feature: restore previous word when all spaces deleted
+            if self.spaces_after_commit > 0 && self.buf.is_empty() {
+                self.spaces_after_commit -= 1;
+                if self.spaces_after_commit == 0 {
+                    // All spaces deleted - restore the word buffer
+                    if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
+                        self.buf = restored_buf;
+                        self.raw_input = restored_raw;
                     }
-                    // Always reset internal buffers when the typing buffer is empty
-                    self.raw_input.clear();
-                    self.cached_syllable_boundary = None;
-                    self.last_transform = None;
-                    self.is_english_word = false;
-                    self.has_non_letter_prefix = false;
-                    // Pass through to delete space (if it exists in the text field)
-                    return Result::none();
                 }
-                // Buffer empty with no spaces counter - clear everything
-                self.word_history.clear();
-                self.raw_input.clear();
-                self.cached_syllable_boundary = None;
-                self.last_transform = None;
-                self.is_english_word = false;
-                self.has_non_letter_prefix = false;
-                self.raw_mode = false;
-                return Result::none();
-            }
-
-            // PERFORMANCE: Smart backspace optimization
-            // Goal: O(1) for simple chars, O(syllable) for complex transforms
-
-            // Step 1: Find syllable boundary (use cache if valid)
-            let syllable_start = if let Some(cached) = self.cached_syllable_boundary {
-                // Validate cache: boundary should still be <= current buffer length
-                if cached <= self.buf.len() {
-                    cached
-                } else {
-                    let boundary = self.find_last_syllable_boundary();
-                    self.cached_syllable_boundary = Some(boundary);
-                    boundary
-                }
-            } else {
-                let boundary = self.find_last_syllable_boundary();
-                self.cached_syllable_boundary = Some(boundary);
-                boundary
-            };
-
-            // Step 2: Check if last character itself is simple
-            let last_pos = self.buf.len() - 1;
-            let last_char = self.buf.get(last_pos);
-            let is_simple_char = if let Some(c) = last_char {
-                c.mark == 0 && c.tone == 0 && !c.stroke && keys::is_letter(c.key)
-            } else {
-                false
-            };
-
-            // Step 3: Check if last char is independent (not part of vowel compound)
-            let is_independent = is_simple_char && !self.is_part_of_vowel_compound(last_pos);
-
-            // FAST PATH: O(1) deletion if:
-            // - Last char is simple (no transforms on it)
-            // - Last char is independent (not part of vowel compound like "oa", "uo")
-            // - No pending transform state
-            // This handles: "hoán" + backspace → "hoá" (just delete 'n')
-            if is_independent && self.last_transform.is_none() {
-                self.buf.pop();
-                if !self.raw_input.is_empty() {
-                    self.raw_input.pop();
-                }
-
-                // BUGFIX: Reset is_english_word flag when buffer becomes empty
-                // This fixes the issue where English word detection persists after deletion,
-                // blocking Vietnamese transforms on the next word
-                if self.buf.is_empty() {
-                    self.is_english_word = false;
-                    self.raw_input.clear();
-                    self.cached_syllable_boundary = None;
-                    self.last_transform = None;
-                    self.has_non_letter_prefix = false;
-                }
-
-                // Cache remains valid (boundary doesn't change on simple pop)
-                // Return simple backspace (delete 1 char on screen, no replacement)
+                // Delete one space
                 return Result::send(1, &[]);
             }
 
-            // COMPLEX PATH: Need to rebuild syllable
-            // Calculate ACTUAL screen characters in current syllable BEFORE popping
-            // This is crucial - we count screen chars, not buffer positions
-            let old_screen_length = self.count_screen_chars(syllable_start, self.buf.len());
+            // If buffer is already empty, user is deleting content from previous word
+            // that we don't track. Mark this to prevent false shortcut matches.
+            if self.buf.is_empty() {
+                self.has_non_letter_prefix = true;
+                return Result::none();
+            }
 
-            // Pop the character from buffer
+            // Simple delete: just pop from buffer
             self.buf.pop();
             if !self.raw_input.is_empty() {
                 self.raw_input.pop();
             }
             self.last_transform = None;
+            self.cached_syllable_boundary = None;
 
-            // If entire syllable was deleted, invalidate cache and backspace
-            if syllable_start >= self.buf.len() {
-                self.cached_syllable_boundary = None;
-
-                // BUGFIX: Reset is_english_word flag when buffer becomes empty
-                // This fixes the issue where English word detection persists after deletion,
-                // blocking Vietnamese transforms on the next word
-                // Example: Type "next" (English) → delete all → type "cố" → 's' tone mark should work
-                if self.buf.is_empty() {
-                    self.is_english_word = false;
-                    self.raw_input.clear();
-                    self.last_transform = None;
-                    self.has_non_letter_prefix = false;
-                }
-
-                return Result::send(old_screen_length as u8, &[]);
+            // Reset flags when buffer becomes empty
+            if self.buf.is_empty() {
+                self.is_english_word = false;
+                self.raw_input.clear();
+                self.last_transform = None;
+                self.has_non_letter_prefix = false;
             }
 
-            // Cache remains valid (syllable boundary didn't change)
-            // OPTIMIZATION: Rebuild only from syllable boundary (not entire buffer)
-            // This reduces O(n) to O(syllable_size), typically 2-8 characters
-            return self.rebuild_from_with_backspace(syllable_start, old_screen_length);
+            // KEY FIX: Return none() instead of calculating backspace
+            // This lets the OS/app handle the actual character deletion
+            // No backspace calculation = no miscalculation with autocomplete
+            return Result::none();
         }
 
         // Record raw keystroke for ESC restore (letters and numbers only)
@@ -813,7 +719,13 @@ impl Engine {
         // Validate: is this valid Vietnamese?
         // Use is_valid_with_tones to check modifier requirements (e.g., E+U needs circumflex)
         let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        if VietnameseSyllableValidator::validate(&buffer_keys).is_valid {
+        let buffer_tones: Vec<u8> = self.buf.iter().map(|c| c.tone).collect(); // Collect tones
+
+        let struct_valid = VietnameseSyllableValidator::validate(&buffer_keys).is_valid;
+        let tone_valid =
+            vietnamese::validation::is_valid_tone_placement(&buffer_keys, &buffer_tones);
+
+        if struct_valid && tone_valid {
             self.last_transform = Some(Transform::WAsVowel);
 
             // W shortcut adds ư without replacing anything on screen
@@ -843,16 +755,20 @@ impl Engine {
             let last_pos = self.buf.len().checked_sub(1)?;
             let last_char = self.buf.get(last_pos)?;
 
-            // Check if last char is un-stroked 'd'
-            if last_char.key != keys::D || last_char.stroke {
-                return None;
-            }
-
-            // Check revert: dd → d (undo stroke)
+            // CRITICAL FIX: Check revert BEFORE verifying if char is already stroked
+            // Case: "đ" + "d" → should revert to "dd" (currently fails because "đ" has stroke=true)
             if let Some(Transform::Stroke(last_key)) = self.last_transform {
                 if last_key == key {
+                    // Only revert if we are operating on the same char that was just transformed
+                    // In Telex, this is always the last char
                     return Some(self.revert_stroke(key, last_pos));
                 }
+            }
+
+            // Check if last char is un-stroked 'd'
+            // If already stroked (and not revertible above), we can't stroke again
+            if last_char.key != keys::D || last_char.stroke {
+                return None;
             }
 
             // FAST PATH: If no vowels yet, apply stroke immediately (O(1))
@@ -932,17 +848,18 @@ impl Engine {
         tone_type: ToneType,
         targets: &[u16],
     ) -> Option<Result> {
-        // CRITICAL: Skip Vietnamese transform if English word detected
-        // This prevents "trans" + "s" → "tráns" (should be "transs")
-        if self.is_english_word {
-            return None;
-        }
-
         // Check revert first (same key pressed twice)
+        // CRITICAL: Check revert BEFORE English detection to assume explicit user intent
         if let Some(Transform::Tone(last_key, _)) = self.last_transform {
             if last_key == key {
                 return Some(self.revert_tone(key, caps));
             }
+        }
+
+        // CRITICAL: Skip Vietnamese transform if English word detected
+        // This prevents "trans" + "s" → "tráns" (should be "transs")
+        if self.is_english_word {
+            return None;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -1003,10 +920,10 @@ impl Engine {
 
         // Check if we're switching from one tone to another (e.g., ô → ơ)
         // Find vowels that have a DIFFERENT tone (to switch) or NO tone (to add)
-        let is_switching = self
-            .buf
-            .iter()
-            .any(|c| targets.contains(&c.key) && c.tone != tone::NONE && c.tone != tone_val);
+        // OPTIMIZATION: Use binary_search instead of linear search (O(log n) vs O(n))
+        let is_switching = self.buf.iter().any(|c| {
+            targets.binary_search(&c.key).is_ok() && c.tone != tone::NONE && c.tone != tone_val
+        });
 
         // Scan buffer for eligible target vowels
         let mut target_positions = Vec::new();
@@ -1031,7 +948,10 @@ impl Engine {
                 // When switching, ONLY target vowels that already have a diacritic
                 // (don't add diacritics to plain vowels during switch)
                 for (i, c) in self.buf.iter().enumerate().rev() {
-                    if targets.contains(&c.key) && c.tone != tone::NONE && c.tone != tone_val {
+                    if targets.binary_search(&c.key).is_ok()
+                        && c.tone != tone::NONE
+                        && c.tone != tone_val
+                    {
                         target_positions.push(i);
                         break;
                     }
@@ -1135,7 +1055,7 @@ impl Engine {
                 }
 
                 for (i, c) in self.buf.iter().enumerate().rev() {
-                    if targets.contains(&c.key) && c.tone == tone::NONE {
+                    if targets.binary_search(&c.key).is_ok() && c.tone == tone::NONE {
                         target_positions.push(i);
                         break;
                     }
@@ -1154,7 +1074,7 @@ impl Engine {
             let has_tone_already = self
                 .buf
                 .iter()
-                .any(|c| targets.contains(&c.key) && c.tone == tone_val);
+                .any(|c| targets.binary_search(&c.key).is_ok() && c.tone == tone_val);
 
             // For Telex circumflex keys (a, e, o), DON'T absorb - let key append as raw letter
             // This prevents buffer/screen desync: absorbing returns send(0,&[]) which
@@ -1312,16 +1232,17 @@ impl Engine {
             return None;
         }
 
-        // CRITICAL: Skip Vietnamese transform if English word detected
-        if self.is_english_word {
-            return None;
-        }
-
         // Check revert first
+        // CRITICAL: Check revert BEFORE English detection
         if let Some(Transform::Mark(last_key, _)) = self.last_transform {
             if last_key == key {
                 return Some(self.revert_mark(key, caps));
             }
+        }
+
+        // CRITICAL: Skip Vietnamese transform if English word detected
+        if self.is_english_word {
+            return None;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -1425,6 +1346,20 @@ impl Engine {
         let pos =
             Phonology::find_tone_position(&vowels, has_final, self.modern_tone, has_qu, has_gi);
 
+        // CRITICAL: Validate tone placement BEFORE get_mut (to avoid borrow checker issues)
+        // This prevents invalid combinations like "new" + w → "neư"
+        // E+U requires circumflex on E ("êu" valid, "eu"/"eư" invalid)
+        let mut simulated_tones: Vec<u8> = self.buf.iter().map(|ch| ch.tone).collect();
+        if pos < simulated_tones.len() {
+            simulated_tones[pos] = mark_val;
+        }
+
+        let buffer_keys: Vec<u16> = self.buf.iter().map(|ch| ch.key).collect();
+        if !vietnamese::validation::is_valid_tone_placement(&buffer_keys, &simulated_tones) {
+            // Invalid tone placement - skip transform
+            return None;
+        }
+
         if let Some(c) = self.buf.get_mut(pos) {
             c.mark = mark_val;
             self.last_transform = Some(Transform::Mark(key, mark_val));
@@ -1478,7 +1413,8 @@ impl Engine {
             .iter()
             .enumerate()
             .filter(|(_, c)| {
-                targets.contains(&c.key) && (c.tone == tone::NONE || c.tone != new_tone)
+                targets.binary_search(&c.key).is_ok()
+                    && (c.tone == tone::NONE || c.tone != new_tone)
             })
             .map(|(i, _)| i)
             .collect();
@@ -1496,7 +1432,8 @@ impl Engine {
                 self.buf
                     .get(pos)
                     .map(|c| {
-                        targets.contains(&c.key) && (c.tone == tone::NONE || c.tone != new_tone)
+                        targets.binary_search(&c.key).is_ok()
+                            && (c.tone == tone::NONE || c.tone != new_tone)
                     })
                     .unwrap_or(false)
             })
@@ -1599,13 +1536,12 @@ impl Engine {
                     c.tone = tone::NONE;
                     let result = self.revert_and_rebuild(pos, key, caps);
 
-                    // CRITICAL: Check if result is English pattern after revert
-                    // This prevents "ver" + "r" → "vẻr" (should be "verr")
-                    if self.has_english_word_pattern() {
-                        self.is_english_word = true;
-                    } else {
-                        self.is_english_word = false;
-                    }
+                    // CRITICAL FIX: Always mark as English after tone revert
+                    // This prevents "off" → "òf" bug (o+f+f+f should be "off", not "òf")
+                    // Rationale: If user reverted a tone (double modifier key), they're typing English
+                    // Example: "o" + "f" → "ò", then "f" again → revert to "of"
+                    //          If they type "f" third time, it should be "off" (English), not "òf"
+                    self.is_english_word = true;
 
                     return result;
                 }
@@ -1625,12 +1561,9 @@ impl Engine {
                     c.mark = mark::NONE;
                     let result = self.revert_and_rebuild(pos, key, caps);
 
-                    // Check if result is English pattern after revert
-                    if self.has_english_word_pattern() {
-                        self.is_english_word = true;
-                    } else {
-                        self.is_english_word = false;
-                    }
+                    // CRITICAL FIX: Always mark as English after mark revert
+                    // Same rationale as revert_tone - double modifier = English typing
+                    self.is_english_word = true;
 
                     return result;
                 }
@@ -1645,11 +1578,23 @@ impl Engine {
         self.last_transform = None;
 
         if let Some(c) = self.buf.get_mut(pos) {
-            if c.key == keys::D && !c.stroke {
-                // Un-stroked d found at pos - this means we need to add another d
+            // Fix: Check if char IS stroked (đ) to revert it
+            if c.key == keys::D && c.stroke {
+                c.stroke = false; // Clear stroke
+
+                // Add the key back to buffer
+                // For "đ" -> "dd", we unstroke 'd' and add 'd'.
                 let caps = c.caps;
                 self.buf.push(Char::new(key, caps));
-                return self.rebuild_from(pos);
+
+                // CRITICAL FIX: Mark as English to prevent re-stroke loop
+                self.is_english_word = true;
+
+                // Calculate backspace based on OLD buffer length (before we pushed the new key)
+                // Old buffer length = current length - 1 (since we pushed 1 key)
+                // Backspace count = old chars from pos = (len - 1) - pos
+                let backspace_count = (self.buf.len() - 1).saturating_sub(pos);
+                return self.rebuild_from_with_backspace(pos, backspace_count);
             }
         }
         Result::none()
@@ -1681,6 +1626,11 @@ impl Engine {
     fn handle_normal_letter(&mut self, key: u16, caps: bool, shift: bool) -> Result {
         // Detect if typing special characters with Shift (e.g., @, #, $)
         // These indicate English input, so mark as English word
+        //
+        // REF-ISSUE: "đã" + "!" (Shift+1) caused revert to "d9a41"
+        // This heuristic is too aggressive for punctuation (!, %, &, etc)
+        // Disabled to allow valid Vietnamese + Punctuation
+        /*
         if shift && keys::is_number(key) {
             // Exclude common symbols that are NOT letters (e.g., *, (, ) on US layout)
             // These should NOT lock the word into English mode.
@@ -1688,6 +1638,7 @@ impl Engine {
                 self.is_english_word = true;
             }
         }
+        */
 
         // Invalidate syllable boundary cache when adding new letter
         self.cached_syllable_boundary = None;
@@ -2071,6 +2022,16 @@ impl Engine {
         self.is_english_word = false;
         // Note: Do NOT reset skip_w_shortcut here - it's a user config, not state
         // Note: Do NOT reset spaces_after_commit here - managed by on_key_ext
+    }
+
+    /// Clear everything including word history
+    ///
+    /// Used when cursor position changes (mouse click, selection-delete, etc.)
+    /// to prevent restoring stale state from history.
+    pub fn clear_all(&mut self) {
+        self.clear();
+        self.word_history.clear();
+        self.spaces_after_commit = 0;
     }
 
     /// Restore buffer from a Vietnamese word string
@@ -2660,7 +2621,7 @@ mod tests {
         );
         assert_eq!(r.count as usize, 1, "Should emit exactly one character");
 
-        let out = char::from_u32(r.chars[0]).expect("valid unicode scalar");
+        let out = unsafe { char::from_u32(*r.chars.offset(0)).expect("valid unicode scalar") };
         assert_eq!(out, 'ẽ', "Expected 'ẽ' after applying tone");
 
         // Optional: commit with space should keep the Vietnamese word and not revert
@@ -3307,7 +3268,7 @@ mod tests {
             assert_ne!(r.action, 0, "With transforms, should restore on space");
 
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3328,7 +3289,7 @@ mod tests {
             );
 
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3372,7 +3333,7 @@ mod tests {
             // Transforms applied → should restore to "improvement "
             assert_ne!(r.action, 0, "With transforms, should restore on space");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3387,7 +3348,7 @@ mod tests {
                 "Path B: should restore on space (phonotactic detection)"
             );
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3416,7 +3377,7 @@ mod tests {
         if has_transforms {
             assert_ne!(r.action, 0, "With transforms, should restore");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3455,7 +3416,7 @@ mod tests {
         if has_transforms {
             assert_ne!(r.action, 0, "With transforms, should restore");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3486,7 +3447,7 @@ mod tests {
         if has_transforms {
             assert_ne!(r.action, 0, "With transforms, should restore");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3538,7 +3499,7 @@ mod tests {
             // MUST restore to "improve " - this is the bug fix verification
             assert_ne!(r.action, 0, "FIXED: should restore on space");
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))
@@ -3555,7 +3516,7 @@ mod tests {
                 "Path B: should restore on space (phonotactic detection)"
             );
             let output: Vec<char> = r
-                .chars
+                .as_slice()
                 .iter()
                 .take(r.count as usize)
                 .filter_map(|&c| char::from_u32(c))

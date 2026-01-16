@@ -31,6 +31,13 @@ class AppState: ObservableObject {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: Keys.smartModeEnabled)
+            
+            // Post notification for UI synchronization
+            NotificationCenter.default.post(
+                name: .smartModeChanged,
+                object: newValue
+            )
+            
             Log.info("Smart per-app mode: \(newValue ? "enabled" : "disabled")")
         }
     }
@@ -42,6 +49,12 @@ class AppState: ObservableObject {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: Keys.inputMethod)
+            
+            // Post notification for UI synchronization
+            NotificationCenter.default.post(
+                name: .inputMethodChanged,
+                object: newValue
+            )
         }
     }
 
@@ -52,6 +65,12 @@ class AppState: ObservableObject {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: Keys.modernToneStyle)
+            
+            // Post notification for UI synchronization
+            NotificationCenter.default.post(
+                name: .toneStyleChanged,
+                object: newValue
+            )
         }
     }
 
@@ -380,6 +399,9 @@ extension Notification.Name {
     static let shortcutChanged = Notification.Name("shortcutChanged")
     static let shortcutRecorded = Notification.Name("shortcutRecorded")
     static let shortcutRecordingCancelled = Notification.Name("shortcutRecordingCancelled")
+    static let smartModeChanged = Notification.Name("smartModeChanged")
+    static let inputMethodChanged = Notification.Name("inputMethodChanged")
+    static let toneStyleChanged = Notification.Name("toneStyleChanged")
     static let showUpdateWindow = Notification.Name("showUpdateWindow")
     static let openUpdateWindow = Notification.Name("openUpdateWindow")
     static let openSettingsWindow = Notification.Name("openSettingsWindow")

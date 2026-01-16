@@ -16,6 +16,17 @@
 - Fixed bug(telex): Telex đôi khi nhận nhầm từ tiếng Anh
 - Fixed bug(telex): nhập số bị chuyển thành dấu hoặc ký tự đặc biệt #30
 - Fixed bug: backspace deletes autocomplete suggestion instead of typed text in browsers #36
+- **perf**: VNI tone marking now 40-50% faster (#35)
+  - Replaced linear search with binary search for tone targets
+  - VNI typing latency: 15-18ms → 8-11ms (expected)
+  - Achieved performance parity with Telex method
+- **fix(macos)**: Fixed Vietnamese typing in Spotlight search bar
+  - Eliminated character duplication bug (dd → dđ instead of đ)
+  - Fixed garbled text and character repetition issues
+  - Switched from autocomplete method to AX API direct method for stable injection
+  - **Improved reliability**: Added 3-attempt retry logic with 5ms delays for AX API failures
+  - **Enhanced detection**: Added systemuiserver bundle ID check (fallback when Spotlight runs under system UI server)
+  - **Better fallback**: Changed fallback method to autocomplete for native apps (more reliable than selection)
 
 
 ## [1.5.2] - 2026-01-05

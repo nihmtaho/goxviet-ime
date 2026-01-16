@@ -6,8 +6,8 @@
 //! - Cache effectiveness on consecutive backspaces
 //! - Edge cases and boundary conditions
 
-use goxviet_core::engine::Engine;
 use goxviet_core::engine::shortcut::InputMethod;
+use goxviet_core::engine::Engine;
 
 // Key codes (simplified mapping)
 const KEY_A: u16 = 0;
@@ -66,7 +66,7 @@ fn type_keys(engine: &mut Engine, keys: &str) {
 fn result_to_string(result: &goxviet_core::engine::Result) -> String {
     let mut output = String::new();
     for i in 0..result.count as usize {
-        if let Some(ch) = char::from_u32(result.chars[i]) {
+        if let Some(ch) = char::from_u32(result.as_slice()[i]) {
             output.push(ch);
         }
     }
@@ -100,26 +100,29 @@ fn test_debug_engine_output() {
     let mut engine = Engine::new();
     engine.set_method(InputMethod::Telex as u8);
     engine.set_enabled(true);
-    
+
     // Type "thuowngj" → should output "thương" (w for ơ, j for nặng)
     type_keys(&mut engine, "thuowngj");
-    
+
     // Now backspace - let's see what we get
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     println!("\n=== DEBUG BACKSPACE ===");
-    println!("action={} backspace={} count={}", result.action, result.backspace, result.count);
+    println!(
+        "action={} backspace={} count={}",
+        result.action, result.backspace, result.count
+    );
     println!("chars:");
     for i in 0..result.count as usize {
-        if let Some(ch) = char::from_u32(result.chars[i]) {
-            println!("  [{}] = '{}' (U+{:04X})", i, ch, result.chars[i]);
+        if let Some(ch) = char::from_u32(result.as_slice()[i]) {
+            println!("  [{}] = '{}' (U+{:04X})", i, ch, result.as_slice()[i]);
         }
     }
-    
+
     // Check what the actual output is
     let output = result_to_string(&result);
     println!("output string: '{}'", output);
     println!("output len: {}", output.len());
-    
+
     // The engine returns the UPDATED buffer content after backspace
     // Not the characters to insert - it's the replacement text
     assert_eq!(result.action, 1);
@@ -139,7 +142,7 @@ fn test_complex_syllable_rebuild() {
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1, "Should send action");
     assert_eq!(result.backspace, 7, "Delete 'thương' (7 chars)");
-    
+
     let output = result_to_string(&result);
     assert_eq!(output, "thương", "Should restore to 'thương' without tone");
 }
@@ -178,7 +181,7 @@ fn test_syllable_boundary_detection_space() {
     // Delete 'o' from "chao" - should only rebuild "chao"
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1);
-    
+
     // Should only affect syllable after space
     let output = result_to_string(&result);
     assert_eq!(output, "cha", "Only rebuild 'chao' → 'cha'");
@@ -215,14 +218,14 @@ fn test_backspace_after_tone_addition() {
 
     // Type "viet" → "việt" (auto e + ê)
     type_keys(&mut engine, "viet");
-    
+
     // Add sắc tone: s
     type_keys(&mut engine, "s");
-    
+
     // Now delete the tone marker 's'
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1, "Should rebuild");
-    
+
     let output = result_to_string(&result);
     assert_eq!(output, "việt", "Should restore to 'việt' without sắc");
 }
@@ -236,11 +239,11 @@ fn test_backspace_on_compound_vowel() {
 
     // Type "u" + "o" + "w" → "ươ"
     type_keys(&mut engine, "uow");
-    
+
     // Delete 'w' - should revert compound
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1);
-    
+
     let output = result_to_string(&result);
     assert_eq!(output, "uo", "Should revert 'ươ' → 'uo'");
 }
@@ -263,7 +266,7 @@ fn test_long_word_no_regression() {
     // Result depends on whether transforms were applied
     // For this test, we just verify it doesn't crash
     println!("Long word delete result: action={}", result.action);
-    
+
     // Performance test: operation should complete quickly
     // (Actual timing done in benchmarks)
 }
@@ -275,16 +278,19 @@ fn test_cache_invalidation_on_new_letter() {
     engine.set_enabled(true);
 
     type_keys(&mut engine, "xin chao");
-    
+
     // Delete one char (cache populated)
     engine.on_key_ext(KEY_DELETE, false, false, false);
-    
+
     // Add new letter (should invalidate cache)
     type_keys(&mut engine, "b");
-    
+
     // Delete again (cache miss, should recompute)
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
-    assert_eq!(result.action, 1, "Should still work after cache invalidation");
+    assert_eq!(
+        result.action, 1,
+        "Should still work after cache invalidation"
+    );
 }
 
 #[test]
@@ -326,11 +332,11 @@ fn test_syllable_with_multiple_transforms() {
     // Type word with multiple transforms
     // "nguowif" → "người" (w for ơ, i, f for huyền)
     type_keys(&mut engine, "nguowif");
-    
+
     // Delete 'f' (huyền tone)
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1);
-    
+
     let output = result_to_string(&result);
     // Should remove huyền but keep ươ compound
     assert!(output.contains("ươ"), "Should preserve compound vowel");
@@ -344,13 +350,16 @@ fn test_backspace_after_space_feature() {
 
     // Type word and space - space clears buffer and saves to history
     type_keys(&mut engine, "xin ");
-    
+
     // After space, buffer is empty
     // Backspace on empty buffer with history decrements space counter
     // and passes through (action=0) to let system delete the space
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     // With new behavior: empty buffer after space = pass through
-    assert_eq!(result.action, 0, "Pass through to system for space deletion");
+    assert_eq!(
+        result.action, 0,
+        "Pass through to system for space deletion"
+    );
 }
 
 #[test]
@@ -361,16 +370,16 @@ fn test_mixed_simple_and_complex() {
 
     // Type: "hello" (simple) + " " + "thuowngj" (complex)
     type_keys(&mut engine, "hello thuowngj");
-    
+
     // Delete from complex part
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1, "Should handle complex");
-    
+
     // Delete until we reach simple part
     for _ in 0..6 {
         engine.on_key_ext(KEY_DELETE, false, false, false);
     }
-    
+
     // Now in simple part
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1, "Should handle simple");
@@ -384,12 +393,12 @@ fn test_edge_case_single_char() {
 
     // Single character
     type_keys(&mut engine, "a");
-    
+
     // Delete it
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1);
     assert_eq!(result.backspace, 1);
-    
+
     // Buffer should be empty
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 0, "Buffer empty");
@@ -404,11 +413,11 @@ fn test_edge_case_only_transforms() {
 
     // Type just transforms: "as" → "á"
     type_keys(&mut engine, "as");
-    
+
     // Delete 's' (tone marker)
     let result = engine.on_key_ext(KEY_DELETE, false, false, false);
     assert_eq!(result.action, 1);
-    
+
     let output = result_to_string(&result);
     assert_eq!(output, "a", "Should revert to plain 'a'");
 }
@@ -422,17 +431,20 @@ fn test_performance_stability_across_lengths() {
     // Test with increasing word lengths
     for length in [3, 5, 10, 20] {
         engine.clear();
-        
+
         // Type word of specific length
         let word = "a".repeat(length);
         type_keys(&mut engine, &word);
-        
+
         // Delete last char - should be consistent for simple chars
         let result = engine.on_key_ext(KEY_DELETE, false, false, false);
         assert_eq!(result.action, 1, "Length {} should work", length);
         // Note: backspace count may vary based on syllable rebuild
         // For simple chars, it should be minimal (1 or small)
-        assert!(result.backspace <= length as u8, "Backspace should be reasonable");
+        assert!(
+            result.backspace <= length as u8,
+            "Backspace should be reasonable"
+        );
     }
 }
 
@@ -444,7 +456,7 @@ fn test_boundary_at_buffer_start() {
 
     // Single word (boundary at position 0)
     type_keys(&mut engine, "xin");
-    
+
     // Delete all
     for _ in 0..3 {
         let result = engine.on_key_ext(KEY_DELETE, false, false, false);

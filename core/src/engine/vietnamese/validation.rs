@@ -28,6 +28,18 @@ pub fn validate_with_confidence(keys: &[u16]) -> ValidationResult {
     VietnameseSyllableValidator::validate(keys)
 }
 
+/// Check if tone placement is valid for Vietnamese vowel patterns
+///
+/// Validates tone modifiers on diphthongs/triphthongs:
+/// - E+U requires circumflex on E ("êu" valid, "eu"/"eư" invalid)
+/// - I+E, U+E, Y+E require circumflex on E
+/// - Breve (ă) cannot be followed by vowel
+/// - I+E+U, Y+E+U require circumflex on E, U can't have horn
+#[inline]
+pub fn is_valid_tone_placement(keys: &[u16], tones: &[u8]) -> bool {
+    VietnameseSyllableValidator::validate_with_tones(keys, tones).is_valid
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

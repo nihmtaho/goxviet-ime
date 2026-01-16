@@ -266,22 +266,41 @@ class TextInjector {
     /// Try AX injection with retries, fallback to selection method if browser re-adds content
     /// Browser address bars trigger autocomplete which overrides our AX writes
     /// Detection: If verified text is longer than expected, browser re-added suggestion
+    /// 
+    /// IMPROVEMENT: Added retry logic (3 attempts, 5ms delay) to handle temporary AX API failures
+    /// when Spotlight is busy with searches. Based on proven pattern from reference implementation.
     private func injectViaAXWithFallback(bs: Int, text: String, proxy: CGEventTapProxy) {
-        // Try AX API (will verify and detect if browser re-adds content)
-        let result = injectViaAXWithVerify(bs: bs, text: text)
-        
-        switch result {
-        case .success:
-            Log.info("AX: success - text is clean")
-            return
-        case .browserOverride:
-            // Browser autocomplete is too aggressive for AX API
-            Log.info("AX: detected browser override - switching to selection method")
-            injectViaSelection(bs: bs, text: text, delays: (1000, 3000, 2000))
-        case .axFailure:
-            // AX API returned error or was unavailable
-            Log.info("AX: API failure - falling back to selection method")
-            injectViaSelection(bs: bs, text: text, delays: (1000, 3000, 2000))
+        // Try AX API injection with retries
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                usleep(5000)  // 5ms delay before retry
+                Log.info("AX: retry attempt \(attempt + 1)/3")
+            }
+            
+            // Try AX injection (will verify and detect if browser re-adds content)
+            let result = injectViaAXWithVerify(bs: bs, text: text)
+            
+            switch result {
+            case .success:
+                Log.info("AX: success - text is clean")
+                return
+            case .browserOverride:
+                // Browser autocomplete is too aggressive for AX API
+                Log.info("AX: detected browser override - switching to fallback method")
+                // For Spotlight/native apps: fallback to autocomplete method
+                injectViaAutocomplete(bs: bs, text: text, proxy: proxy)
+                return
+            case .axFailure:
+                // AX API returned error or was unavailable
+                if attempt == 2 {
+                    // Final attempt failed - fallback
+                    Log.info("AX: final attempt failed - falling back to autocomplete method")
+                    injectViaAutocomplete(bs: bs, text: text, proxy: proxy)
+                    return
+                }
+                // Otherwise retry
+                continue
+            }
         }
     }
     
@@ -509,8 +528,13 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if role == "AXComboBox" { Log.method("sel:combo"); return (.selection, (0, 0, 0)) }
     if role == "AXSearchField" { Log.method("sel:search"); return (.selection, (0, 0, 0)) }
     
-    // Spotlight - use autocomplete method with Forward Delete to clear suggestions
-    if bundleId == "com.apple.Spotlight" { Log.method("auto:spotlight"); return (.autocomplete, (0, 0, 0)) }
+    // Spotlight - use AX API direct method to prevent character duplication (dd → dđ bug)
+    // AX API bypasses autocomplete conflicts and ensures stable text injection
+    // Also check systemuiserver (fallback when Spotlight runs under system UI server process)
+    if bundleId == "com.apple.Spotlight" || bundleId == "com.apple.systemuiserver" { 
+        Log.method("ax:spotlight")
+        return (.axDirect, (0, 0, 0)) 
+    }
     
     // Chromium-based browser address bars - use autocomplete method
     // Forward Delete clears suggestion, Backspace removes user-typed chars

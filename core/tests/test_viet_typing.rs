@@ -13,7 +13,7 @@ fn process_result(buffer: &mut String, result: goxviet_core::engine::Result) {
         }
     }
     if result.count > 0 {
-        let new_chars: String = result.chars[0..result.count as usize]
+        let new_chars: String = result.as_slice()[0..result.count as usize]
             .iter()
             .filter_map(|&c| char::from_u32(c))
             .collect();
@@ -41,7 +41,7 @@ fn test_viet_typing_sequence() {
     assert_eq!(r_e.action, 1, "e+e should trigger circumflex with mark repositioning");
     
     // Verify the transformation output contains ế
-    let output: String = r_e.chars[0..r_e.count as usize]
+    let output: String = r_e.as_slice()[0..r_e.count as usize]
         .iter()
         .filter_map(|&c| char::from_u32(c))
         .collect();
@@ -186,7 +186,7 @@ fn test_viet_intermediate_states() {
     assert!(r5.count > 0, "Step 5: should output ê with mark repositioned");
     
     // Verify the output contains ế (ê with sắc)
-    let output5: String = r5.chars[0..r5.count as usize]
+    let output5: String = r5.as_slice()[0..r5.count as usize]
         .iter()
         .filter_map(|&c| char::from_u32(c))
         .collect();
@@ -217,7 +217,7 @@ fn test_viese_sequence() {
     assert_eq!(r_e.action, 1, "e+e should trigger circumflex transformation (this was the bug!)");
     
     // Verify output contains ế (ê with sắc mark)
-    let output: String = r_e.chars[0..r_e.count as usize]
+    let output: String = r_e.as_slice()[0..r_e.count as usize]
         .iter()
         .filter_map(|&c| char::from_u32(c))
         .collect();
@@ -242,7 +242,7 @@ fn test_vieset_composition() {
             }
             // Append new characters
             if result.count > 0 {
-                let new_chars: String = result.chars[0..result.count as usize]
+                let new_chars: String = result.as_slice()[0..result.count as usize]
                     .iter()
                     .filter_map(|&c| char::from_u32(c))
                     .collect();

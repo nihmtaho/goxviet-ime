@@ -62,7 +62,7 @@ impl ScreenTracker {
                         self.screen.pop();
                     }
                     for i in 0..r.count as usize {
-                        if let Some(ch) = char::from_u32(r.chars[i]) {
+                        if let Some(ch) = char::from_u32(r.as_slice()[i]) {
                             self.screen.push(ch);
                         }
                     }
@@ -78,7 +78,7 @@ impl ScreenTracker {
                     self.screen.pop();
                 }
                 for i in 0..r.count as usize {
-                    if let Some(ch) = char::from_u32(r.chars[i]) {
+                    if let Some(ch) = char::from_u32(r.as_slice()[i]) {
                         self.screen.push(ch);
                     }
                 }

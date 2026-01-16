@@ -225,8 +225,10 @@ mod test_utils {
                         screen.pop();
                     }
                     for i in 0..r.count as usize {
-                        if let Some(ch) = char::from_u32(r.chars[i]) {
-                            screen.push(ch);
+                        unsafe {
+                            if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                                screen.push(ch);
+                            }
                         }
                     }
                 } else {
@@ -244,8 +246,10 @@ mod test_utils {
                         screen.pop();
                     }
                     for i in 0..r.count as usize {
-                        if let Some(ch) = char::from_u32(r.chars[i]) {
-                            screen.push(ch);
+                        unsafe {
+                            if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                                screen.push(ch);
+                            }
                         }
                     }
                 }
@@ -261,8 +265,10 @@ mod test_utils {
                         screen.pop();
                     }
                     for i in 0..r.count as usize {
-                        if let Some(ch) = char::from_u32(r.chars[i]) {
-                            screen.push(ch);
+                        unsafe {
+                            if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                                screen.push(ch);
+                            }
                         }
                     }
                 } else {
@@ -278,8 +284,10 @@ mod test_utils {
                     screen.pop();
                 }
                 for i in 0..r.count as usize {
-                    if let Some(ch) = char::from_u32(r.chars[i]) {
-                        screen.push(ch);
+                    unsafe {
+                        if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                            screen.push(ch);
+                        }
                     }
                 }
             } else {
@@ -341,8 +349,10 @@ mod test_utils {
                         screen.pop();
                     }
                     for i in 0..r.count as usize {
-                        if let Some(ch) = char::from_u32(r.chars[i]) {
-                            screen.push(ch);
+                        unsafe {
+                            if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                                screen.push(ch);
+                            }
                         }
                     }
                 } else {
@@ -359,8 +369,10 @@ mod test_utils {
                         screen.pop();
                     }
                     for i in 0..r.count as usize {
-                        if let Some(ch) = char::from_u32(r.chars[i]) {
-                            screen.push(ch);
+                        unsafe {
+                            if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                                screen.push(ch);
+                            }
                         }
                     }
                 }
@@ -374,8 +386,10 @@ mod test_utils {
                         screen.pop();
                     }
                     for i in 0..r.count as usize {
-                        if let Some(ch) = char::from_u32(r.chars[i]) {
-                            screen.push(ch);
+                        unsafe {
+                            if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                                screen.push(ch);
+                            }
                         }
                     }
                 } else {
@@ -390,8 +404,10 @@ mod test_utils {
                     screen.pop();
                 }
                 for i in 0..r.count as usize {
-                    if let Some(ch) = char::from_u32(r.chars[i]) {
-                        screen.push(ch);
+                    unsafe {
+                        if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {
+                            screen.push(ch);
+                        }
                     }
                 }
             } else {

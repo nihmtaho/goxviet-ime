@@ -156,6 +156,136 @@ impl VietnameseSyllableValidator {
         }
     }
 
+    /// Validate Vietnamese syllable with tone modifiers
+    ///
+    /// This validates both structure AND tone placement on vowels.
+    /// Required for preventing invalid tone combinations like:
+    /// - "eu" without circumflex (should be "êu")
+    /// - "ăi" (breve + vowel - invalid)
+    /// - "ieư" (should be "iêu")
+    pub fn validate_with_tones(keys: &[u16], tones: &[u8]) -> ValidationResult {
+        // First validate structure
+        let struct_result = Self::validate(keys);
+        if !struct_result.is_valid {
+            return struct_result;
+        }
+
+        // Then validate tone placement
+        if !Self::is_valid_tone_placement(keys, tones) {
+            return ValidationResult {
+                is_valid: false,
+                confidence: 0,
+            };
+        }
+
+        ValidationResult {
+            is_valid: true,
+            confidence: 100,
+        }
+    }
+
+    /// Check if tone placement is valid for Vietnamese vowel patterns
+    fn is_valid_tone_placement(keys: &[u16], tones: &[u8]) -> bool {
+        use crate::data::chars::tone;
+        use crate::data::constants;
+
+        if keys.len() != tones.len() {
+            return false;
+        }
+
+        // Find vowel sequence
+        let mut vowel_indices = Vec::new();
+        for (i, &k) in keys.iter().enumerate() {
+            if matches!(k, keys::A | keys::E | keys::I | keys::O | keys::U | keys::Y) {
+                vowel_indices.push(i);
+            } else if !vowel_indices.is_empty() {
+                break; // Stop at first consonant after vowels
+            }
+        }
+
+        if vowel_indices.len() < 2 {
+            return true; // Single vowel - no tone placement rules
+        }
+
+        let vowel_keys: Vec<u16> = vowel_indices.iter().map(|&i| keys[i]).collect();
+        let vowel_tones: Vec<u8> = vowel_indices.iter().map(|&i| tones[i]).collect();
+
+        match vowel_keys.len() {
+            2 => {
+                let pair = [vowel_keys[0], vowel_keys[1]];
+
+                // Rule 1: E+U requires circumflex on E
+                // Valid: "êu", Invalid: "eu", "eư"
+                if constants::V1_CIRCUMFLEX_REQUIRED.contains(&pair) {
+                    if vowel_tones[0] != tone::CIRCUMFLEX {
+                        return false;
+                    }
+                }
+
+                // Rule 2: I+E, U+E, Y+E require circumflex on E
+                // Valid: "iê", "uê", "yê"
+                // Invalid: "ie", "ieư", "ue", "ueư", "ye", "yeư"
+                if constants::V2_CIRCUMFLEX_REQUIRED.contains(&pair) {
+                    // V2 must have circumflex OR no modifier yet (typing in progress)
+                    // But if V2 has HORN, it's definitely wrong
+                    if vowel_tones[1] == tone::HORN {
+                        return false;
+                    }
+                }
+
+                // Rule 3: Breve (ă) cannot be followed by vowel
+                // Valid: "ăm", "ăn", "ăng", "oă" (xoăn)
+                // Invalid: "ăi", "ăo", "ău", "ăy"
+                if vowel_keys[0] == keys::A && vowel_tones[0] == tone::HORN {
+                    // A with breve (horn on A = ă) followed by vowel is invalid
+                    return false;
+                }
+
+                // Rule 6: Horn on U (ư) only valid after I or in ươ compound
+                // Valid: "iư" (in "giư"), "ươ" (in "trươ", "lươ")
+                // Invalid: "eư" (new+w), "aư", "oư" (except ươ compound)
+                if vowel_keys[1] == keys::U && vowel_tones[1] == tone::HORN {
+                    // Check if V1 is I (iư valid) or if it's ươ compound (U+O with horns)
+                    let is_i_u = vowel_keys[0] == keys::I;
+                    let is_uo_compound = vowel_keys[0] == keys::U && vowel_tones[0] == tone::HORN;
+                    
+                    if !is_i_u && !is_uo_compound {
+                        // ư after vowels other than i or ươ is invalid
+                        return false;
+                    }
+                }
+            }
+            3 => {
+                let triple = [vowel_keys[0], vowel_keys[1], vowel_keys[2]];
+
+                // Rule 4: U+Y+E requires circumflex on E
+                // Valid: "uyê", Invalid: "uye", "uyeư"
+                if triple == [keys::U, keys::Y, keys::E] {
+                    if vowel_tones[2] == tone::HORN {
+                        return false;
+                    }
+                }
+
+                // Rule 5: I+E+U / Y+E+U require circumflex on E, U can't have horn
+                // Valid: "iêu", "yêu"
+                // Invalid: "ieư", "ieu", "yeư", "yeu"
+                if triple == [keys::I, keys::E, keys::U] || triple == [keys::Y, keys::E, keys::U] {
+                    // E (middle) must have circumflex
+                    if vowel_tones[1] != tone::CIRCUMFLEX {
+                        return false;
+                    }
+                    // U (last) can't have horn
+                    if vowel_tones[2] == tone::HORN {
+                        return false;
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        true
+    }
+
     #[inline]
     fn is_allowed_exception(k1: u16, k2: u16) -> bool {
         // Handle vowel-vowel sequences and common clusters not in bigram matrix yet
