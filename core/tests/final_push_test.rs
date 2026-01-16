@@ -60,7 +60,7 @@ fn test_push_final_verification() {
     // Extract chars from result
     let chars: Vec<char> = (0..r4.count as usize)
         .filter_map(|i| {
-            let codepoint = r4.chars[i];
+            let codepoint = r4.as_slice()[i];
             char::from_u32(codepoint)
         })
         .collect();

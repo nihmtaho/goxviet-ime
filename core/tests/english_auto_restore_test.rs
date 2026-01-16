@@ -37,7 +37,7 @@ fn type_word(word: &str, method: u8) -> String {
             }
 
             for i in 0..result.count as usize {
-                if let Some(c) = char::from_u32(result.chars[i]) {
+                if let Some(c) = char::from_u32(result.as_slice()[i]) {
                     output.push(c);
                 }
             }
@@ -125,7 +125,7 @@ fn assert_auto_restore_on_space(word: &str) {
 
     if r.action == 1 {
         let output: String = (0..r.count as usize)
-            .filter_map(|i| char::from_u32(r.chars[i]))
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
             .collect();
         let expected = format!("{} ", word);
         assert_eq!(
@@ -201,7 +201,7 @@ fn test_ex_pattern_no_transform() {
     // If no transforms (early detection), action=0 is also acceptable
     if r.action == 1 {
         let output: String = (0..r.count as usize)
-            .filter_map(|i| char::from_u32(r.chars[i]))
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
             .collect();
         assert_eq!(output, "text ", "Should auto-restore to 'text '");
         println!("✓ 'text' auto-restored correctly");
@@ -219,7 +219,7 @@ fn test_ex_pattern_no_transform() {
     let r = engine.on_key_ext(keys::SPACE, false, false, false);
     if r.action == 1 {
         let output: String = (0..r.count as usize)
-            .filter_map(|i| char::from_u32(r.chars[i]))
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
             .collect();
         assert_eq!(output, "next ", "Should auto-restore to 'next '");
         println!("✓ 'next' auto-restored correctly");
@@ -625,7 +625,7 @@ fn test_english_auto_restore_on_space() {
 
     if result.action == 1 {
         let output: String = (0..result.count as usize)
-            .filter_map(|i| char::from_u32(result.chars[i]))
+            .filter_map(|i| char::from_u32(result.as_slice()[i]))
             .collect();
         println!("Output: {:?}", output);
         assert_eq!(output, "fix ", "Should restore to 'fix ' with auto-space");
@@ -651,7 +651,7 @@ fn test_english_auto_restore_on_space() {
 
     if result.action == 1 {
         let output: String = (0..result.count as usize)
-            .filter_map(|i| char::from_u32(result.chars[i]))
+            .filter_map(|i| char::from_u32(result.as_slice()[i]))
             .collect();
         assert_eq!(output, "text ", "Should restore to 'text '");
         println!("✓ English word 'text' auto-restored correctly");
@@ -724,7 +724,7 @@ fn test_english_words_auto_space() {
     let result = engine.on_key(keys::SPACE, false, false);
     if result.action == 1 {
         let output: String = (0..result.count as usize)
-            .filter_map(|i| char::from_u32(result.chars[i]))
+            .filter_map(|i| char::from_u32(result.as_slice()[i]))
             .collect();
         assert_eq!(output, "with ", "Should restore 'with' with auto-space");
         println!("✓ 'with' → 'with ' (auto-restored)");
@@ -741,7 +741,7 @@ fn test_english_words_auto_space() {
     let result = engine.on_key(keys::SPACE, false, false);
     if result.action == 1 {
         let output: String = (0..result.count as usize)
-            .filter_map(|i| char::from_u32(result.chars[i]))
+            .filter_map(|i| char::from_u32(result.as_slice()[i]))
             .collect();
         assert_eq!(output, "term ", "Should restore 'term' with auto-space");
         println!("✓ 'term' → 'term ' (auto-restored)");
@@ -803,7 +803,7 @@ fn test_bilingual_typing_with_auto_space() {
     let r1 = engine.on_key(keys::SPACE, false, false);
     if r1.action == 1 {
         let output: String = (0..r1.count as usize)
-            .filter_map(|i| char::from_u32(r1.chars[i]))
+            .filter_map(|i| char::from_u32(r1.as_slice()[i]))
             .collect();
         println!("  → Output: {:?}", output);
         assert!(output.ends_with(' '), "Should have auto-space");
@@ -836,7 +836,7 @@ fn test_bilingual_typing_with_auto_space() {
     let r3 = engine.on_key(keys::SPACE, false, false);
     if r3.action == 1 {
         let output: String = (0..r3.count as usize)
-            .filter_map(|i| char::from_u32(r3.chars[i]))
+            .filter_map(|i| char::from_u32(r3.as_slice()[i]))
             .collect();
         println!("  → Output: {:?}", output);
         assert_eq!(output, "best ", "Should auto-restore with space");
@@ -945,7 +945,7 @@ fn test_bug_tet_vietnamese_word() {
     assert_eq!(r3.action, 1); // Should transform
     assert_eq!(r3.backspace, 1); // Delete 'e'
     let output3: String = (0..r3.count as usize)
-        .filter_map(|i| char::from_u32(r3.chars[i]))
+        .filter_map(|i| char::from_u32(r3.as_slice()[i]))
         .collect();
     assert_eq!(output3, "é"); // Should be 'é' with sắc tone
     println!("After 'tes': buffer is 'té'");
@@ -961,7 +961,7 @@ fn test_bug_tet_vietnamese_word() {
 
     if r5.action == 1 {
         let output: String = (0..r5.count as usize)
-            .filter_map(|i| char::from_u32(r5.chars[i]))
+            .filter_map(|i| char::from_u32(r5.as_slice()[i]))
             .collect();
         println!("❌ BUG: Auto-restored to: {:?}", output);
         println!("Expected: no auto-restore (space should just be space)");
@@ -1007,7 +1007,7 @@ fn test_bug_backspace_after_tet_space() {
     );
     if r3.action == 1 {
         let output: String = (0..r3.count as usize)
-            .filter_map(|i| char::from_u32(r3.chars[i]))
+            .filter_map(|i| char::from_u32(r3.as_slice()[i]))
             .collect();
         println!("   Output: {:?} (should be 'é')", output);
     }
@@ -1029,7 +1029,7 @@ fn test_bug_backspace_after_tet_space() {
     );
     if r6.action == 1 && r6.count > 0 {
         let restored: String = (0..r6.count as usize)
-            .filter_map(|i| char::from_u32(r6.chars[i]))
+            .filter_map(|i| char::from_u32(r6.as_slice()[i]))
             .collect();
         println!("   Restored: {:?} (should be 'tét')", restored);
     }
@@ -1043,7 +1043,7 @@ fn test_bug_backspace_after_tet_space() {
     );
     if r7.action == 1 && r7.count > 0 {
         let result: String = (0..r7.count as usize)
-            .filter_map(|i| char::from_u32(r7.chars[i]))
+            .filter_map(|i| char::from_u32(r7.as_slice()[i]))
             .collect();
         println!("   Result: {:?} (should be 'té')", result);
         assert_eq!(result, "té", "After deleting 't', should show 'té'");
@@ -1067,7 +1067,7 @@ fn test_bug_backspace_after_tet_space() {
 
     if r10.action == 1 && r10.count > 0 {
         let final_result: String = (0..r10.count as usize)
-            .filter_map(|i| char::from_u32(r10.chars[i]))
+            .filter_map(|i| char::from_u32(r10.as_slice()[i]))
             .collect();
         println!("    Final output: {:?}", final_result);
 
@@ -1124,7 +1124,7 @@ fn test_bug_text_vietnamese_word() {
 
     if r5.action == 1 {
         let output: String = (0..r5.count as usize)
-            .filter_map(|i| char::from_u32(r5.chars[i]))
+            .filter_map(|i| char::from_u32(r5.as_slice()[i]))
             .collect();
         println!("Auto-restored to: {:?}", output);
         assert_eq!(output, "text ", "Should auto-restore to 'text '");
@@ -1164,7 +1164,7 @@ fn test_debug_buffer_state_after_restore() {
     let del_t = engine.on_key(keys::DELETE, false, false);
     if del_t.action == 1 {
         let result: String = (0..del_t.count as usize)
-            .filter_map(|i| char::from_u32(del_t.chars[i]))
+            .filter_map(|i| char::from_u32(del_t.as_slice()[i]))
             .collect();
         println!("Step 4: After deleting 't', display shows: {:?}", result);
     }
@@ -1232,7 +1232,7 @@ fn test_exact_bug_scenario_test_space_back_back_text() {
     );
     if r_back2.action == 1 {
         let display: String = (0..r_back2.count as usize)
-            .filter_map(|i| char::from_u32(r_back2.chars[i]))
+            .filter_map(|i| char::from_u32(r_back2.as_slice()[i]))
             .collect();
         println!("Display now shows: {:?}", display);
         assert_eq!(display, "té", "After deleting final 't', should show 'té'");
@@ -1264,7 +1264,7 @@ fn test_exact_bug_scenario_test_space_back_back_text() {
     let r_final_space = engine.on_key(keys::SPACE, false, false);
     if r_final_space.action == 1 {
         let final_output: String = (0..r_final_space.count as usize)
-            .filter_map(|i| char::from_u32(r_final_space.chars[i]))
+            .filter_map(|i| char::from_u32(r_final_space.as_slice()[i]))
             .collect();
         println!("\n--- Final Result ---");
         println!("Output: {:?}", final_output);

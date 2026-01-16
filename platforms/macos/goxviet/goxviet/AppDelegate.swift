@@ -415,6 +415,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         observerTokens.append(shortcutToken)
         
+        // Listen for smart mode changes
+        let smartModeToken = NotificationCenter.default.addObserver(
+            forName: .smartModeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let newState = notification.object as? Bool {
+                self?.smartModeToggleView?.updateState(newState)
+                Log.info("Status bar smart mode updated: \(newState)")
+            }
+        }
+        observerTokens.append(smartModeToken)
+        
+        // Listen for input method changes
+        let inputMethodToken = NotificationCenter.default.addObserver(
+            forName: .inputMethodChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let method = notification.object as? Int {
+                self?.updateMethodMenuSelection(selectedTag: method)
+                Log.info("Status bar input method updated: \(method == 0 ? "Telex" : "VNI")")
+            }
+        }
+        observerTokens.append(inputMethodToken)
+        
+        // Listen for tone style changes
+        let toneStyleToken = NotificationCenter.default.addObserver(
+            forName: .toneStyleChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let modern = notification.object as? Bool {
+                self?.updateToneMenuSelection(selectedTag: modern ? 1 : 0)
+                Log.info("Status bar tone style updated: \(modern ? "Modern" : "Traditional")")
+            }
+        }
+        observerTokens.append(toneStyleToken)
+        
         // Listen for app becoming active (detect permission changes)
         let activateToken = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,

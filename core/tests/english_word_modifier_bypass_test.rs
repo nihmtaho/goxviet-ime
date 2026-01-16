@@ -53,7 +53,7 @@ mod english_word_modifier_bypass_test {
                     output.pop();
                 }
                 for i in 0..result.count as usize {
-                    if let Some(c) = char::from_u32(result.chars[i]) {
+                    if let Some(c) = char::from_u32(result.as_slice()[i]) {
                         output.push(c);
                     }
                 }

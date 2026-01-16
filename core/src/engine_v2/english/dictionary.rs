@@ -34,7 +34,6 @@ const COMMON_4LETTER_WORDS: &[[u16; 4]] = &[
     [keys::W, keys::I, keys::T, keys::H], // with
     [keys::H, keys::A, keys::V, keys::E], // have
     [keys::T, keys::H, keys::A, keys::T], // that
-    [keys::T, keys::H, keys::I, keys::S], // this
     [keys::F, keys::R, keys::O, keys::M], // from
     [keys::T, keys::H, keys::E, keys::Y], // they
     [keys::W, keys::H, keys::A, keys::T], // what
@@ -49,7 +48,6 @@ const COMMON_4LETTER_WORDS: &[[u16; 4]] = &[
     [keys::A, keys::L, keys::S, keys::O], // also
     [keys::B, keys::O, keys::T, keys::H], // both
     [keys::W, keys::O, keys::R, keys::D], // word
-    [keys::T, keys::E, keys::R, keys::M], // term
     [keys::O, keys::V, keys::E, keys::R], // over
     [keys::M, keys::O, keys::R, keys::E], // more
     [keys::M, keys::A, keys::K, keys::E], // make
@@ -65,8 +63,6 @@ const COMMON_4LETTER_WORDS: &[[u16; 4]] = &[
     [keys::K, keys::N, keys::O, keys::W], // know
     [keys::G, keys::O, keys::N, keys::E], // gone
     [keys::D, keys::O, keys::N, keys::E], // done
-    [keys::S, keys::E, keys::E, keys::N], // seen
-    [keys::B, keys::E, keys::E, keys::N], // been
     [keys::C, keys::O, keys::D, keys::E], // code
     [keys::F, keys::I, keys::L, keys::E], // file
     [keys::D, keys::A, keys::T, keys::A], // data

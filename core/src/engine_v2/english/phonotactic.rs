@@ -295,25 +295,25 @@ impl PhonotacticEngine {
                 for i in 0..keys.len().saturating_sub(1) {
                     let curr = keys[i].0;
                     let next = keys[i + 1].0;
-                    
+
                     if curr == pair[0] && next == pair[1] {
                         // Found a coda pair, but need to check context
                         // Reject coda if it's followed by a vowel that starts a new syllable
                         // (This prevents false positives like "syntax" = "sy-ntax")
                         if i + 2 < keys.len() {
                             let after_coda = keys[i + 2].0;
-                            
+
                             // Special check: reject "nt" specifically when followed by vowel
                             // because "nt" + vowel usually indicates next syllable's initial "nt" cluster
                             // which doesn't exist in English (Vietnamese has this in "tion" → "tion" as separate)
                             if curr == keys::N && next == keys::T && Self::is_vowel(after_coda) {
                                 continue; // Skip this false positive
                             }
-                            
+
                             // Other codas before vowel might still be valid syllable boundaries
                             // like "mp" before vowel in "improve"
                         }
-                        
+
                         return 91; // Coda cluster found
                     }
                 }
@@ -367,7 +367,11 @@ impl PhonotacticEngine {
 
         if keys.len() >= 4 {
             for prefix in PREFIXES_4 {
-                if keys[0].0 == prefix[0] && keys[1].0 == prefix[1] && keys[2].0 == prefix[2] && keys[3].0 == prefix[3] {
+                if keys[0].0 == prefix[0]
+                    && keys[1].0 == prefix[1]
+                    && keys[2].0 == prefix[2]
+                    && keys[3].0 == prefix[3]
+                {
                     return 95; // Very high confidence for 4-char prefixes (rest-)
                 }
             }
@@ -497,7 +501,7 @@ impl VietnameseSyllableValidator {
             (keys::S, keys::L),
             (keys::S, keys::P),
             (keys::S, keys::T),
-            (keys::T, keys::R),
+            // REMOVED: (keys::T, keys::R) - TR is VALID Vietnamese (truyền, triển, trăm, trung)
             (keys::V, keys::R),
             (keys::W, keys::R),
         ];
@@ -629,12 +633,12 @@ impl AutoRestoreDecider {
         if !has_transforms {
             return false;
         }
-        
+
         // CRITICAL FIX: If Vietnamese validation shows valid output, NEVER restore
         // This fixes "trường" + space being restored to "truowfng"
         // The raw input looks unusual due to Telex modifiers, but output is valid Vietnamese
         if vietnamese_validation.is_valid {
-            return false;  // Trust the valid Vietnamese output
+            return false; // Trust the valid Vietnamese output
         }
 
         // Strong signal: multiple English layers detected

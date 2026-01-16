@@ -58,7 +58,7 @@ fn type_word(engine: &mut Engine, word: &str) -> String {
             }
 
             for i in 0..result.count as usize {
-                if let Some(c) = char::from_u32(result.chars[i]) {
+                if let Some(c) = char::from_u32(result.as_slice()[i]) {
                     output.push(c);
                 }
             }

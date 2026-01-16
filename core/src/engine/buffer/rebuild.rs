@@ -30,8 +30,8 @@
 //! ```
 
 use super::buffer::{Buffer, Char};
-use crate::engine::types::Result;
 use crate::data::{chars, keys};
+use crate::engine::types::Result;
 
 // ============================================================
 // Character Rendering
@@ -195,8 +195,6 @@ pub fn find_syllable_boundary(buf: &Buffer) -> usize {
     // No word boundary found - entire buffer is one word/syllable
     0
 }
-
-
 
 // ============================================================
 // Buffer Rebuild Functions
@@ -478,8 +476,10 @@ mod tests {
         let result = rebuild_from(&buf, 2);
         assert!(result.is_send());
         assert_eq!(result.count, 2);
-        assert_eq!(result.chars[0], 'e' as u32);
-        assert_eq!(result.chars[1], 't' as u32);
+        unsafe {
+            assert_eq!(*result.chars.offset(0), 'e' as u32);
+            assert_eq!(*result.chars.offset(1), 't' as u32);
+        }
     }
 
     #[test]
@@ -516,5 +516,4 @@ mod tests {
         assert!(!is_part_of_vowel_compound(&buf, 0)); // b
         assert!(!is_part_of_vowel_compound(&buf, 2)); // n
     }
-
 }

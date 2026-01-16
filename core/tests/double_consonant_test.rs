@@ -61,7 +61,7 @@ fn type_word(word: &str, method: u8) -> String {
                 output.pop();
             }
             for i in 0..result.count as usize {
-                if let Some(c) = char::from_u32(result.chars[i]) {
+                if let Some(c) = char::from_u32(result.as_slice()[i]) {
                     output.push(c);
                 }
             }
@@ -184,7 +184,7 @@ fn test_auto_restore_on_space_son_ton_ron() {
 
         if r.action == 1 {
             let output: String = (0..r.count as usize)
-                .filter_map(|i| char::from_u32(r.chars[i]))
+                .filter_map(|i| char::from_u32(r.as_slice()[i]))
                 .collect();
             let expected = format!("{} ", word);
             assert_eq!(

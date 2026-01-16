@@ -58,7 +58,7 @@ fn type_and_collect(word: &str, method: u8) -> String {
                 output.pop();
             }
             for i in 0..result.count as usize {
-                if let Some(c) = char::from_u32(result.chars[i]) {
+                if let Some(c) = char::from_u32(result.as_slice()[i]) {
                     output.push(c);
                 }
             }
@@ -89,7 +89,8 @@ fn test_restore_with_space_auto_restore() {
     // Space should trigger auto-restore, keeping "restore" as English
     let output = type_and_collect("restore ", 0); // 0=Telex
     assert_eq!(
-        output, "restore ",
+        output,
+        "restore ",
         "Word 'restore' with space should remain unchanged, got '{}'",
         output.trim_end()
     );
@@ -157,13 +158,13 @@ fn test_sh_prefix_show() {
 fn test_restore_ore_suffix_words() {
     // Test other words ending with "-ore" suffix
     // These should also benefit from the -ore suffix detection
-    
+
     let words = vec![
-        "score",   // s+c+o+r+e
-        "more",    // m+o+r+e
-        "store",   // s+t+o+r+e
-        "before",  // b+e+f+o+r+e
-        "core",    // c+o+r+e
+        "score",  // s+c+o+r+e
+        "more",   // m+o+r+e
+        "store",  // s+t+o+r+e
+        "before", // b+e+f+o+r+e
+        "core",   // c+o+r+e
     ];
 
     for word in words {

@@ -268,8 +268,9 @@ class InputManager {
         
         // 6. Ignore events with command/control/option modifiers (except Shift)
         if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
-            // Clear buffer on modifier shortcuts
-            ime_clear()
+            // Clear ALL state on modifier shortcuts (selection-delete, Cmd+A, Cmd+V, etc.)
+            // This prevents stale buffer content from appearing after selection operations
+            ime_clear_all()
             return Unmanaged.passUnretained(event)
         }
         
@@ -306,7 +307,7 @@ class InputManager {
         ]
         
         if navigationKeys.contains(keyCode) {
-            ime_clear()
+            ime_clear_all()
             return Unmanaged.passUnretained(event)
         }
         
@@ -546,16 +547,18 @@ class InputManager {
         var chars: [Character] = []
         let count = Int(result.count)
         
-        // Access tuple elements using Mirror for reflection
-        let mirror = Mirror(reflecting: result.chars)
-        var i = 0
-        for child in mirror.children {
-            if i >= count { break }
-            if let codepoint = child.value as? UInt32,
-               let scalar = UnicodeScalar(codepoint) {
+        // IMPORTANT: result.chars is now a heap-allocated pointer (*mut u32)
+        // We must access it as a pointer, not as an array
+        guard count > 0, result.chars != nil else {
+            return chars
+        }
+        
+        // Access heap-allocated chars via pointer
+        for i in 0..<count {
+            let codepoint = result.chars[i]
+            if let scalar = UnicodeScalar(codepoint) {
                 chars.append(Character(scalar))
             }
-            i += 1
         }
         
         return chars

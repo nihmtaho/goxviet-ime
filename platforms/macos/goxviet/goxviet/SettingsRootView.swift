@@ -43,6 +43,25 @@ struct SettingsRootView: View {
             loadPerAppModes()
             syncToAppState()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .smartModeChanged)) { notification in
+            if let newState = notification.object as? Bool {
+                smartModeEnabled = newState
+                loadPerAppModes()  // Refresh list
+                Log.info("Settings smart mode updated: \(newState)")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .inputMethodChanged)) { notification in
+            if let method = notification.object as? Int {
+                inputMethod = method
+                Log.info("Settings input method updated: \(method == 0 ? "Telex" : "VNI")")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toneStyleChanged)) { notification in
+            if let modern = notification.object as? Bool {
+                modernToneStyle = modern
+                Log.info("Settings tone style updated: \(modern ? "Modern" : "Traditional")")
+            }
+        }
     }
 
     // MARK: - Sidebar

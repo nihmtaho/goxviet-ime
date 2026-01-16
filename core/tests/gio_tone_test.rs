@@ -12,7 +12,7 @@ fn simulate_type(engine: &mut Engine, buffer: &mut String, key: u16, caps: bool)
             }
         }
         if result.count > 0 {
-            let new_chars: String = result.chars[0..result.count as usize]
+            let new_chars: String = result.as_slice()[0..result.count as usize]
                 .iter()
                 .filter_map(|&c| char::from_u32(c))
                 .collect();
