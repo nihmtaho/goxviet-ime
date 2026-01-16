@@ -1,5 +1,23 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [2.0.1] - 2026-01-16
+
+### Added
+- **Test Coverage**: Added comprehensive test cases for smart backspace, tone validation, and TR- initial words.
+
+### Changed
+- **VNI Optimization**: Optimized tone marking logic (linear → binary search), reducing latency to 8-11ms.
+- **Core Engine**: Enhanced buffer manipulation efficiency, reducing unnecessary allocations.
+
+### Fixed
+- **Triple Key Toggle**: Fixed `d`+`d`+`d` failing to toggle back to `dd` correctly.
+- **Prefix Deletion**: Fixed critical "add" bug where reverting a transform deleted preceding characters.
+- **Vietnamese Validation**: Fixed invalid tone placements (e.g., "neư") and enabled "tr" initial transforms (truyền, triển).
+- **Special Characters**: Fixed issue where punctuation (e.g., `!`) caused Vietnamese words to revert (e.g., "đã!" → "d9a41").
+- **UI Sync**: Fixed MenuBar toggle states not synchronizing with Settings UI.
+- **English Double Tone**: Fixed "off" → "òf" issue by marking word as English after tone revert.
+
+
 ## [2.0.0] - 2026-01-15
 
 ### Added
@@ -16,17 +34,6 @@
 - Fixed bug(telex): Telex đôi khi nhận nhầm từ tiếng Anh
 - Fixed bug(telex): nhập số bị chuyển thành dấu hoặc ký tự đặc biệt #30
 - Fixed bug: backspace deletes autocomplete suggestion instead of typed text in browsers #36
-- **perf**: VNI tone marking now 40-50% faster (#35)
-  - Replaced linear search with binary search for tone targets
-  - VNI typing latency: 15-18ms → 8-11ms (expected)
-  - Achieved performance parity with Telex method
-- **fix(macos)**: Fixed Vietnamese typing in Spotlight search bar
-  - Eliminated character duplication bug (dd → dđ instead of đ)
-  - Fixed garbled text and character repetition issues
-  - Switched from autocomplete method to AX API direct method for stable injection
-  - **Improved reliability**: Added 3-attempt retry logic with 5ms delays for AX API failures
-  - **Enhanced detection**: Added systemuiserver bundle ID check (fallback when Spotlight runs under system UI server)
-  - **Better fallback**: Changed fallback method to autocomplete for native apps (more reliable than selection)
 
 
 ## [1.5.2] - 2026-01-05
