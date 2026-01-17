@@ -169,7 +169,11 @@ fn test_spec_mandatory_case_1_dien() {
 
     // Type "a" - should be plain "a", not "ả"
     t.type_str("a");
-    assert_eq!(t.screen(), "a", "After reset, 'a' should be plain 'a', not 'ả'");
+    assert_eq!(
+        t.screen(),
+        "a",
+        "After reset, 'a' should be plain 'a', not 'ả'"
+    );
 }
 
 /// Test Case 2 from spec: tiếng → BS × 5 → ""
@@ -345,7 +349,11 @@ fn test_rule5_reset_all_state_on_empty() {
 
     // Now type 'e' - should be plain 'e', not affected by previous 'r' (hỏi)
     t.type_str("e");
-    assert_eq!(t.screen(), "e", "New vowel should not inherit previous tone");
+    assert_eq!(
+        t.screen(),
+        "e",
+        "New vowel should not inherit previous tone"
+    );
 }
 
 /// Test that English word flag is reset on empty buffer
@@ -364,7 +372,11 @@ fn test_rule5_reset_english_word_flag() {
 
     // Now type Vietnamese - should work normally (flag reset)
     t.type_str("cos");
-    assert_eq!(t.screen(), "có", "Vietnamese should work after English word deleted");
+    assert_eq!(
+        t.screen(),
+        "có",
+        "Vietnamese should work after English word deleted"
+    );
 }
 
 // ============================================================================
@@ -399,7 +411,10 @@ fn test_backspace_with_horn_vowel() {
     t.type_str("<");
     // The actual result depends on tone repositioning logic
     // mười → backspace → could be "mườ" (tone on ơ) or "mươ" (tone removed)
-    assert!(t.screen().starts_with("mư"), "After backspace should start with 'mư'");
+    assert!(
+        t.screen().starts_with("mư"),
+        "After backspace should start with 'mư'"
+    );
 }
 
 // ============================================================================
@@ -427,11 +442,14 @@ fn test_backspace_preserves_capitalization() {
     // The actual output depends on the order of ee and s processing
     // Vieest = V + i + ee(→ê) + s(→sắc on ê = ế) + t = Viết
     // This is actually "Viết" not "Việt" due to Telex processing order
-    
+
     // Backspace - remove 't'
     t.type_str("<");
     // After removing 't', we have "Viế" (or similar)
-    assert!(t.screen().starts_with("Vi"), "Capital V should be preserved");
+    assert!(
+        t.screen().starts_with("Vi"),
+        "Capital V should be preserved"
+    );
 }
 
 // ============================================================================

@@ -79,7 +79,11 @@ mod english_word_modifier_bypass_test {
         // FIX VERIFICATION: Type "restore" (English) + "s" (tone modifier)
         // EXPECTED: "restores" (s is normal letter, NOT tone modifier)
         let output = type_and_collect("restores", 0); // 0=Telex
-        assert_eq!(output, "restores", "Expected 'restores' but got '{}'", output);
+        assert_eq!(
+            output, "restores",
+            "Expected 'restores' but got '{}'",
+            output
+        );
         println!("✅ FIXED: 'restore' + 's' → '{}' (no tone applied)", output);
     }
 
