@@ -128,18 +128,28 @@ impl Buffer {
     #[inline]
     pub fn find_vowels(&self) -> Vec<usize> {
         use crate::data::keys;
-        (0..self.len)
-            .filter(|&i| keys::is_vowel(self.data[i].key))
-            .collect()
+        let mut positions = Vec::with_capacity(self.len);
+        for i in 0..self.len {
+            if keys::is_vowel(self.data[i].key) {
+                positions.push(i);
+            }
+        }
+        positions
     }
 
     /// Find vowel position by key (from end)
     #[inline]
     pub fn find_vowel_by_key(&self, key: u16) -> Option<usize> {
         use crate::data::keys;
-        (0..self.len)
-            .rev()
-            .find(|&i| self.data[i].key == key && keys::is_vowel(key))
+        if !keys::is_vowel(key) {
+            return None;
+        }
+        for i in (0..self.len).rev() {
+            if self.data[i].key == key {
+                return Some(i);
+            }
+        }
+        None
     }
 
     /// Iterate over chars
@@ -151,19 +161,25 @@ impl Buffer {
     /// Convert buffer to lowercase string (for shortcut matching)
     #[inline]
     pub fn to_lowercase_string(&self) -> String {
-        self.data[..self.len]
-            .iter()
-            .filter_map(|c| utils::key_to_char(c.key, false))
-            .collect()
+        let mut out = String::with_capacity(self.len);
+        for c in &self.data[..self.len] {
+            if let Some(ch) = utils::key_to_char(c.key, false) {
+                out.push(ch);
+            }
+        }
+        out
     }
 
     /// Convert buffer to string preserving case (for shortcut case matching)
     #[inline]
     pub fn to_string_preserve_case(&self) -> String {
-        self.data[..self.len]
-            .iter()
-            .filter_map(|c| utils::key_to_char(c.key, c.caps))
-            .collect()
+        let mut out = String::with_capacity(self.len);
+        for c in &self.data[..self.len] {
+            if let Some(ch) = utils::key_to_char(c.key, c.caps) {
+                out.push(ch);
+            }
+        }
+        out
     }
 
     /// Convert buffer to full Vietnamese string with diacritics (for shortcut matching)
@@ -173,21 +189,24 @@ impl Buffer {
     #[inline]
     pub fn to_full_string(&self) -> String {
         use crate::data::{chars, keys};
-        self.data[..self.len]
-            .iter()
-            .filter_map(|c| {
-                // Handle đ/Đ (stroked D)
-                if c.key == keys::D && c.stroke {
-                    return Some(chars::get_d(c.caps));
-                }
-                // Try to get full Vietnamese character with diacritics
-                if let Some(ch) = chars::to_char(c.key, c.caps, c.tone, c.mark) {
-                    return Some(ch);
-                }
-                // Fallback to basic character
-                utils::key_to_char(c.key, c.caps)
-            })
-            .collect()
+        let mut out = String::with_capacity(self.len);
+        for c in &self.data[..self.len] {
+            // Handle đ/Đ (stroked D)
+            if c.key == keys::D && c.stroke {
+                out.push(chars::get_d(c.caps));
+                continue;
+            }
+            // Try to get full Vietnamese character with diacritics
+            if let Some(ch) = chars::to_char(c.key, c.caps, c.tone, c.mark) {
+                out.push(ch);
+                continue;
+            }
+            // Fallback to basic character
+            if let Some(ch) = utils::key_to_char(c.key, c.caps) {
+                out.push(ch);
+            }
+        }
+        out
     }
 }
 

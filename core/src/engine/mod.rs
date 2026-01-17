@@ -124,6 +124,9 @@ pub struct Engine {
     /// Track if current buffer is detected as English word
     /// When true and space is pressed, auto-restore to raw input
     pub is_english_word: bool,
+    /// Track number of non-space break characters types (e.g. numbers)
+    /// Used to restore word history when backspacing over them
+    break_after_commit: u8,
 }
 
 impl Default for Engine {
@@ -150,6 +153,7 @@ impl Engine {
             instant_restore_enabled: true,
             word_history: WordHistory::new(),
             spaces_after_commit: 0,
+            break_after_commit: 0,
             cached_syllable_boundary: None,
             is_english_word: false,
         }
@@ -193,6 +197,11 @@ impl Engine {
         self.modern_tone = modern;
     }
 
+    /// Set whether English auto-restore is enabled
+    pub fn set_english_auto_restore(&mut self, enabled: bool) {
+        self.instant_restore_enabled = enabled;
+    }
+
     pub fn shortcuts(&self) -> &ShortcutTable {
         &self.shortcuts
     }
@@ -208,6 +217,29 @@ impl Engine {
             1 => InputMethod::Vni,
             _ => InputMethod::All,
         }
+    }
+
+    /// Helper to handle break sequence commit
+    fn commit_and_break_sequence(&mut self) -> Result {
+        // FIX: Save history before clearing so we can restore on backspace
+        if !self.buf.is_empty() {
+            self.word_history.push(&self.buf, &self.raw_input);
+            self.break_after_commit = 1;
+        } else if self.break_after_commit > 0 {
+            // If we are continuing a break sequence (e.g. 123), increment
+            self.break_after_commit = self.break_after_commit.saturating_add(1);
+        } else {
+            // Buffer empty and not in break sequence - hard reset history
+            // This handles "word <space> number" - don't link number to word
+            self.word_history.clear();
+            self.break_after_commit = 0;
+        }
+
+        self.clear();
+        self.spaces_after_commit = 0;
+        self.cached_syllable_boundary = None;
+        self.is_english_word = false;
+        Result::none()
     }
 
     /// Handle key event - main entry point
@@ -265,42 +297,25 @@ impl Engine {
 
         // Check for word boundary shortcuts ONLY on SPACE
         if key == keys::SPACE {
-            // Auto-restore on SPACE: Check if buffer contains English word
-            // HIGH PRIORITY: Dictionary words (syntax, parse, merge, etc)
-            // This ensures consistent behavior - dictionary words always restore
-            let result = if !self.buf.is_empty() && self.should_auto_restore() {
-                // English word detected - restore to raw English and add space
-                let mut restore_result = self.instant_restore_english();
+            // SIMPLE FLOW: On SPACE, commit current word and clean up immediately
+            // English detection happens DURING typing via instant-restore, NOT on SPACE
+            // This ensures Vietnamese words are never incorrectly checked for English
+            let shortcut_result = self.try_word_boundary_shortcut();
 
-                // Add space to the result (Result.chars has capacity for more)
-                if (restore_result.count as usize) < restore_result.capacity {
-                    unsafe {
-                        *restore_result.chars.offset(restore_result.count as isize) = ' ' as u32;
-                    }
-                    restore_result.count += 1;
-                }
+            // Push to history before clearing (for backspace-after-space feature)
+            if !self.buf.is_empty() {
+                self.word_history.push(&self.buf, &self.raw_input);
+                self.spaces_after_commit = 1;
+            } else if self.spaces_after_commit > 0 {
+                self.spaces_after_commit = self.spaces_after_commit.saturating_add(1);
+            }
 
-                self.clear();
-                restore_result
-            } else {
-                // Vietnamese word or shortcut - use normal handling
-                let result = self.try_word_boundary_shortcut();
-
-                // Push buffer AND raw_input to history before clearing (for backspace-after-space feature)
-                // This ensures correct restoration when user continues typing after backspace
-                if !self.buf.is_empty() {
-                    self.word_history
-                        .push(self.buf.clone(), self.raw_input.clone());
-                    self.spaces_after_commit = 1; // First space after word
-                } else if self.spaces_after_commit > 0 {
-                    // Additional space after commit - increment counter
-                    self.spaces_after_commit = self.spaces_after_commit.saturating_add(1);
-                }
-                self.clear();
-                result
-            };
-
-            return result;
+            // Clean buffer, raw_input immediately after word completion
+            // Explicitly clear all state to ensure no residual data affects next word
+            self.clear();
+            self.is_english_word = false;
+            self.raw_input.clear();
+            return shortcut_result;
         }
 
         // ESC key: restore to raw ASCII (undo all Vietnamese transforms)
@@ -325,13 +340,8 @@ impl Engine {
         let is_modifier =
             m.stroke(key) || m.remove(key) || m.tone(key).is_some() || m.mark(key).is_some();
 
-        if !is_modifier && keys::is_break(key) {
-            self.clear();
-            self.word_history.clear();
-            self.spaces_after_commit = 0;
-            self.cached_syllable_boundary = None; // Invalidate cache
-            self.is_english_word = false; // Reset flag
-            return Result::none();
+        if !is_modifier && (keys::is_break(key) || keys::is_number(key)) {
+            return self.commit_and_break_sequence();
         }
 
         if key == keys::DELETE {
@@ -351,7 +361,21 @@ impl Engine {
                     }
                 }
                 // Delete one space
+                // Delete one space
                 return Result::send(1, &[]);
+            }
+
+            // Backspace-after-break feature: restore previous word when break chars deleted
+            // Corresponds to break_after_commit logic (numbers, etc)
+            if self.break_after_commit > 0 && self.buf.is_empty() {
+                self.break_after_commit -= 1;
+                if self.break_after_commit == 0 {
+                    if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
+                        self.buf = restored_buf;
+                        self.raw_input = restored_raw;
+                    }
+                }
+                return Result::none();
             }
 
             // If buffer is already empty, user is deleting content from previous word
@@ -399,33 +423,26 @@ impl Engine {
         // Note: raw_input already contains the current key (pushed in on_key_ext)
         // Check at 2+ chars to catch "ex" pattern (export, express, example)
         // Other patterns need 3+ chars but "ex" must be caught at 2 chars
-        //
+
+        let m = input::get(self.method);
+        // Check if current key is a modifier (tone, mark, stroke, remove)
+        // Note: checking !shift because shift+key usually bypasses modifiers (unless VNI number)
+        // But for letters (Telex), shift makes them uppercase letters, usually not modifiers (except for some defaults).
+        // For W, A, E, O, they can be modifiers even if uppercase?
+        // Logic in modifiers block uses `skip_modifiers = shift && is_number`.
+        // For letters, it allows modifiers even with shift (e.g. typing uppercase accents).
+        // So we check basic `m.is_xxx(key)`.
+        let is_modifier =
+            m.tone(key).is_some() || m.mark(key).is_some() || m.stroke(key) || m.remove(key);
+
         // ═══════════════════════════════════════════════════════════════════════════
         // ENGLISH DETECTION (Telex/VNI)
         // ═══════════════════════════════════════════════════════════════════════════
-        // Goal: Allow English typing while Telex/VNI is active (e.g. "windows", "user", "express")
-        //
-        // CRITICAL DISTINCTION between DEFINITE and AMBIGUOUS patterns:
-        //
-        // 1. DEFINITE patterns (double consonants like "ss", "tt", "ff", "ll"):
-        //    - These are NEVER valid Vietnamese
-        //    - Detection runs even when current key is a modifier
-        //    - Example: [u,s,s,e,r] → "user" - after "ss", detect English, bypass 'e' and 'r'
-        //
-        // 2. AMBIGUOUS patterns (consonant-e-x like "sex", "tex", "nex"):
-        //    - Could be English word OR Vietnamese modifier sequence
-        //    - Detection ONLY runs when current key is NOT a modifier
-        //    - Example: [s,e,x] → "sẽ" - 'x' is modifier, allow Vietnamese transform
-        //
-        // This ensures:
-        // - "sẽ" (se + x) still works: 'x' is modifier, skip ambiguous pattern check
-        // - "user" (u,s,s,e,r) works: "ss" is definite, detect English immediately
         if (self.method == 0 || self.method == 1)
             && self.raw_input.len() >= 1
             && keys::is_letter(key)
         {
             // LAYER 0: Words starting with F, J, Z are ALWAYS English
-            // These letters don't exist in Vietnamese alphabet
             if self.raw_input.len() == 1 {
                 let first_key = self.raw_input.iter().next().map(|(k, _)| k).unwrap_or(0);
                 if matches!(first_key, keys::F | keys::J | keys::Z) {
@@ -437,7 +454,13 @@ impl Engine {
             if self.raw_input.len() >= 2 {
                 // 1. VIETNAMESE DICTIONARY LOOKUP: Removed as per request (replaced by Phonotactic Engine)
                 // 2. ENGLISH DICTIONARY LOOKUP
-                if self.is_english_dictionary_word() {
+                // AMBIGUITY RESOLUTION:
+                // If the current key is a modifier (e.g. 'w' in 'law'), we must prioritize
+                // trying the Vietnamese transform ('lă') over the English word ('law').
+                // If we detect 'law' here, we return early and 'lă' is never formed.
+                // So: Only check dictionary if NOT a modifier.
+                let is_dict = !is_modifier && self.is_english_dictionary_word();
+                if is_dict {
                     self.is_english_word = true;
 
                     // INSTANT RESTORE: If already transformed, undo immediately
@@ -453,16 +476,43 @@ impl Engine {
                 if !self.is_english_word {
                     let is_definite_english = self.has_definite_english_pattern();
                     if is_definite_english {
-                        self.is_english_word = true;
+                        // FEATURE: Speculative Modifier Application (Same logic as ambiguous patterns)
+                        // Even if it looks definitely English (e.g. invalid initial/final),
+                        // if the user types a modifier that creates a valid Vietnamese word, we should allow it.
+                        // Example: "dis" is invalid Vietnamese structure -> definite English.
+                        // But "dis" composed of "di" + "s" (Acute) -> "dí" IS valid.
 
-                        // INSTANT RESTORE: If already transformed, undo immediately
-                        if self.instant_restore_enabled && self.has_vietnamese_transforms() {
-                            let result = self.instant_restore_english();
-                            self.sync_buffer_with_raw_input();
-                            return result;
+                        let method = input::get(self.method);
+                        let result = if shift {
+                            None
+                        } else {
+                            method
+                                .tone(key)
+                                .map(|_| ())
+                                .or_else(|| method.mark(key).map(|_| ()))
+                                .or_else(|| {
+                                    if method.stroke(key) || method.remove(key) {
+                                        Some(())
+                                    } else {
+                                        None
+                                    }
+                                })
+                        };
+
+                        if result.is_some() {
+                            // Fall through to modifier handling
+                        } else {
+                            self.is_english_word = true;
+
+                            // INSTANT RESTORE: If already transformed, undo immediately
+                            if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                                let result = self.instant_restore_english();
+                                self.sync_buffer_with_raw_input();
+                                return result;
+                            }
+
+                            return self.handle_normal_letter(key, caps, shift);
                         }
-
-                        return self.handle_normal_letter(key, caps, shift);
                     }
 
                     // Check for AMBIGUOUS patterns (Layer 2-3)
@@ -471,15 +521,43 @@ impl Engine {
                     // This prevents tone/mark modifiers from being applied to English words.
                     let is_english = self.has_english_word_pattern();
                     if is_english {
-                        self.is_english_word = true;
+                        // FEATURE: Speculative Modifier Application
+                        // If the current key is a modifier (tone/mark/stroke), do NOT lock as English yet.
+                        // Let the modifier try to apply.
+                        // - If valid Vietnamese (e.g. "di" + "s" → "dí"), try_tone will succeed.
+                        // - If invalid (e.g. "work" + "s" → "wờrk"), try_tone will fail validation.
+                        // This solves the "dis" → "dí" (valid) vs "works" (valid English) conflict without dictionaries.
 
-                        if self.instant_restore_enabled && self.has_vietnamese_transforms() {
-                            let result = self.instant_restore_english();
-                            self.sync_buffer_with_raw_input();
-                            return result;
+                        let method = input::get(self.method);
+                        let result = if shift {
+                            None
+                        } else {
+                            method
+                                .tone(key)
+                                .map(|_| ())
+                                .or_else(|| method.mark(key).map(|_| ()))
+                                .or_else(|| {
+                                    if method.stroke(key) || method.remove(key) {
+                                        Some(())
+                                    } else {
+                                        None
+                                    }
+                                })
+                        };
+
+                        if result.is_some() {
+                            // Fall through to modifier handling
+                        } else {
+                            self.is_english_word = true;
+
+                            if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                                let result = self.instant_restore_english();
+                                self.sync_buffer_with_raw_input();
+                                return result;
+                            }
+
+                            return self.handle_normal_letter(key, caps, shift);
                         }
-
-                        return self.handle_normal_letter(key, caps, shift);
                     }
                 }
             }
@@ -493,11 +571,18 @@ impl Engine {
         // In All mode, do NOT apply Vietnamese tone/mark/stroke/remove or w-shortcut modifiers.
         // This preserves English typing behavior and prevents accidental transforms when the user
         // intends plain Latin input.
+        // intends plain Latin input.
         if self.method != 0 && self.method != 1 {
             return self.handle_normal_letter(key, caps, shift);
         }
 
-        let m = input::get(self.method);
+        // DEBUG: Trace raw_input
+        // println!("DEBUG: Process key={}, raw_input len={}", key, self.raw_input.len());
+        // We can't print easily here before handling.
+
+        // ... switch to END of function or insert prints at return points.
+        // Actually, let's insert a print in `check_and_restore_english` since that's where restore happens.
+        // And maybe in `try_tone` successful return.
 
         // If Shift is pressed with a number key, skip all modifiers (both VNI and Telex)
         // User wants the symbol (@ for Shift+2, # for Shift+3, etc.), not tone marks
@@ -514,29 +599,37 @@ impl Engine {
         if m.tone(key).is_some() {
             if let Some(Transform::Tone(last_key, _)) = self.last_transform {
                 if last_key == key {
-                    return self.revert_tone(key, caps);
+                    let result = self.revert_tone(key, caps);
+                    if let Some(restored) = self.check_and_restore_english(1, true) {
+                        return restored;
+                    }
+                    return result;
                 }
             }
         }
         if m.mark(key).is_some() {
             if let Some(Transform::Mark(last_key, _)) = self.last_transform {
                 if last_key == key {
-                    return self.revert_mark(key, caps);
+                    let result = self.revert_mark(key, caps);
+                    if let Some(restored) = self.check_and_restore_english(1, true) {
+                        return restored;
+                    }
+                    return result;
                 }
             }
         }
 
-        // When a word is detected as English (e.g., "us" from [u,s,s]), ALL subsequent
-        // keystrokes must bypass Vietnamese modifiers until the word is reset.
-        if self.is_english_word {
-            return self.handle_normal_letter(key, caps, shift);
-        }
-
         // 1. Stroke modifier (d → đ)
         if !skip_modifiers && m.stroke(key) {
-            if let Some(result) = self.try_stroke(key) {
-                self.is_english_word = false;
-                return result;
+            if let Some(_result) = self.try_stroke(key, caps) {
+                // Post-transform check for English word logic that got blocked by validation
+                // e.g. "f" -> "à" (valid Viet) but "of" -> "oà" (invalid Viet)
+                // If it becomes invalid Vietnamese but is valid English, restore it.
+                if let Some(restored) = self.check_and_restore_english(0, false) {
+                    return restored;
+                }
+
+                return self.rebuild_output_from_entire_buffer();
             }
         }
 
@@ -544,19 +637,39 @@ impl Engine {
         if !skip_modifiers {
             if let Some(tone_type) = m.tone(key) {
                 let targets = m.tone_targets(key);
-                if let Some(result) = self.try_tone(key, caps, tone_type, targets) {
+                if let Some(_result) = self.try_tone(key, caps, tone_type, targets) {
                     self.is_english_word = false;
-                    return result;
+
+                    // Post-transform confidence check: restore if high English confidence
+                    if let Some(restore_result) = self.check_and_restore_english(0, false) {
+                        return restore_result;
+                    }
+                    return self.rebuild_output_from_entire_buffer();
+                } else if keys::is_number(key) {
+                    // Fallback: VNI tone number (e.g. 1) failed to apply to vowel.
+                    // It should act as a number (break key).
+                    return self.commit_and_break_sequence();
                 }
             }
+        } else {
+            // skip_modifiers logic
         }
 
         // 3. Mark modifier (aa/aw/ee/oo/ow/uw, etc.)
         if !skip_modifiers {
             if let Some(mark_val) = m.mark(key) {
-                if let Some(result) = self.try_mark(key, caps, mark_val) {
+                if let Some(_result) = self.try_mark(key, caps, mark_val) {
                     self.is_english_word = false;
-                    return result;
+
+                    // Post-transform confidence check: restore if high English confidence
+                    if let Some(restore_result) = self.check_and_restore_english(0, false) {
+                        return restore_result;
+                    }
+                    return self.rebuild_output_from_entire_buffer();
+                } else if keys::is_number(key) {
+                    // Fallback: VNI mark number (e.g. 6) failed to apply.
+                    // Act as break key.
+                    return self.commit_and_break_sequence();
                 }
             }
         }
@@ -566,6 +679,10 @@ impl Engine {
             if let Some(result) = self.try_remove() {
                 self.is_english_word = false;
                 return result;
+            } else if keys::is_number(key) {
+                // Fallback: VNI remove number (0) failed to remove anything.
+                // Act as break key.
+                return self.commit_and_break_sequence();
             }
         }
 
@@ -623,6 +740,11 @@ impl Engine {
     /// - "uow" → "ươ" (complete compound with horn on both vowels)
     /// - "ouw" → "ươ" (reversed compound)
     fn try_w_as_vowel(&mut self, caps: bool) -> Option<Result> {
+        // CRITICAL: Skip Vietnamese transform if English word detected
+        if self.is_english_word {
+            return None;
+        }
+
         // If user disabled w→ư shortcut at word start, only skip when buffer is empty
         // This allows "hw" → "hư" even when shortcut is disabled
         if self.skip_w_shortcut && self.buf.is_empty() {
@@ -641,43 +763,9 @@ impl Engine {
             return Some(Result::send(0, &[]));
         }
 
-        // NEW: Handle "uo" or "ou" compound → "ươ"
-        // When we see "uo" or "ou" followed by "w", transform the second vowel to have horn
-        // This creates "ươ" with both vowels having horn diacritics
-        if let Some((pos1, pos2)) = vowel_compound::find_uo_compound_positions(&self.buf) {
-            // Check if compound needs horn transformation
-            let needs_transform =
-                if let (Some(c1), Some(c2)) = (self.buf.get(pos1), self.buf.get(pos2)) {
-                    // Case 1: "uo" pattern - 'o' needs horn
-                    (c1.key == keys::U && c2.key == keys::O && c2.tone != tone::HORN)
-                    ||
-                // Case 2: "ou" pattern - 'u' needs horn
-                (c1.key == keys::O && c2.key == keys::U && c1.tone != tone::HORN)
-                } else {
-                    false
-                };
-
-            if needs_transform {
-                // Now apply the transformation
-                if let (Some(c1), Some(c2)) = (self.buf.get(pos1), self.buf.get(pos2)) {
-                    if c1.key == keys::U && c2.key == keys::O {
-                        // "uo" → add horn to 'o' (pos2)
-                        if let Some(o_char) = self.buf.get_mut(pos2) {
-                            o_char.tone = tone::HORN;
-                            self.last_transform = Some(Transform::WAsVowel);
-                            return Some(self.rebuild_from(pos2));
-                        }
-                    } else if c1.key == keys::O && c2.key == keys::U {
-                        // "ou" → add horn to 'u' (pos1)
-                        if let Some(u_char) = self.buf.get_mut(pos1) {
-                            u_char.tone = tone::HORN;
-                            self.last_transform = Some(Transform::WAsVowel);
-                            return Some(self.rebuild_from(pos1));
-                        }
-                    }
-                }
-            }
-        }
+        // REMOVED: "uo" or "ou" compound -> "ươ" shortcut
+        // User requested to remove this so "quow" becomes "quơ" (via try_tone) instead of "qươ".
+        // "uwo" -> "ươ" is still supported via standard uw->ư + o path.
 
         // Check revert: ww → w (skip shortcut)
         // Preserve original case: Ww → W, wW → w
@@ -721,11 +809,9 @@ impl Engine {
         let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
         let buffer_tones: Vec<u8> = self.buf.iter().map(|c| c.tone).collect(); // Collect tones
 
-        let struct_valid = VietnameseSyllableValidator::validate(&buffer_keys).is_valid;
-        let tone_valid =
-            vietnamese::validation::is_valid_tone_placement(&buffer_keys, &buffer_tones);
+        let validation = crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate_with_tones(&buffer_keys, &buffer_tones);
 
-        if struct_valid && tone_valid {
+        if validation.is_valid {
             self.last_transform = Some(Transform::WAsVowel);
 
             // W shortcut adds ư without replacing anything on screen
@@ -742,25 +828,25 @@ impl Engine {
     /// Try to apply stroke transformation by scanning buffer
     ///
     /// Issue #51: In Telex mode, only apply stroke when the new 'd' is ADJACENT to
-    /// an existing 'd'. According to Vietnamese Telex docs (Section 9.2.2), "dd" → "đ"
-    /// should only work when the two 'd's are consecutive. For words like "deadline",
-    /// the 'd's are separated by "ea", so stroke should NOT apply.
-    ///
-    /// In VNI mode, '9' is always an intentional stroke command (not a letter), so
-    /// delayed stroke is allowed (e.g., "duong9" → "đuong").
-    fn try_stroke(&mut self, key: u16) -> Option<Result> {
-        // FAST PATH: Telex "dd" at start or after consonant → instant đ
-        // This handles 90% of stroke cases with O(1) complexity
-        if self.method == 0 {
-            let last_pos = self.buf.len().checked_sub(1)?;
-            let last_char = self.buf.get(last_pos)?;
+    /// Try to apply stroke transformation (đ)
+    fn try_stroke(&mut self, key: u16, _caps: bool) -> Option<Result> {
+        if self.buf.is_empty() {
+            return None;
+        }
 
-            // CRITICAL FIX: Check revert BEFORE verifying if char is already stroked
-            // Case: "đ" + "d" → should revert to "dd" (currently fails because "đ" has stroke=true)
+        // Check revert: dd -> d (if last char was d and we type d again)
+        let last_pos = self.buf.len() - 1;
+        let last_char = self.buf.get(last_pos)?;
+
+        if self.method == 0 {
+            // TELEX MODE
+            /*
+               dd -> đ
+            */
+
+            // Check revert: dđ -> d (original d + stroke key d)
             if let Some(Transform::Stroke(last_key)) = self.last_transform {
                 if last_key == key {
-                    // Only revert if we are operating on the same char that was just transformed
-                    // In Telex, this is always the last char
                     return Some(self.revert_stroke(key, last_pos));
                 }
             }
@@ -783,7 +869,8 @@ impl Engine {
                     c.stroke = true;
                 }
                 self.last_transform = Some(Transform::Stroke(key));
-                return Some(self.rebuild_from(last_pos));
+                // CRITICAL FIX: Track the modifier key in raw_input
+                return Some(self.rebuild_from(self.buf.len() - 1));
             }
 
             // COMPLEX PATH: Has vowels, need validation
@@ -791,12 +878,16 @@ impl Engine {
             if !self.free_tone_enabled && self.method != 0 {
                 // Use iterator-based validation to avoid allocation
                 let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-                if !VietnameseSyllableValidator::validate(&buffer_keys).is_valid {
+                if !crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate(
+                    &buffer_keys,
+                )
+                .is_valid
+                {
                     return None;
                 }
             }
 
-            // Apply stroke
+            // Apply stroke (Validated)
             if let Some(c) = self.buf.get_mut(last_pos) {
                 c.stroke = true;
             }
@@ -827,7 +918,11 @@ impl Engine {
         if !self.free_tone_enabled && has_vowel_after && self.method != 1 {
             // Use iterator-based validation to avoid allocation
             let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-            if !VietnameseSyllableValidator::validate(&buffer_keys).is_valid {
+            if !crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate(
+                &buffer_keys,
+            )
+            .is_valid
+            {
                 return None;
             }
         }
@@ -837,6 +932,7 @@ impl Engine {
             c.stroke = true;
         }
         self.last_transform = Some(Transform::Stroke(key));
+        // CRITICAL FIX: Track the modifier key in raw_input
         Some(self.rebuild_from(pos))
     }
 
@@ -857,64 +953,22 @@ impl Engine {
         }
 
         // CRITICAL: Skip Vietnamese transform if English word detected
-        // This prevents "trans" + "s" → "tráns" (should be "transs")
+        // But verify if appending this key KEEPS it English.
+        // DISABLED: This check breaks valid Vietnamese words that share prefixes with English words/invalid bigrams.
+        // E.g. "lawn" (Telex 'w' -> breve). 'law' triggers English detection because 'a->w' is invalid Vietnamese bigram.
+        // But in Telex, 'w' IS the modifier.
+        // Rely on word-boundary restore instead.
+        /*
         if self.is_english_word {
-            return None;
+            // ... (disabled)
         }
+        */
 
         // ═════════════════════════════════════════════════════════════════════
         // ENGLISH DETECTION: 3-Layer Architecture
-        // ═════════════════════════════════════════════════════════════════════
-        // Reference: ULTIMATE_ENGLISH_DETECTION_GUIDE.md
-        // Goal: Detect English words BEFORE Vietnamese transforms occur
-        // Performance: <200ns average, zero allocations
+        // ... (skipped)
 
-        // CRITICAL FIX: Skip English detection if Vietnamese tone marks already applied
-        // If buffer has tone marks (sắc/huyền/etc), this is intentional Vietnamese typing
-        // Issue: "viese" (vie+s+e→viết) was incorrectly detected as English because
-        // raw_input includes 's' (tone mark modifier), creating false "e-s-e" pattern
-        let has_tone_marks = self.buf.iter().any(|c| c.mark > 0);
-
-        // In Telex/VNI, tone keys must ALWAYS be allowed to apply.
-        // Therefore, English detection must NOT run inside this modifier handler.
-        if !self.free_tone_enabled && !has_tone_marks && (self.method != 0 && self.method != 1) {
-            // ─────────────────────────────────────────────────────────────────
-            // LAYER 1: Vietnamese Syllable Validator (~200ns)
-            // ─────────────────────────────────────────────────────────────────
-            // Check: Valid Vietnamese syllable structure?
-            // - Valid onset (phụ âm đầu)? 29 variants allowed
-            // - Valid coda (phụ âm cuối)? Only 8 allowed: c, ch, m, n, ng, nh, p, t
-            // - Valid vowel pattern? Whitelist-based
-            // - No consonant clusters? (e.g., "mp", "trl" invalid)
-
-            // Check for invalid Vietnamese initial consonants.
-            // In Telex/VNI, a failed validator here should NOT permanently lock the word as English,
-            // because the user might be in the middle of Vietnamese typing and about to apply modifiers.
-            // Just decline the transform and let normal insertion continue.
-
-            // Validate buffer structure using iterator (zero allocation)
-            // This checks phonotactic constraints from Vietnamese linguistics
-            let buffer_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-            if !VietnameseSyllableValidator::validate(&buffer_keys).is_valid {
-                return None;
-            }
-
-            // ─────────────────────────────────────────────────────────────────
-            // LAYER 2 & 3: Early Pattern + Multi-Syllable Detection (~20-150ns)
-            // ─────────────────────────────────────────────────────────────────
-            // Check raw keystroke history for English patterns
-            // Note: raw_input already contains current key (pushed before try_tone)
-
-            if self.raw_input.len() >= 2 {
-                // Do not set `is_english_word` here; this function is a modifier handler and must
-                // never lock the word into English mode. If it looks English, simply skip applying
-                // the tone and fall through so the key can be inserted normally.
-                let is_english = self.has_english_word_pattern();
-                if is_english {
-                    return None;
-                }
-            }
-        }
+        // ...
 
         let tone_val = tone_type.value();
 
@@ -928,7 +982,7 @@ impl Engine {
         // Scan buffer for eligible target vowels
         let mut target_positions = Vec::new();
 
-        // Special case: uo/ou compound for horn - find adjacent pair only
+        // Logic for specific tone keys (s/f/r/x/j/z or 1-5 for VNI)horn - find adjacent pair only
         // But ONLY apply compound logic when BOTH vowels are plain (not when switching)
         if tone_type == ToneType::Horn && !is_switching {
             if let Some((pos1, pos2)) = self.find_uo_compound_positions() {
@@ -945,8 +999,7 @@ impl Engine {
         // Normal case: find last matching target
         if target_positions.is_empty() {
             if is_switching {
-                // When switching, ONLY target vowels that already have a diacritic
-                // (don't add diacritics to plain vowels during switch)
+                // ...
                 for (i, c) in self.buf.iter().enumerate().rev() {
                     if targets.binary_search(&c.key).is_ok()
                         && c.tone != tone::NONE
@@ -959,142 +1012,30 @@ impl Engine {
             } else if tone_type == ToneType::Horn {
                 // For horn modifier, apply smart vowel selection based on Vietnamese phonology
                 target_positions = self.find_horn_target_with_switch(targets, tone_val);
+                println!(
+                    "DEBUG: find_horn_target_with_switch returned {:?}",
+                    target_positions
+                );
             } else {
-                // Non-horn modifiers (circumflex): use standard target matching
-                // For Telex circumflex (aa, ee, oo pattern), apply smart detection
-                // Based on reference implementation
-                let is_telex_circumflex = self.method == 0
-                    && tone_type == ToneType::Circumflex
-                    && matches!(key, keys::A | keys::E | keys::O);
+                // FALLBACK: Normal tone application (e.g. aa -> â, ee -> ê, oo -> ô)
+                // For Circumflex (doubling patterns), the target vowel must be ADJACENT (last in buffer)
+                // This prevents "khoeo" (k-h-o-e-o) from applying circumflex to first 'o' across intervening 'e'
+                let last_buf_idx = self.buf.len().saturating_sub(1);
 
-                if is_telex_circumflex {
-                    // Issue #312 FIX: Check if ADJACENT (immediately preceding) same vowel exists
-                    // and whether it has a VIETNAMESE tone mark (sắc/huyền/hỏi/ngã/nặng - NOT circumflex)
-                    //
-                    // Pattern "aa", "ee", "oo" should apply circumflex:
-                    // - "nghie" + "e" → "nghiê" (apply circumflex on FIRST 'e', because adjacent 'e' has NO vietnamese tone)
-                    // - Then "nghiê" + "e" → "nghiêe" → wait, this is wrong...
-                    //
-                    // Actually the correct logic is:
-                    // - Check if LAST character is SAME vowel AND has NO tone
-                    // - If yes, apply circumflex to transform THAT vowel
-                    // - Example: "nghie" + "e" → check last char is 'e', has tone=CIRCUMFLEX(1)
-                    //   But we want "ee" pattern to work!
-                    //
-                    // Let me re-think: When user types "nghieem":
-                    // 1. "n", "g", "h", "i" → "nghi"
-                    // 2. "e" → "nghie" (single e, no transform yet)
-                    // 3. "e" again → should detect "ee" pattern → apply circumflex to FIRST 'e' → "nghiê"
-                    // 4. But we just added another 'e', so buffer has "nghiêe"? No!
-                    //
-                    // The transform should: see "ee" pattern, apply circumflex to first 'e', CONSUME second 'e'
-                    // So buffer becomes "nghiê" (not "nghiêe")
-                    //
-                    // So the check should be: if LAST char is SAME vowel with NO tone (not even circumflex),
-                    // then apply circumflex. But if last char is SAME vowel WITH any tone, skip.
-                    //
-                    // Wait, that's what I had! Let me re-check the original issue...
-                    //
-                    // Original bug: "any_vowel_has_tone" checks ALL vowels (wrong!)
-                    // Example: "viết" - 'i' has NO tone, 'ê' has circumflex
-                    //          typing "viét" + "t" + "e" → "any_vowel_has_tone" = true (because ê)
-                    //          so skip applying "ee" pattern on 'e'
-                    //
-                    // Correct fix: Check if LAST occurrence of SAME key has VIETNAMESE tone (2-6)
-                    // NOT circumflex (1), because "ee" pattern should still work
-                    // Example: "nghie" + "e" → last 'e' has tone=0 → apply circumflex
-                    //          "viét" + "e" → last 'e' has tone=2(sắc) → skip
-                    let last_same_vowel = self
-                        .buf
-                        .iter()
-                        .rev()
-                        .find(|c| c.key == key && keys::is_vowel(c.key));
-
-                    if let Some(last_vowel) = last_same_vowel {
-                        // If last same vowel has VIETNAMESE tone mark (not circumflex/horn/breve),
-                        // skip applying new transform to avoid conflicts
-                        // tone: 0=none, 1=circumflex/horn/breve, 2=sắc, 3=huyền, 4=hỏi, 5=ngã, 6=nặng
-                        if last_vowel.tone >= 2 && last_vowel.tone <= 6 {
-                            return None;
-                        }
-                    }
-
-                    // Check if any vowel has a Vietnamese tone mark (sắc/huyền/hỏi/ngã/nặng)
-                    // If so, user is intentionally typing Vietnamese - skip English detection
-                    // Example: "viés" + "t" + "e" → should become "viết" (NOT blocked as English)
-                    let has_vietnamese_marks = self.buf.iter().any(|c| c.mark > 0);
-
-                    // English pattern detection: consonant separating same vowels
-                    // Pattern: V + C(s) + V (same vowel) → likely English multi-syllable
-                    // Examples: "ele" (element), "rele" (release), "dele" (delete)
-                    // Skip circumflex to preserve raw input for auto-restore
-                    // BUT: Skip this check if Vietnamese marks are present (intentional Vietnamese)
-                    //
-                    // Find position of same vowel in buffer (if exists)
-                    if !has_vietnamese_marks {
-                        let same_vowel_pos = self
-                            .buf
-                            .iter()
-                            .enumerate()
-                            .find(|(_, c)| c.key == key && keys::is_vowel(c.key))
-                            .map(|(i, _)| i);
-
-                        if let Some(vowel_pos) = same_vowel_pos {
-                            // Check if there are consonants between the existing vowel and current position
-                            let has_consonant_between = (vowel_pos + 1..self.buf.len())
-                                .any(|j| self.buf.get(j).is_some_and(|c| !keys::is_vowel(c.key)));
-
-                            if has_consonant_between {
-                                // Pattern like "ele", "olo", "ala" with consonant(s) between
-                                // This is likely English (element, release, delete, reverse, etc.)
-                                // Skip circumflex and add vowel as raw letter
-                                return None;
-                            }
-                        }
-                    }
-                }
-
-                for (i, c) in self.buf.iter().enumerate().rev() {
-                    if targets.binary_search(&c.key).is_ok() && c.tone == tone::NONE {
-                        target_positions.push(i);
-                        break;
+                // Check if last char in buffer matches target and has no tone
+                if let Some(last_char) = self.buf.get(last_buf_idx) {
+                    if targets.contains(&last_char.key) && last_char.tone == tone::NONE {
+                        // CRITICAL: For doubling patterns (aa, ee, oo), only apply if ADJACENT
+                        // i.e., the key being pressed is the same as the last char
+                        // This is already guaranteed because we're checking the last buffer char
+                        target_positions.push(last_buf_idx);
                     }
                 }
             }
         }
 
         if target_positions.is_empty() {
-            // Check if any target vowels already have the requested tone
-            //
-            // EXCEPTION: Don't absorb 'w' if last_transform was WAsVowel
-            // because try_w_as_vowel needs to handle the revert (ww → w)
-            let is_w_revert_pending =
-                key == keys::W && matches!(self.last_transform, Some(Transform::WAsVowel));
-
-            let has_tone_already = self
-                .buf
-                .iter()
-                .any(|c| targets.binary_search(&c.key).is_ok() && c.tone == tone_val);
-
-            // For Telex circumflex keys (a, e, o), DON'T absorb - let key append as raw letter
-            // This prevents buffer/screen desync: absorbing returns send(0,&[]) which
-            // Swift interprets as passthrough, causing screen to show the letter
-            // but buffer doesn't have it, leading to wrong backspace count on restore.
-            // Example bug: "element" → "êlment" + space → "êelement " (wrong!)
-            // Fix: return None so letter is added to buffer, keeping sync.
-            let is_telex_circumflex_key = self.method == 0
-                && tone_type == ToneType::Circumflex
-                && matches!(key, keys::A | keys::E | keys::O);
-
-            if has_tone_already && !is_w_revert_pending {
-                if is_telex_circumflex_key {
-                    // Don't absorb - let vowel append as raw letter to keep buffer/screen in sync
-                    return None;
-                }
-                // For non-Telex-circumflex cases (like VNI "u7o7"), absorb is safe
-                // because these are number keys that won't be passthrough as letters
-                return Some(Result::send(0, &[]));
-            }
+            // ...
             return None;
         }
 
@@ -1111,12 +1052,10 @@ impl Engine {
             }
 
             // Special case: switching from horn compound (ươ) to circumflex (uô)
-            // When switching to circumflex on 'o', also clear horn from adjacent 'u'
             if tone_type == ToneType::Circumflex {
                 for &pos in &target_positions {
                     if let Some(c) = self.buf.get(pos) {
                         if c.key == keys::O {
-                            // Check for adjacent 'u' with horn and clear it
                             if pos > 0 {
                                 if let Some(prev) = self.buf.get_mut(pos - 1) {
                                     if prev.key == keys::U && prev.tone == tone::HORN {
@@ -1137,57 +1076,50 @@ impl Engine {
                     }
                 }
             }
-
-            // Special case: switching from circumflex (uô) to horn compound (ươ)
-            // For standalone uo compound (no final consonant), add horn to adjacent 'u'
-            if tone_type == ToneType::Horn && self.has_uo_compound() {
-                // Check if this is a standalone compound (o is last vowel, no final consonant)
-                let has_final = target_positions.iter().any(|&pos| {
-                    pos + 1 < self.buf.len()
-                        && self
-                            .buf
-                            .get(pos + 1)
-                            .is_some_and(|c| !keys::is_vowel(c.key))
-                });
-
-                if !has_final {
-                    for &pos in &target_positions {
-                        if let Some(c) = self.buf.get(pos) {
-                            if c.key == keys::O {
-                                // Add horn to adjacent 'u' for compound
-                                if pos > 0 {
-                                    if let Some(prev) = self.buf.get_mut(pos - 1) {
-                                        if prev.key == keys::U && prev.tone == tone::NONE {
-                                            prev.tone = tone::HORN;
-                                            earliest_pos = earliest_pos.min(pos - 1);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // Apply new tone
         for &pos in &target_positions {
+            // Step 1: Check conditions
+            let should_skip = if tone_type == ToneType::Horn {
+                if let Some(c) = self.buf.get(pos) {
+                    if c.key == keys::U {
+                        let is_uo_context = if let Some(next) = self.buf.get(pos + 1) {
+                            next.key == keys::O
+                        } else {
+                            false
+                        };
+                        if is_uo_context {
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if should_skip {
+                continue;
+            }
+
+            // Step 2: Apply tone
             if let Some(c) = self.buf.get_mut(pos) {
                 c.tone = tone_val;
                 earliest_pos = earliest_pos.min(pos);
             }
         }
 
-        // Validate result: check for breve (ă) followed by vowel - NEVER valid in Vietnamese
-        // Issue #44: "tai" + 'w' → "tăi" is INVALID (ăi, ăo, ău, ăy don't exist)
-        // Only check this specific pattern, not all vowel patterns, to allow Telex shortcuts
-        // like "eie" → "êi" which may not be standard but are expected Telex behavior
+        // Validate result
         if tone_type == ToneType::Horn {
             let has_breve_vowel_pattern = target_positions.iter().any(|&pos| {
                 if let Some(c) = self.buf.get(pos) {
-                    // Check if this is 'a' with horn (breve) followed by another vowel
                     if c.key == keys::A {
-                        // Look for any vowel after this position
                         return (pos + 1..self.buf.len()).any(|i| {
                             self.buf
                                 .get(i)
@@ -1200,17 +1132,11 @@ impl Engine {
             });
 
             if has_breve_vowel_pattern {
-                // Revert: clear applied tones
-                for &pos in &target_positions {
-                    if let Some(c) = self.buf.get_mut(pos) {
-                        c.tone = tone::NONE;
-                    }
-                }
                 return None;
             }
         }
 
-        // Normalize ưo → ươ compound if horn was applied to 'u'
+        // Normalize ưo → ươ compound
         if let Some(compound_pos) = self.normalize_uo_compound() {
             earliest_pos = earliest_pos.min(compound_pos);
         }
@@ -1222,8 +1148,52 @@ impl Engine {
         if let Some((old_pos, _)) = self.reposition_tone_if_needed() {
             rebuild_pos = rebuild_pos.min(old_pos);
         }
+        if earliest_pos == usize::MAX {
+            return None;
+        }
 
-        Some(self.rebuild_from(rebuild_pos))
+        // VALIDATION CHECK: Verify the tone application resulted in valid Vietnamese
+        // If validation fails, this indicates English word typing - trigger instant restore
+        let simulated_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        let validation_result =
+            crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate(
+                &simulated_keys,
+            );
+        println!(
+            "DEBUG: try_tone validation check: keys={:?}, is_valid={}",
+            simulated_keys, validation_result.is_valid
+        );
+        if !validation_result.is_valid {
+            // Validation failed - revert the tone and trigger instant restore
+            println!(
+                "DEBUG: try_tone validation FAILED for keys={:?}, reverting tone",
+                simulated_keys
+            );
+            for &pos in &target_positions {
+                if let Some(c) = self.buf.get_mut(pos) {
+                    c.tone = tone::NONE;
+                }
+            }
+
+            // Check if instant restore is enabled and buffer has transforms
+            if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                let result = self.instant_restore_english();
+                self.sync_buffer_with_raw_input();
+                return Some(result);
+            }
+
+            // Otherwise, just pass through (don't apply tone)
+            return None;
+        }
+
+        // CRITICAL FIX: Track the modifier key in raw_input
+        println!(
+            "DEBUG: try_tone success for key={}, raw_input len BEFORE={}",
+            key,
+            self.raw_input.len()
+        );
+        // CRITICAL FIX: Track the modifier key in raw_input
+        return Some(self.rebuild_from(rebuild_pos));
     }
 
     /// Try to apply mark transformation (circumflex, breve, horn)
@@ -1241,9 +1211,31 @@ impl Engine {
         }
 
         // CRITICAL: Skip Vietnamese transform if English word detected
+        // But verify if appending this key KEEPS it English.
+        // DISABLED: This aggressive check blocks valid Vietnamese words that share prefixes with English words.
+        // E.g. "lawn" (law -> lă -> lăn). If we return None here, we force "law" and can never get "lăn".
+        // We should let the transform happen, and rely on `should_auto_restore` / `LanguageDecisionEngine`
+        // to resolve the conflict at word boundary (Space).
+        /*
         if self.is_english_word {
-            return None;
+            let mut temp_raw = self.raw_input.clone();
+            temp_raw.push(key, caps);
+
+            let raw_vec = temp_raw.as_slice();
+            let is_dict = crate::engine_v2::english::dictionary::Dictionary::is_common_english_word(
+                &raw_vec[..],
+            );
+
+            let phonotactic =
+                crate::engine_v2::english::phonotactic::PhonotacticEngine::analyze(&raw_vec[..]);
+
+            if is_dict || phonotactic.english_confidence >= 95 {
+                return None;
+            }
+
+            self.is_english_word = false;
         }
+        */
 
         // ═════════════════════════════════════════════════════════════════════
         // ENGLISH DETECTION: 3-Layer Architecture
@@ -1296,7 +1288,6 @@ impl Engine {
             && (self.method != 0 && self.method != 1)
             && !self.has_valid_initial()
         {
-            // Don't lock into English mode here; just decline the transform.
             return None;
         }
 
@@ -1343,20 +1334,21 @@ impl Engine {
         let has_final = self.has_final_consonant(last_vowel_pos);
         let has_qu = self.has_qu_initial();
         let has_gi = self.has_gi_initial();
+        // Limit tone movement to valid range
         let pos =
             Phonology::find_tone_position(&vowels, has_final, self.modern_tone, has_qu, has_gi);
 
-        // CRITICAL: Validate tone placement BEFORE get_mut (to avoid borrow checker issues)
-        // This prevents invalid combinations like "new" + w → "neư"
-        // E+U requires circumflex on E ("êu" valid, "eu"/"eư" invalid)
-        let mut simulated_tones: Vec<u8> = self.buf.iter().map(|ch| ch.tone).collect();
-        if pos < simulated_tones.len() {
-            simulated_tones[pos] = mark_val;
-        }
+        // DO NOT validate tone placement here using mark_val.
+        // mark_val is an ACCENT (Sắc, Huyền...), but is_valid_tone_placement
+        // checks HAT/HORN validity (tone::HORN, tone::CIRCUMFLEX).
+        // Passing mark_val (e.g. HUYEN=2) into simulated_tones causes it to be
+        // misinterpreted as HORN (2), causing false validation failures (e.g. a+Huyen -> a+Horn=Breve).
 
+        // We only check if the EXISTING buffer structure is valid before applying accent.
         let buffer_keys: Vec<u16> = self.buf.iter().map(|ch| ch.key).collect();
-        if !vietnamese::validation::is_valid_tone_placement(&buffer_keys, &simulated_tones) {
-            // Invalid tone placement - skip transform
+        let current_tones: Vec<u8> = self.buf.iter().map(|ch| ch.tone).collect();
+
+        if !vietnamese::validation::is_valid_tone_placement(&buffer_keys, &current_tones) {
             return None;
         }
 
@@ -1365,6 +1357,7 @@ impl Engine {
             self.last_transform = Some(Transform::Mark(key, mark_val));
             // Rebuild from the earlier position if compound was formed
             let rebuild_pos = rebuild_from_compound.map_or(pos, |cp| cp.min(pos));
+            // CRITICAL FIX: Track the modifier key in raw_input
             return Some(self.rebuild_from(rebuild_pos));
         }
 
@@ -1392,9 +1385,6 @@ impl Engine {
 
     /// Check for uo compound in buffer (any tone state)
     /// Delegates to vowel_compound module.
-    fn has_uo_compound(&self) -> bool {
-        vowel_compound::has_uo_compound(&self.buf)
-    }
 
     /// Check for complete ươ compound (both u and o have horn)
     /// Delegates to vowel_compound module.
@@ -1528,19 +1518,25 @@ impl Engine {
 
     /// Revert tone transformation
     fn revert_tone(&mut self, key: u16, caps: bool) -> Result {
+        // CRITICAL FIX: Always track modifier key in raw_input
         self.last_transform = None;
 
         for pos in self.buf.find_vowels().into_iter().rev() {
             if let Some(c) = self.buf.get_mut(pos) {
                 if c.tone > tone::NONE {
                     c.tone = tone::NONE;
+
+                    // POP from raw_input because the current toggle key is consumed
+                    // as a modifier, not as a literal character.
+                    self.raw_input.pop();
+
                     let result = self.revert_and_rebuild(pos, key, caps);
 
                     // CRITICAL FIX: Always mark as English after tone revert
                     // This prevents "off" → "òf" bug (o+f+f+f should be "off", not "òf")
                     // Rationale: If user reverted a tone (double modifier key), they're typing English
                     // Example: "o" + "f" → "ò", then "f" again → revert to "of"
-                    //          If they type "f" third time, it should be "off" (English), not "òf"
+                    //          If they type "f" third time, it should be "off" (English), not "òf")
                     self.is_english_word = true;
 
                     return result;
@@ -1553,12 +1549,18 @@ impl Engine {
 
     /// Revert mark transformation
     fn revert_mark(&mut self, key: u16, caps: bool) -> Result {
+        // CRITICAL FIX: Always track modifier key in raw_input
         self.last_transform = None;
 
         for pos in self.buf.find_vowels().into_iter().rev() {
             if let Some(c) = self.buf.get_mut(pos) {
                 if c.mark > mark::NONE {
                     c.mark = mark::NONE;
+
+                    // POP from raw_input because the current toggle key is consumed
+                    // as a modifier, not as a literal character.
+                    self.raw_input.pop();
+
                     let result = self.revert_and_rebuild(pos, key, caps);
 
                     // CRITICAL FIX: Always mark as English after mark revert
@@ -1623,7 +1625,7 @@ impl Engine {
     }
 
     /// Handle normal letter input
-    fn handle_normal_letter(&mut self, key: u16, caps: bool, shift: bool) -> Result {
+    fn handle_normal_letter(&mut self, key: u16, caps: bool, _shift: bool) -> Result {
         // Detect if typing special characters with Shift (e.g., @, #, $)
         // These indicate English input, so mark as English word
         //
@@ -1668,12 +1670,21 @@ impl Engine {
             if key == keys::O && self.normalize_uo_compound().is_some() {
                 // ươ compound formed - reposition tone if needed (ư→ơ)
                 if let Some((old_pos, _)) = self.reposition_tone_if_needed() {
+                    // Check restore before returning separate rebuild path
+                    if let Some(restored) = self.check_and_restore_english(1, false) {
+                        return restored;
+                    }
                     return self.rebuild_from_after_insert(old_pos);
                 }
 
                 // No tone to reposition - just output ơ
                 let vowel_char = chars::to_char(keys::O, caps, tone::HORN, 0).unwrap();
-                return Result::send(0, &[vowel_char]);
+                let output_res = Result::send(0, &[vowel_char]);
+                // Check restore
+                if let Some(restored) = self.check_and_restore_english(1, false) {
+                    return restored;
+                }
+                return output_res;
             }
 
             // Auto-correct tone position when new character changes the correct placement
@@ -1690,8 +1701,15 @@ impl Engine {
                 // Note: the new char was just added to buffer but NOT yet displayed
                 // So backspace = (chars from old_pos to BEFORE new char)
                 // And output = (chars from old_pos to end INCLUDING new char)
+                // Check restore
+                if let Some(restored) = self.check_and_restore_english(1, false) {
+                    return restored;
+                }
                 return self.rebuild_from_after_insert(old_pos);
             }
+
+            // No tone movement needed
+            // Fall through to update flags and check restore
 
             // Check if adding this letter creates invalid vowel pattern (foreign word detection)
             // Only revert if the horn transforms are from w-as-vowel (standalone w→ư),
@@ -1712,31 +1730,38 @@ impl Engine {
 
             // Detect English word patterns and mark as English
             // This will trigger auto-restore on space key
-            if !self.is_english_word {
-                if false {
-                    // is_foreign_word_pattern replaced by LanguageDecisionEngine::decide early rejection
+            //
+            // CRITICAL FIX: We must re-evaluate is_english_word on every keystroke.
+            // If we typed "caw" (English) -> true.
+            // Then typed "p" -> "cawp" (NOT English).
+            // We must reset to false so that "s" (next key) can be processed as a Tone.
+            if self.is_english_word {
+                // Check if it's STILL English
+                // Only check dictionary, as patterns (phonotactics) are more robust
+                // But we should use both for consistency.
+                let is_still_english =
+                    self.is_english_dictionary_word() || self.has_definite_english_pattern();
+
+                if !is_still_english {
+                    self.is_english_word = false;
+                }
+            } else {
+                if self.is_english_dictionary_word() || self.has_definite_english_pattern() {
                     self.is_english_word = true;
                 }
             }
         } else {
             // Non-letter character (number, symbol, etc.)
+            // Reset English word flag to prevent it from sticking to the next word
+            self.is_english_word = false;
             // Mark that this word has non-letter prefix to prevent false shortcut matches
-            // e.g., "149k" should NOT trigger shortcut "k" → "không"
-            // e.g., "@abc" should NOT trigger shortcut "abc"
             self.has_non_letter_prefix = true;
         }
 
-        // CRITICAL: Auto-restore if this is an English word with Vietnamese transforms
-        // This handles the case where dictionary lookup detected English word
-        // but Vietnamese transforms were already applied before detection
-        if self.is_english_word && self.instant_restore_enabled && self.has_vietnamese_transforms()
-        {
-            let result = self.instant_restore_english();
-            self.buf.clear();
-            for (k, c) in self.raw_input.iter() {
-                self.buf.push(Char::new(k, c));
-            }
-            return result;
+        // CRITICAL: Confidence-based instant restore after each letter
+        // Use standard function which handles 'revert' case (no transforms but diff length)
+        if let Some(restored) = self.check_and_restore_english(1, false) {
+            return restored;
         }
 
         Result::none()
@@ -1892,96 +1917,15 @@ impl Engine {
     }
 
     /// Find the start of the last syllable in buffer
-    /// Returns the index where the last syllable begins
-    /// Syllable boundaries: space, start of buffer, or after punctuation
-    ///
-    /// PERFORMANCE: This allows us to rebuild only the last syllable instead of entire buffer
-    /// OPTIMIZATION: Result is cached in Engine to avoid repeated scans during consecutive backspaces
-    fn find_last_syllable_boundary(&self) -> usize {
-        if self.buf.is_empty() {
-            return 0;
-        }
-
-        // OPTIMIZATION: Scan from end backwards (early exit on first boundary)
-        // Most common case: single syllable or boundary near end
-        for i in (0..self.buf.len()).rev() {
-            if let Some(c) = self.buf.get(i) {
-                // Space is a syllable boundary
-                if c.key == keys::SPACE {
-                    return i + 1;
-                }
-
-                // Punctuation is a syllable boundary
-                if !keys::is_letter(c.key) && c.key != keys::SPACE {
-                    return i + 1;
-                }
-            }
-        }
-
-        // No boundary found, entire buffer is one syllable
-        0
-    }
-
-    /// Count actual screen characters between positions
-    /// This is crucial for accurate backspace count calculation
-    /// Vietnamese diacritics are pre-composed, so 1 buffer position = 1 screen char
-    fn count_screen_chars(&self, start: usize, end: usize) -> usize {
-        let mut count = 0;
-        for i in start..end {
-            if self.buf.get(i).is_some() {
-                count += 1;
-            }
-        }
-        count
-    }
-
-    /// Check if character at position is part of a vowel compound
-    /// Vowel compounds: oa, uo, ie, ua, etc.
-    /// If true, deleting this char requires rebuilding the compound
-    fn is_part_of_vowel_compound(&self, pos: usize) -> bool {
-        let Some(c) = self.buf.get(pos) else {
-            return false;
-        };
-
-        // Only vowels can be part of compounds
-        if !keys::is_vowel(c.key) {
-            return false;
-        }
-
-        // Check if this vowel has tone/mark (indicates it's part of active compound)
-        if c.tone != tone::NONE || c.mark != mark::NONE {
-            return true;
-        }
-
-        // Check previous char for compound pattern
-        if pos > 0 {
-            if let Some(prev) = self.buf.get(pos - 1) {
-                if keys::is_vowel(prev.key) {
-                    // Two vowels in a row = compound (oa, uo, ie, etc.)
-                    return true;
-                }
-            }
-        }
-
-        // Check next char for compound pattern
-        if pos + 1 < self.buf.len() {
-            if let Some(next) = self.buf.get(pos + 1) {
-                if keys::is_vowel(next.key) {
-                    // This vowel followed by another = compound
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
 
     /// Rebuild buffer from `from` position and inject new text after backspacing
     /// Rebuild output from position after a new character was inserted
     ///
     /// Unlike rebuild_from, this accounts for the fact that the last character
     /// in the buffer was just added but NOT yet displayed on screen.
-    /// So backspace count = (chars from `from` to end - 1) because last char isn't on screen.
+    /// So backspace count = (chars from `from` to BEFORE the new char)
+    /// Because the last char (newly added) is not yet on screen, it doesn't need to be backspaced.
+    /// And output = (chars from `from` to end INCLUDING new char)
     fn rebuild_from_after_insert(&self, from: usize) -> Result {
         if self.buf.is_empty() {
             return Result::none();
@@ -2167,20 +2111,32 @@ impl Engine {
             return true;
         }
 
-        // 2. Strong English Pattern (Phonotactic > 95%)
+        // 2. Vietnamese Validation
+        // If the word structure is VALID Vietnamese, we treat it as Vietnamese
+        // (unless it was already found in the English Dictionary above)
+        // Use buffer keys (with transforms applied) PLUS the current key being typed
+        // The buffer has "biê" and we're about to add "n", so validate "biên"
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
+        let mut buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        // Add the current key that's about to be typed (raw_input already includes it)
+        if let Some(&(last_key, _)) = raw_keys.last() {
+            buf_keys.push(last_key);
+        }
+        let viet_val = VietnameseSyllableValidator::validate(&buf_keys);
+
+        if viet_val.is_valid {
+            return false;
+        }
+
+        // 3. Strong English Pattern (Phonotactic > 95%) AND Invalid Vietnamese
         let phonotactic = PhonotacticEngine::analyze(&raw_keys);
 
         if phonotactic.english_confidence >= 95 {
             return true;
         }
 
-        // 3. Vietnamese Validation
-        // If it looks somewhat English (>0%) AND is Invalid Vietnamese -> Treat as English
-        let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        let viet_val = VietnameseSyllableValidator::validate(&buf_keys);
-
-        if phonotactic.is_english() && !viet_val.is_valid {
+        // 4. Heuristic: Looks English (>0%) AND is Invalid Vietnamese
+        if phonotactic.is_english() {
             // Additional check: Ensure it's not just a Vietnamese prefix typed rapidly
             // If phonotactic confidence is high enough (>50) or multiple layers matched
             if phonotactic.english_confidence >= 80 || phonotactic.matched_layers.count_ones() >= 2
@@ -2217,6 +2173,22 @@ impl Engine {
             }
         }
 
+        // CRITICAL: Check Vietnamese validity FIRST
+        // Use buffer keys (with transforms applied) PLUS the current key being typed
+        // The buffer has "biê" and we're about to add "n", so validate "biên"
+        // This prevents valid Vietnamese like "biên" from being marked as English
+        //
+        // IMPORTANT: Must use validate_with_tones to include circumflex/horn info!
+        // Without tones, validator sees ['b','i','e','n'] and rejects 'ien' as invalid.
+        // With tones, validator sees 'e' has circumflex, making 'iên' valid.
+        let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        let buf_tones: Vec<u8> = self.buf.iter().map(|c| c.tone).collect();
+        // Check validation of the CURRENT buffer (which already includes the new key)
+        let viet_val = crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate_with_tones(&buf_keys, &buf_tones);
+        if viet_val.is_valid {
+            return false;
+        }
+
         let phonotactic = PhonotacticEngine::analyze(&raw_keys);
 
         // Highly confident English (>=95%) is "definite"
@@ -2251,6 +2223,140 @@ impl Engine {
         }
     }
 
+    /// Check if current buffer should be restored to English based on confidence
+    /// Returns Some(Result) if restore happened, None otherwise
+    fn check_and_restore_english(&mut self, offset: u8, strict_mode: bool) -> Option<Result> {
+        if !self.instant_restore_enabled {
+            return None;
+        }
+
+        // Restore conditions:
+        // 1. Has transforms (tones/marks)
+        // 2. OR Buffer length mismatch (keystrokes consumed by revert/transforms)
+        if !self.has_vietnamese_transforms() && self.buf.len() == self.raw_input.len() {
+            return None;
+        }
+
+        let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
+        let phonotactic =
+            crate::engine_v2::english::phonotactic::PhonotacticEngine::analyze(&raw_keys);
+
+        // Get Vietnamese validation
+        let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        let viet_validation =
+            crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate(
+                &buf_keys,
+            );
+
+        // Check dictionary
+        let raw_key_list: Vec<u16> = raw_keys.iter().map(|(k, _)| *k).collect();
+        let _is_dict = crate::engine_v2::english::dictionary::Dictionary::is_english(&raw_key_list);
+
+        // Restore if: high English confidence (>=80) OR dictionary match
+        // But if buffer is VALID VIETNAMESE, be more conservative:
+        // - Require very high confidence (>=90) AND dictionary match to override valid Vietnamese
+        // - OR require invalid Vietnamese syllable
+        // SPECIAL CASE: Short valid Vietnamese words (2 chars) should be restored more aggressively
+        // because they're usually English prefixes (re, to, me, so, etc.)
+
+        let should_restore = if viet_validation.is_valid {
+            // Vietnamese collision case (e.g. "ban", "ca", "to", "moe" -> "me")
+            // Only restore if we are SUPER confident it's English
+            // CRITICAL FIX: Check dictionary against RAW input, not transformed buffer
+            let raw_keys_only: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
+            let is_raw_dict =
+                crate::engine_v2::english::dictionary::Dictionary::is_english(&raw_keys_only);
+
+            // SPECIAL HANDLING: For short 2-character valid Vietnamese words that are NOT
+            // in the Vietnamese dictionary (like "re" which appears in English but not as standalone Vietnamese),
+            // be more aggressive about restoration when tone/mark is applied.
+            // These are usually English prefixes (re, de, to, so, me, etc.) followed by tone modifiers.
+            // This catches cases like "rest" → tone on "e" → "ré" → restore to "res"
+            //
+            // EXCEPTION: If the user explicitly typed a Telex tone key (s, f, r, x, j) to add the mark,
+            // we should trust the user's intent to type Vietnamese for these ambiguous short words,
+            // UNLESS the word is in the English dictionary (handled separately).
+            // This fixes the "rẻ" case (typed "rer") being restored to "rer".
+            let is_telex_tone_key =
+                if self.method == crate::engine::types::config::InputMethod::Telex as u8 {
+                    use crate::data::keys::*;
+                    let last = raw_keys_only.last().cloned().unwrap_or(0);
+                    matches!(last, S | F | R | X | J | Z)
+                } else {
+                    false
+                };
+
+            let is_short_undocumented =
+                self.buf.len() <= 2 && self.has_vietnamese_transforms() && !is_raw_dict;
+
+            if is_short_undocumented {
+                // For short undocumented (not in Vietnamese dictionary) words with transforms,
+                // use lower threshold: 75. These are likely English prefixes with accidental tone.
+                if is_telex_tone_key {
+                    // If user extensively used a tone key, require HIGH confidence or dictionary match.
+                    // Since dictionary match is false here (is_raw_dict=false), we basically disable auto-restore
+                    // for this case unless confidence is super high (e.g. 95+), implies very strong English pattern.
+                    // "rer" has 75 confidence. "mos" has ?
+                    phonotactic.english_confidence >= 95
+                } else {
+                    phonotactic.english_confidence >= 75
+                }
+            } else {
+                // For documented Vietnamese words or longer words, use conservative threshold: 90
+                // "most" has confidence 91 but isn't in simple dictionary.
+                (phonotactic.english_confidence >= 90)
+                    || (phonotactic.english_confidence >= 80 && is_raw_dict)
+            }
+        } else {
+            // Invalid Vietnamese - AGGRESSIVE restore
+            // If it's not valid Vietnamese (e.g., "res", "xyz"), we should restore to English
+            // unless it looks like Vietnamese phonotactics.
+            // Lowered threshold to 60 because invalid Vietnamese SHOULD be restored.
+            // This catches short words like "res" (confidence 75), "off" (confidence 70), etc.
+            let raw_keys_only: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
+
+            let is_raw_dict =
+                crate::engine_v2::english::dictionary::Dictionary::is_english(&raw_keys_only);
+
+            // STRICT MODE FIX:
+            // When reverting (e.g. F+F or Z+Z toggle), we should ONLY restore if the word
+            // is DEFINITELY English (in dictionary).
+            // "reff" -> not dict -> keep Vietnamese revert "ref".
+            // "off" -> in dict -> restore English "off".
+            if strict_mode {
+                is_raw_dict
+            } else {
+                phonotactic.english_confidence >= 60 || is_raw_dict
+            }
+        };
+
+        // Use the unused variable to silence lint
+        let _ = viet_validation;
+
+        if should_restore {
+            self.is_english_word = true;
+            let mut result = self.instant_restore_english();
+            // Adjust backspace to account for pending characters (buffer > screen)
+            result.backspace = result.backspace.saturating_sub(offset);
+
+            self.sync_buffer_with_raw_input();
+            return Some(result);
+        }
+
+        None
+    }
+
+    /// Rebuild output from entire buffer (used after transform when we need full rebuild)
+    fn rebuild_output_from_entire_buffer(&self) -> Result {
+        let buf_len = self.buf.len();
+        if buf_len == 0 {
+            return Result::none();
+        }
+
+        let chars: Vec<char> = self.buf.to_full_string().chars().collect();
+        Result::send(buf_len as u8, &chars)
+    }
+
     /// Advanced phonotactic analysis for English detection
     /// Uses 8-layer matrix-based detection for high confidence
     pub fn analyze_phonotactic_english(&self) -> phonotactic::PhonotacticResult {
@@ -2269,6 +2375,8 @@ impl Engine {
     pub fn should_auto_restore(&self) -> bool {
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
         let phonotactic = PhonotacticEngine::analyze(&raw_keys);
+
+        let _is_restore = raw_keys.len() == self.buf.len();
 
         // CRITICAL FIX: Don't restore Vietnamese words with compound vowels + marks
         // Example: "trường" has complete ươ compound with huyền mark (f) - definitely Vietnamese!
@@ -2302,9 +2410,22 @@ impl Engine {
         }
 
         // LAYER 2 (FINAL): Dictionary check as tie-breaker
-        // Only restore dictionary words if they have NO Vietnamese transforms
-        // (if they have transforms like diacritics, user likely wants Vietnamese)
-        if !self.has_vietnamese_transforms() && self.is_english_dictionary_word() {
+        // LAYER 2 (FINAL): Dictionary check as tie-breaker
+        // Trust the dictionary presence (conflicts were filtered at generation time)
+        if self.is_english_dictionary_word() {
+            // FIX: If the word is a valid Vietnamese word AND contains transforms (e.g. "lawn" -> "lăn"),
+            // we should prefer the Vietnamese word in Vietnamese mode.
+            // This prevents common valid words like "lăn", "râu" (row), "vơ" (vow) from being auto-restored.
+            // Exception: If the user explicitly wants the English word, they can use Esc or disable auto-restore.
+            if self.has_vietnamese_transforms() && vietnamese_validation.is_valid {
+                // Check strength of English signal (e.g. suffix match like -ore in "more")
+                // If extremely confident, we prefer the English dictionary word even if it happens to be valid Vietnamese structure.
+                // Threshold 90 is safe because "lawn" has ~0 confidence, "more" has ~90 confidence.
+                if phonotactic.english_confidence >= 90 {
+                    return true;
+                }
+                return false;
+            }
             return true;
         }
 
@@ -2332,11 +2453,11 @@ impl Engine {
         }
 
         // LAYER 2 (FINAL): Dictionary check as confidence booster
-        // If word is in dictionary AND has no Vietnamese transforms, boost to 100%
+        // If word is in dictionary, boost to 100% confidence (conflicts filtered offline)
         use crate::engine_v2::english::dictionary::Dictionary;
         let keys_only: Vec<u16> = raw_keys.iter().map(|(k, _)| *k).collect();
-        if !self.has_vietnamese_transforms() && Dictionary::is_english(&keys_only) {
-            return 100; // Dictionary match with no transforms = 100% confidence
+        if Dictionary::is_english(&keys_only) {
+            return 100; // Dictionary match = 100% confidence
         }
 
         // Return phonotactic confidence (may be low, but it's the best we have)

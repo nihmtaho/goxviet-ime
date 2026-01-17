@@ -3,13 +3,13 @@
 //! Pattern-based transformation for Vietnamese diacritics.
 //! Scans entire buffer instead of case-by-case processing.
 
-use crate::engine::buffer::Buffer;
-use crate::engine::vietnamese::tone_positioning;
 use crate::data::{
     chars::{mark, tone},
     keys,
     vowel::Phonology,
 };
+use crate::engine::buffer::{Buffer, MAX};
+use crate::engine::vietnamese::tone_positioning;
 use crate::utils;
 
 /// Modifier type detected from key
@@ -58,7 +58,13 @@ impl TransformResult {
 ///
 /// Pattern-based: scans buffer for matching vowels
 pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8) -> TransformResult {
-    let buffer_keys: Vec<u16> = buf.iter().map(|c| c.key).collect();
+    let len = buf.len();
+    let mut buffer_keys = [0u16; MAX];
+    for i in 0..len {
+        // SAFE: i < len <= MAX
+        buffer_keys[i] = buf.get(i).map(|c| c.key).unwrap_or(0);
+    }
+    let buffer_keys = &buffer_keys[..len];
 
     // Find target vowels based on key and method
     let targets = find_tone_targets(&buffer_keys, key, tone_value, method);
@@ -89,15 +95,15 @@ pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8) -> Tra
 
 /// Find which vowel positions should receive the tone modifier
 fn find_tone_targets(buffer_keys: &[u16], key: u16, tone_value: u8, method: u8) -> Vec<usize> {
-    let mut targets = vec![];
+    let mut targets = Vec::with_capacity(buffer_keys.len());
 
     // Find all vowel positions
-    let vowel_positions: Vec<usize> = buffer_keys
-        .iter()
-        .enumerate()
-        .filter(|(_, &k)| keys::is_vowel(k))
-        .map(|(i, _)| i)
-        .collect();
+    let mut vowel_positions = Vec::with_capacity(buffer_keys.len());
+    for (i, &k) in buffer_keys.iter().enumerate() {
+        if keys::is_vowel(k) {
+            vowel_positions.push(i);
+        }
+    }
 
     if vowel_positions.is_empty() {
         return targets;
@@ -164,7 +170,7 @@ pub fn apply_mark(buf: &mut Buffer, mark_value: u8, _modern: bool) -> TransformR
     // but tone_positioning handles the core diacritic priority logic
     let last_vowel_pos = vowels.last().map(|v| v.pos).unwrap_or(0);
     let has_final = utils::has_final_consonant(buf, last_vowel_pos);
-    
+
     // Use simplified positioning that prioritizes diacritics (Rule 1)
     let pos = tone_positioning::find_mark_position(&vowels, has_final);
 
@@ -202,24 +208,21 @@ pub fn apply_stroke(buf: &mut Buffer) -> TransformResult {
 
 /// Remove last diacritic (mark first, then tone)
 pub fn apply_remove(buf: &mut Buffer) -> TransformResult {
-    let vowel_positions = buf.find_vowels();
-
-    // Try to remove mark first
-    for pos in vowel_positions.iter().rev() {
-        if let Some(c) = buf.get_mut(*pos) {
-            if c.mark > mark::NONE {
+    // Walk backwards to remove mark first, then tone, without allocating vowel list
+    for idx in (0..buf.len()).rev() {
+        if let Some(c) = buf.get_mut(idx) {
+            if keys::is_vowel(c.key) && c.mark > mark::NONE {
                 c.mark = mark::NONE;
-                return TransformResult::success(vec![*pos]);
+                return TransformResult::success(vec![idx]);
             }
         }
     }
 
-    // Then try to remove tone
-    for pos in vowel_positions.iter().rev() {
-        if let Some(c) = buf.get_mut(*pos) {
-            if c.tone > tone::NONE {
+    for idx in (0..buf.len()).rev() {
+        if let Some(c) = buf.get_mut(idx) {
+            if keys::is_vowel(c.key) && c.tone > tone::NONE {
                 c.tone = tone::NONE;
-                return TransformResult::success(vec![*pos]);
+                return TransformResult::success(vec![idx]);
             }
         }
     }
@@ -229,13 +232,11 @@ pub fn apply_remove(buf: &mut Buffer) -> TransformResult {
 
 /// Revert tone transformation
 pub fn revert_tone(buf: &mut Buffer, target_key: u16) -> TransformResult {
-    let vowel_positions = buf.find_vowels();
-
-    for pos in vowel_positions.iter().rev() {
-        if let Some(c) = buf.get_mut(*pos) {
-            if c.key == target_key && c.tone > tone::NONE {
+    for idx in (0..buf.len()).rev() {
+        if let Some(c) = buf.get_mut(idx) {
+            if c.key == target_key && keys::is_vowel(c.key) && c.tone > tone::NONE {
                 c.tone = tone::NONE;
-                return TransformResult::success(vec![*pos]);
+                return TransformResult::success(vec![idx]);
             }
         }
     }
@@ -245,13 +246,11 @@ pub fn revert_tone(buf: &mut Buffer, target_key: u16) -> TransformResult {
 
 /// Revert mark transformation
 pub fn revert_mark(buf: &mut Buffer) -> TransformResult {
-    let vowel_positions = buf.find_vowels();
-
-    for pos in vowel_positions.iter().rev() {
-        if let Some(c) = buf.get_mut(*pos) {
-            if c.mark > mark::NONE {
+    for idx in (0..buf.len()).rev() {
+        if let Some(c) = buf.get_mut(idx) {
+            if keys::is_vowel(c.key) && c.mark > mark::NONE {
                 c.mark = mark::NONE;
-                return TransformResult::success(vec![*pos]);
+                return TransformResult::success(vec![idx]);
             }
         }
     }
@@ -273,12 +272,10 @@ pub fn revert_stroke(buf: &mut Buffer) -> TransformResult {
     TransformResult::none()
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use crate::engine::buffer::Char;
     use super::*;
+    use crate::engine::buffer::Char;
 
     fn setup_buffer(s: &str) -> Buffer {
         let mut buf = Buffer::new();
@@ -349,20 +346,25 @@ mod tests {
         // Buffer positions: i(0), e(1)
         // Note: setup_buffer skips consonants, so "vie" becomes just [i, e]
         let mut buf = setup_buffer("ie");
-        
+
         // Apply mark - should go on 'e' at position 1 (second vowel, Rule 2)
         let result = apply_mark(&mut buf, mark::SAC, true);
         assert!(result.applied);
-        
+
         // Find which vowel has the mark
-        let marked_pos = buf.iter()
+        let marked_pos = buf
+            .iter()
             .enumerate()
             .find(|(_, c)| c.mark > 0)
             .map(|(i, _)| i);
-        
+
         assert!(marked_pos.is_some(), "A vowel should have the mark");
         // For "ie": i(0) and e(1) are vowels, mark should be on e(1) by Rule 2
-        assert_eq!(marked_pos.unwrap(), 1, "Mark should be on 'e' (second vowel)");
+        assert_eq!(
+            marked_pos.unwrap(),
+            1,
+            "Mark should be on 'e' (second vowel)"
+        );
     }
 
     #[test]
@@ -371,7 +373,11 @@ mod tests {
         let mut buf = setup_buffer("hoa");
         let result = apply_mark(&mut buf, mark::SAC, true);
         assert!(result.applied);
-        assert_eq!(buf.get(2).unwrap().mark, mark::SAC, "Mark on 'a' (second vowel)");
+        assert_eq!(
+            buf.get(2).unwrap().mark,
+            mark::SAC,
+            "Mark on 'a' (second vowel)"
+        );
     }
 
     #[test]
@@ -379,23 +385,28 @@ mod tests {
         // Test: uo compound vowel
         // Buffer: u(0), o(1)
         let mut buf = setup_buffer("uo");
-        
+
         // Add circumflex to 'o' to make 'ô'
         if let Some(c) = buf.get_mut(1) {
             c.tone = tone::CIRCUMFLEX; // o → ô
         }
-        
+
         // Apply mark - should go on ô (position 1) by Rule 1
         let result = apply_mark(&mut buf, mark::SAC, true);
         assert!(result.applied);
-        
+
         // Find which position has the mark
-        let marked_pos = buf.iter()
+        let marked_pos = buf
+            .iter()
             .enumerate()
             .find(|(_, c)| c.mark > 0)
             .map(|(i, _)| i);
-        
-        assert_eq!(marked_pos, Some(1), "Mark should be on ô (diacritic priority)");
+
+        assert_eq!(
+            marked_pos,
+            Some(1),
+            "Mark should be on ô (diacritic priority)"
+        );
     }
 
     #[test]
@@ -404,21 +415,33 @@ mod tests {
         // Scenario: ie + mark → ié (mark on e, Rule 2: second vowel)
         //           ié + e (e→ê) → iết (mark MUST move to ê, Rule 1: diacritic priority)
         let mut buf = setup_buffer("ie");
-        
+
         // Step 1: Apply mark (sắc) - should go on 'e' (position 1, Rule 2)
         let result = apply_mark(&mut buf, mark::SAC, true);
         assert!(result.applied, "Mark should be applied");
-        assert_eq!(buf.get(1).unwrap().mark, mark::SAC, "Mark should be on 'e' initially");
-        
+        assert_eq!(
+            buf.get(1).unwrap().mark,
+            mark::SAC,
+            "Mark should be on 'e' initially"
+        );
+
         // Step 2: Add circumflex to 'e' to make 'ê'
         let result = apply_tone(&mut buf, keys::E, tone::CIRCUMFLEX, 0);
         assert!(result.applied, "Circumflex should be applied");
-        assert_eq!(buf.get(1).unwrap().tone, tone::CIRCUMFLEX, "'e' should become 'ê'");
-        
+        assert_eq!(
+            buf.get(1).unwrap().tone,
+            tone::CIRCUMFLEX,
+            "'e' should become 'ê'"
+        );
+
         // Step 3: Verify mark is STILL on position 1 (now 'ê')
         // The mark should have been repositioned automatically by apply_tone
-        assert_eq!(buf.get(1).unwrap().mark, mark::SAC, "Mark should stay on 'ê' (diacritic priority)");
-        
+        assert_eq!(
+            buf.get(1).unwrap().mark,
+            mark::SAC,
+            "Mark should stay on 'ê' (diacritic priority)"
+        );
+
         // Verify 'i' has no mark
         assert_eq!(buf.get(0).unwrap().mark, 0, "'i' should have no mark");
     }
@@ -428,26 +451,31 @@ mod tests {
         // Test: uoi → mark on second vowel (o)
         //       uoi + w → ươi (u→ư, o→ơ) → mark should move to ơ (middle diacritic)
         let mut buf = setup_buffer("uoi");
-        
+
         // Apply mark first - should go on 'o' (position 1, second vowel)
         let result = apply_mark(&mut buf, mark::SAC, true);
         assert!(result.applied);
-        let marked_before = buf.iter()
+        let marked_before = buf
+            .iter()
             .enumerate()
             .find(|(_, c)| c.mark > 0)
             .map(|(i, _)| i);
         assert_eq!(marked_before, Some(1), "Mark should be on 'o' initially");
-        
+
         // Add horn (w) - both u and o should get horn
         let result = apply_tone(&mut buf, keys::W, tone::HORN, 0);
         assert!(result.applied);
-        
+
         // Verify both u and o have horn
         assert_eq!(buf.get(0).unwrap().tone, tone::HORN, "'u' should have horn");
         assert_eq!(buf.get(1).unwrap().tone, tone::HORN, "'o' should have horn");
-        
+
         // Verify mark is still on position 1 (now 'ơ')
         // Since both ư and ơ have diacritics, and ơ is in middle, it keeps the mark
-        assert_eq!(buf.get(1).unwrap().mark, mark::SAC, "Mark should stay on 'ơ'");
+        assert_eq!(
+            buf.get(1).unwrap().mark,
+            mark::SAC,
+            "Mark should stay on 'ơ'"
+        );
     }
 }

@@ -265,18 +265,33 @@ impl Phonology {
         has_qu_initial: bool,
         has_gi_initial: bool,
     ) -> usize {
-        match vowels.len() {
+        // Special handling for 'gi': treat 'i' as consonant part
+        // Only if followed by another vowel (e.g., "giá", "giường")
+        // If 'gi' stands alone (e.g., "gì"), 'i' is the main vowel
+        // Special handling for 'gi': treat 'i' as consonant part
+        // Only if followed by another vowel (e.g., "giá", "giường")
+        // If 'gi' stands alone (e.g., "gì"), 'i' is the main vowel
+        // Similarly for 'qu': 'u' is consonant part (glide), unless 'qu' stands alone (impossible in VN)
+        let effective_vowels = if has_gi_initial && vowels.len() > 1 && vowels[0].key == keys::I {
+            &vowels[1..]
+        } else if has_qu_initial && vowels.len() > 1 && vowels[0].key == keys::U {
+            &vowels[1..]
+        } else {
+            vowels
+        };
+
+        match effective_vowels.len() {
             0 => 0,
-            1 => vowels[0].pos,
+            1 => effective_vowels[0].pos,
             2 => Self::find_diphthong_position(
-                vowels,
+                effective_vowels,
                 has_final_consonant,
                 modern,
                 has_qu_initial,
                 has_gi_initial,
             ),
-            3 => Self::find_triphthong_position(vowels),
-            _ => Self::find_default_position(vowels),
+            3 => Self::find_triphthong_position(effective_vowels),
+            _ => Self::find_default_position(effective_vowels),
         }
     }
 

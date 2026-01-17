@@ -9,6 +9,7 @@
 
 # Documentation & Examples (không track)
 .github/
+.claude/
 docs/
 !docs/release-note/
 example-project/
