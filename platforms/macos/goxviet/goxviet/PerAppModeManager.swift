@@ -5,6 +5,7 @@
 //  Manages per-app Gõ Việt input mode settings
 //  Default: English input (Vietnamese disabled)
 //  Only tracks apps with Vietnamese ENABLED (max 100 apps)
+//  Includes special panel app detection (Spotlight, Raycast)
 //
 
 import Foundation
@@ -23,6 +24,9 @@ class PerAppModeManager {
     
     /// Notification observer token
     private var observer: NSObjectProtocol?
+    
+    /// Timer for polling special panel apps (Spotlight, Raycast)
+    private var pollingTimer: Timer?
     
     /// Whether the manager is currently active
     private(set) var isRunning: Bool = false
@@ -56,6 +60,7 @@ class PerAppModeManager {
         if let frontmostApp = NSWorkspace.shared.frontmostApplication,
            let bundleId = frontmostApp.bundleIdentifier {
             currentBundleId = bundleId
+            SpecialPanelAppDetector.updateLastFrontMostApp(bundleId)
             Log.info("PerAppModeManager started (current app: \(bundleId))")
             
             // Note: We no longer record all apps as "known" on start
@@ -68,6 +73,10 @@ class PerAppModeManager {
         } else {
             Log.info("PerAppModeManager started")
         }
+        
+        // Start polling timer for special panel apps (Spotlight, Raycast)
+        // These apps don't trigger NSWorkspaceDidActivateApplicationNotification
+        startPollingTimer()
     }
     
     /// Stop observing app switches
@@ -80,6 +89,9 @@ class PerAppModeManager {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             self.observer = nil
         }
+        
+        // Stop polling timer
+        stopPollingTimer()
         
         isRunning = false
         currentBundleId = nil
@@ -104,6 +116,10 @@ class PerAppModeManager {
         
         let appName = app.localizedName ?? bundleId
         Log.info("App switched: \(appName) (\(bundleId))")
+        
+        // Invalidate special panel app cache on app switch
+        SpecialPanelAppDetector.invalidateCache()
+        SpecialPanelAppDetector.updateLastFrontMostApp(bundleId)
         
         // Update current bundle ID
         let previousBundleId = currentBundleId
@@ -211,6 +227,77 @@ class PerAppModeManager {
             
             currentBundleId = previousId
             handleActivationNotification(notification)
+        }
+    }
+    
+    // MARK: - Special Panel App Detection
+    
+    /// Start polling timer for special panel apps (Spotlight, Raycast)
+    /// PERFORMANCE: 200ms polling interval with cached results (300ms TTL)
+    private func startPollingTimer() {
+        // Stop existing timer if any
+        stopPollingTimer()
+        
+        // Create new timer with 200ms interval
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            self?.checkForSpecialPanelApp()
+        }
+        
+        // Ensure timer runs even when UI is scrolling/tracking
+        if let timer = pollingTimer {
+            RunLoop.current.add(timer, forMode: .common)
+        }
+        
+        Log.info("Special panel polling timer started")
+    }
+    
+    /// Stop polling timer
+    private func stopPollingTimer() {
+        pollingTimer?.invalidate()
+        pollingTimer = nil
+    }
+    
+    /// Check for special panel app activation/deactivation
+    /// Called by polling timer (200ms interval)
+    private func checkForSpecialPanelApp() {
+        let (appChanged, newBundleId, isSpecialPanel) = SpecialPanelAppDetector.checkForAppChange()
+        
+        guard appChanged else {
+            return
+        }
+        
+        // Handle app change
+        if let bundleId = newBundleId {
+            handleAppSwitch(to: bundleId, isSpecialPanel: isSpecialPanel)
+        }
+    }
+    
+    /// Handle app switch (both normal and special panel apps)
+    private func handleAppSwitch(to bundleId: String, isSpecialPanel: Bool) {
+        // Ignore if it's the same app
+        guard bundleId != currentBundleId else {
+            return
+        }
+        
+        let appType = isSpecialPanel ? "special panel" : "normal"
+        Log.info("App switched (\(appType)): \(bundleId)")
+        
+        // Save mode for previous app if smart mode is enabled
+        if let previousId = currentBundleId,
+           AppState.shared.isSmartModeEnabled {
+            let currentMode = AppState.shared.isEnabled
+            AppState.shared.setPerAppMode(bundleId: previousId, enabled: currentMode)
+        }
+        
+        // Update current bundle ID
+        currentBundleId = bundleId
+        
+        // Clear composition buffer to avoid inconsistencies
+        ime_clear()
+        
+        // Restore mode for new app if smart mode is enabled
+        if AppState.shared.isSmartModeEnabled {
+            restoreModeForCurrentApp()
         }
     }
 }
