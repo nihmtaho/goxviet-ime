@@ -64,6 +64,11 @@ class InputManager {
         ime_free_tone(freeTone)
         Log.info("Loaded free tone: \(freeTone ? "enabled" : "disabled")")
         
+        // Apply saved instant restore setting
+        let instantRestore = AppState.shared.instantRestoreEnabled
+        ime_instant_restore(instantRestore)
+        Log.info("Loaded instant restore: \(instantRestore ? "enabled" : "disabled")")
+        
         // Set initial enabled state (will be overridden by per-app mode if enabled)
         ime_enabled(AppState.shared.isEnabled)
         Log.info("Initial Gõ Việt input state: \(AppState.shared.isEnabled ? "enabled" : "disabled")")
@@ -218,6 +223,12 @@ class InputManager {
         AppState.shared.modernToneStyle = modern
         ime_modern(modern)
         Log.info("Modern tone style: \(modern ? "enabled" : "disabled")")
+    }
+    
+    func setInstantRestore(_ enabled: Bool) {
+        AppState.shared.instantRestoreEnabled = enabled
+        ime_instant_restore(enabled)
+        Log.info("Instant auto-restore: \(enabled ? "enabled" : "disabled")")
     }
     
     func reloadShortcuts() {

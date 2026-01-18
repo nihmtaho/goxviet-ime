@@ -61,6 +61,9 @@ void ime_free_tone(bool enabled);
 /// Use modern orthography for tone placement
 void ime_modern(bool modern);
 
+/// Enable instant auto-restore for English words
+void ime_instant_restore(bool enabled);
+
 // ============================================================
 // Shortcut Management
 // ============================================================

@@ -199,6 +199,19 @@ pub extern "C" fn ime_modern(modern: bool) {
     }
 }
 
+/// Set whether to enable instant auto-restore for English words.
+///
+/// When `enabled` is true (default), restores English words immediately upon detection.
+/// When `enabled` is false, auto-restore is disabled.
+/// No-op if engine not initialized.
+#[no_mangle]
+pub extern "C" fn ime_instant_restore(enabled: bool) {
+    let mut guard = lock_engine();
+    if let Some(ref mut e) = *guard {
+        e.set_english_auto_restore(enabled);
+    }
+}
+
 /// Get the current buffer as a C string.
 ///
 /// # Safety

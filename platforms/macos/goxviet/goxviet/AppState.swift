@@ -93,6 +93,16 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(newValue, forKey: Keys.freeTone)
         }
     }
+    
+    /// Instant auto-restore for English words
+    var instantRestoreEnabled: Bool {
+        get {
+            return UserDefaults.standard.bool(forKey: Keys.instantRestore)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Keys.instantRestore)
+        }
+    }
 
     /// Auto-disable Vietnamese when non-Latin input sources are active
     /// (e.g., Japanese, Korean, Chinese keyboards)
@@ -178,6 +188,7 @@ class AppState: ObservableObject {
         static let modernToneStyle = "com.goxviet.ime.modernTone"
         static let escRestore = "com.goxviet.ime.escRestore"
         static let freeTone = "com.goxviet.ime.freeTone"
+        static let instantRestore = "com.goxviet.ime.instantRestore"
         static let perAppModes = "com.goxviet.ime.perAppModes"
         static let knownApps = "com.goxviet.ime.knownApps"
         static let autoDisableNonLatin = "com.goxviet.ime.autoDisableNonLatin"
@@ -211,6 +222,7 @@ class AppState: ObservableObject {
             Keys.modernToneStyle: false,
             Keys.escRestore: true,
             Keys.freeTone: false,
+            Keys.instantRestore: true,  // Default: instant auto-restore enabled
             Keys.autoDisableNonLatin: true,  // Default: enabled for better UX with multilingual users
             Keys.autoUpdateCheck: true,
             Keys.autoUpdateInstall: false,

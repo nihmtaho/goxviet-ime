@@ -15,6 +15,7 @@ struct SettingsRootView: View {
     @AppStorage("modernToneStyle") private var modernToneStyle = false
     @AppStorage("escRestoreEnabled") private var escRestoreEnabled = true
     @AppStorage("freeToneEnabled") private var freeToneEnabled = false
+    @AppStorage("instantRestoreEnabled") private var instantRestoreEnabled = true
 
     @AppStorage("smartModeEnabled") private var smartModeEnabled = true
     @AppStorage("com.goxviet.ime.autoDisableNonLatin") private var autoDisableForNonLatin = true
@@ -128,6 +129,7 @@ struct SettingsRootView: View {
                     modernToneStyle: $modernToneStyle,
                     escRestoreEnabled: $escRestoreEnabled,
                     freeToneEnabled: $freeToneEnabled,
+                    instantRestoreEnabled: $instantRestoreEnabled,
                     autoDisableForNonLatin: $autoDisableForNonLatin
                 )
             case .perApp:
@@ -251,6 +253,7 @@ private struct GeneralSettingsView: View {
     @Binding var modernToneStyle: Bool
     @Binding var escRestoreEnabled: Bool
     @Binding var freeToneEnabled: Bool
+    @Binding var instantRestoreEnabled: Bool
     @Binding var autoDisableForNonLatin: Bool
     
     // Use AppState for hideFromDock
@@ -303,6 +306,17 @@ private struct GeneralSettingsView: View {
                     }
 
                 Text("Allow tone marks before completing the vowel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Toggle("Auto-restore English words", isOn: $instantRestoreEnabled)
+                    .onChange(of: instantRestoreEnabled) { _, newValue in
+                        AppState.shared.instantRestoreEnabled = newValue
+                        InputManager.shared.setInstantRestore(newValue)
+                        Log.info("Instant auto-restore: \(newValue)")
+                    }
+                
+                Text("Automatically restore English words (like \"Windows\", \"GitHub\") without waiting for space.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
