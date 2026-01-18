@@ -35,10 +35,19 @@ class SpecialPanelAppDetector {
     private enum Cache {
         static var result: String?
         static var timestamp: CFAbsoluteTime = 0
-        static let ttl: CFAbsoluteTime = 0.3  // 300ms
+        static let ttl: CFAbsoluteTime = 0.1  // 100ms (reduced from 300ms)
+        
+        // Statistics
+        static var hits: Int = 0
+        static var misses: Int = 0
 
         static func get() -> String?? {  // Double optional: nil = miss, .some(nil) = cached nil
-            CFAbsoluteTimeGetCurrent() - timestamp < ttl ? .some(result) : nil
+            if CFAbsoluteTimeGetCurrent() - timestamp < ttl {
+                hits += 1
+                return .some(result)
+            }
+            misses += 1
+            return nil
         }
 
         static func set(_ value: String?) {
@@ -49,6 +58,17 @@ class SpecialPanelAppDetector {
         static func clear() {
             result = nil
             timestamp = 0
+        }
+        
+        static func getStats() -> (hits: Int, misses: Int, hitRate: Double) {
+            let total = hits + misses
+            let hitRate = total > 0 ? Double(hits) / Double(total) : 0.0
+            return (hits, misses, hitRate)
+        }
+        
+        static func resetStats() {
+            hits = 0
+            misses = 0
         }
     }
 
@@ -136,6 +156,22 @@ class SpecialPanelAppDetector {
     /// Invalidate cache (call when app switch is detected)
     static func invalidateCache() {
         Cache.clear()
+    }
+    
+    /// Clear cache (called on memory pressure)
+    static func clearCache() {
+        Cache.clear()
+        Log.info("SpecialPanelAppDetector cache cleared")
+    }
+    
+    /// Get cache statistics for monitoring
+    static func getCacheStats() -> (hits: Int, misses: Int, hitRate: Double) {
+        return Cache.getStats()
+    }
+    
+    /// Reset cache statistics
+    static func resetCacheStats() {
+        Cache.resetStats()
     }
     
     // MARK: - Smart Switch Integration

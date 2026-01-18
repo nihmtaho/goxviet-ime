@@ -23,6 +23,12 @@ class AppState: ObservableObject {
 
     /// Whether Vietnamese input is currently enabled
     private(set) var isEnabled: Bool = false
+    
+    /// Debounce work item for setEnabled notifications
+    private var setEnabledDebounceWork: DispatchWorkItem?
+    
+    /// Memory pressure observer
+    private var memoryPressureObserver: NSObjectProtocol?
 
     /// Whether smart per-app mode is enabled
     var isSmartModeEnabled: Bool {
@@ -213,6 +219,49 @@ class AppState: ObservableObject {
             isEnabled = false
             Log.info("First launch detected - Vietnamese input disabled by default")
         }
+        
+        // Setup memory pressure monitoring
+        setupMemoryPressureMonitoring()
+    }
+    
+    deinit {
+        cleanup()
+    }
+    
+    private func setupMemoryPressureMonitoring() {
+        memoryPressureObserver = NotificationCenter.default.addObserver(
+            forName: .memoryPressure,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleMemoryPressure()
+        }
+        Log.info("AppState memory pressure monitoring enabled")
+    }
+    
+    private func handleMemoryPressure() {
+        Log.warning("AppState handling memory pressure - reviewing stored data")
+        
+        // If we're at or near capacity, consider trimming older entries
+        let currentCount = getPerAppModesCount()
+        if currentCount >= MAX_PER_APP_ENTRIES * 80 / 100 {  // 80% threshold
+            Log.warning("Per-app settings at \(currentCount)/\(MAX_PER_APP_ENTRIES) capacity")
+            // User should manually clear old apps, but we log the situation
+        }
+    }
+    
+    private func cleanup() {
+        // Cancel pending debounce work
+        setEnabledDebounceWork?.cancel()
+        setEnabledDebounceWork = nil
+        
+        // Remove memory pressure observer
+        if let observer = memoryPressureObserver {
+            NotificationCenter.default.removeObserver(observer)
+            memoryPressureObserver = nil
+        }
+        
+        Log.info("AppState cleaned up")
     }
 
     private func registerDefaults() {
@@ -235,16 +284,28 @@ class AppState: ObservableObject {
     // MARK: - Global State Management
 
     /// Set enabled state and notify observers
+    /// Debounced to reduce overhead during rapid toggles
     func setEnabled(_ enabled: Bool) {
         isEnabled = enabled
-
-        // Post notification for UI update
-        NotificationCenter.default.post(
-            name: .updateStateChanged,
-            object: enabled
-        )
-
-        Log.info("Gõ Việt input: \(enabled ? "enabled" : "disabled")")
+        
+        // Cancel pending debounce work
+        setEnabledDebounceWork?.cancel()
+        
+        // Create new debounced notification (50ms delay)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            
+            // Post notification for UI update
+            NotificationCenter.default.post(
+                name: .updateStateChanged,
+                object: enabled
+            )
+            
+            Log.info("Gõ Việt input: \(enabled ? "enabled" : "disabled")")
+        }
+        
+        setEnabledDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 
     /// Set enabled state without posting notification (used during app switching)

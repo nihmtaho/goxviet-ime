@@ -15,11 +15,17 @@ class WindowManager: NSObject, NSWindowDelegate {
     var isUpdateWindowOpen: Bool { return updateWindow != nil }
     var isSettingsWindowOpen: Bool { return settingsWindow != nil }
     
-    private var updateWindow: NSWindow?
-    private var settingsWindow: NSWindow?
+    // Use weak references to allow automatic deallocation
+    private weak var updateWindow: NSWindow?
+    private weak var settingsWindow: NSWindow?
     
     private override init() {
         super.init()
+    }
+    
+    deinit {
+        cleanup()
+        Log.info("WindowManager deinitialized")
     }
     
     // MARK: - Update Window
@@ -45,7 +51,7 @@ class WindowManager: NSObject, NSWindowDelegate {
         window.title = "Check for Updates"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isReleasedWhenClosed = false // Auto-release when closed to save memory
+        window.isReleasedWhenClosed = true // Auto-release when closed to save memory
         window.delegate = self
         window.identifier = NSUserInterfaceItemIdentifier("update")
         window.isRestorable = false
@@ -98,7 +104,7 @@ class WindowManager: NSObject, NSWindowDelegate {
         window.title = "Settings"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isReleasedWhenClosed = false
+        window.isReleasedWhenClosed = true // Auto-release when closed to save memory
         window.delegate = self
         window.identifier = NSUserInterfaceItemIdentifier("settings")
         window.isRestorable = false
@@ -166,5 +172,20 @@ class WindowManager: NSObject, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.handleLastWindowClosed()
         }
+    }
+    
+    // MARK: - Cleanup
+    
+    private func cleanup() {
+        updateWindow?.delegate = nil
+        settingsWindow?.delegate = nil
+        
+        updateWindow?.close()
+        settingsWindow?.close()
+        
+        updateWindow = nil
+        settingsWindow = nil
+        
+        Log.info("WindowManager cleaned up")
     }
 }

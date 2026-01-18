@@ -14,16 +14,13 @@ import Cocoa
 /// Manages per-application Vietnamese input mode
 /// Default: English input (Vietnamese disabled) for all apps
 /// Only stores apps where user explicitly enabled Vietnamese (max 100 apps)
-class PerAppModeManager {
+class PerAppModeManager: LifecycleManaged {
     static let shared = PerAppModeManager()
     
     // MARK: - Properties
     
     /// Currently active application bundle ID
     private(set) var currentBundleId: String?
-    
-    /// Notification observer token
-    private var observer: NSObjectProtocol?
     
     /// Timer for polling special panel apps (Spotlight, Raycast)
     private var pollingTimer: Timer?
@@ -34,6 +31,11 @@ class PerAppModeManager {
     // MARK: - Initialization
     
     private init() {}
+    
+    deinit {
+        stop()
+        Log.info("PerAppModeManager deinitialized")
+    }
     
     // MARK: - Lifecycle
     
@@ -46,13 +48,20 @@ class PerAppModeManager {
         
         // IMPORTANT: NSWorkspace notifications must be registered with
         // NSWorkspace.shared.notificationCenter, NOT NotificationCenter.default!
-        observer = NSWorkspace.shared.notificationCenter.addObserver(
+        let observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in
             self?.handleActivationNotification(notification)
         }
+        
+        // Register with ResourceManager for automatic cleanup
+        ResourceManager.shared.register(
+            observer: observer,
+            identifier: "PerAppModeManager.workspaceObserver",
+            center: NSWorkspace.shared.notificationCenter
+        )
         
         isRunning = true
         
@@ -85,10 +94,11 @@ class PerAppModeManager {
             return
         }
         
-        if let observer = observer {
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
-            self.observer = nil
-        }
+        // Unregister observer via ResourceManager
+        ResourceManager.shared.unregister(
+            observerIdentifier: "PerAppModeManager.workspaceObserver",
+            center: NSWorkspace.shared.notificationCenter
+        )
         
         // Stop polling timer
         stopPollingTimer()
@@ -233,27 +243,31 @@ class PerAppModeManager {
     // MARK: - Special Panel App Detection
     
     /// Start polling timer for special panel apps (Spotlight, Raycast)
-    /// PERFORMANCE: 200ms polling interval with cached results (300ms TTL)
+    /// PERFORMANCE: 1.5s polling interval with cached results (100ms TTL) for minimal overhead
     private func startPollingTimer() {
         // Stop existing timer if any
         stopPollingTimer()
         
-        // Create new timer with 200ms interval
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        // Create new timer with 1.5s interval for reduced memory/CPU overhead
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.checkForSpecialPanelApp()
         }
+        
+        // Register with ResourceManager for automatic cleanup
+        ResourceManager.shared.register(timer: timer, identifier: "PerAppModeManager.pollingTimer")
+        pollingTimer = timer
         
         // Ensure timer runs even when UI is scrolling/tracking
         if let timer = pollingTimer {
             RunLoop.current.add(timer, forMode: .common)
         }
         
-        Log.info("Special panel polling timer started")
+        Log.info("Special panel polling timer started (1.5s interval)")
     }
     
     /// Stop polling timer
     private func stopPollingTimer() {
-        pollingTimer?.invalidate()
+        ResourceManager.shared.unregister(timerIdentifier: "PerAppModeManager.pollingTimer")
         pollingTimer = nil
     }
     

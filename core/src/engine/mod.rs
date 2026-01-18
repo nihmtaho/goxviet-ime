@@ -432,7 +432,7 @@ impl Engine {
         // Logic in modifiers block uses `skip_modifiers = shift && is_number`.
         // For letters, it allows modifiers even with shift (e.g. typing uppercase accents).
         // So we check basic `m.is_xxx(key)`.
-        let is_modifier =
+        let _is_modifier =
             m.tone(key).is_some() || m.mark(key).is_some() || m.stroke(key) || m.remove(key);
 
         // ═══════════════════════════════════════════════════════════════════════════
@@ -454,22 +454,31 @@ impl Engine {
             if self.raw_input.len() >= 2 {
                 // 1. VIETNAMESE DICTIONARY LOOKUP: Removed as per request (replaced by Phonotactic Engine)
                 // 2. ENGLISH DICTIONARY LOOKUP
-                // AMBIGUITY RESOLUTION:
-                // If the current key is a modifier (e.g. 'w' in 'law'), we must prioritize
-                // trying the Vietnamese transform ('lă') over the English word ('law').
-                // If we detect 'law' here, we return early and 'lă' is never formed.
-                // So: Only check dictionary if NOT a modifier.
-                let is_dict = !is_modifier && self.is_english_dictionary_word();
-                if is_dict {
-                    self.is_english_word = true;
+                // MEMORY OPTIMIZATION: Dictionary lookup disabled in release builds to save ~1.4MB
+                // Phonotactic pattern matching is sufficient and more robust
+                #[cfg(debug_assertions)]
+                {
+                    // AMBIGUITY RESOLUTION:
+                    // If the current key is a modifier (e.g. 'w' in 'law'), we must prioritize
+                    // trying the Vietnamese transform ('lă') over the English word ('law').
+                    // If we detect 'law' here, we return early and 'lă' is never formed.
+                    // So: Only check dictionary if NOT a modifier.
+                    #[cfg(debug_assertions)]
+                    let is_dict = !_is_modifier && self.is_english_dictionary_word();
+                    #[cfg(not(debug_assertions))]
+                    let is_dict = false; // Dictionary disabled in release builds
+                    
+                    if is_dict {
+                        self.is_english_word = true;
 
-                    // INSTANT RESTORE: If already transformed, undo immediately
-                    if self.instant_restore_enabled && self.has_vietnamese_transforms() {
-                        let result = self.instant_restore_english();
-                        self.sync_buffer_with_raw_input();
-                        return result;
+                        // INSTANT RESTORE: If already transformed, undo immediately
+                        if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                            let result = self.instant_restore_english();
+                            self.sync_buffer_with_raw_input();
+                            return result;
+                        }
+                        return self.handle_normal_letter(key, caps, shift);
                     }
-                    return self.handle_normal_letter(key, caps, shift);
                 }
 
                 // 3. Pattern detection (only if NOT already marked as English)
@@ -2107,8 +2116,12 @@ impl Engine {
         }
 
         // 1. Dictionary Check (O(1)) - Highest Priority
-        if self.is_english_dictionary_word() {
-            return true;
+        // MEMORY OPTIMIZATION: Disabled in release builds to save ~1.4MB
+        #[cfg(debug_assertions)]
+        {
+            if self.is_english_dictionary_word() {
+                return true;
+            }
         }
 
         // 2. Vietnamese Validation

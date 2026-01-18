@@ -21,7 +21,7 @@ enum UpdateState: Equatable {
     case error
 }
 
-final class UpdateManager: NSObject, ObservableObject {
+final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
     static let shared = UpdateManager()
 
     @Published private(set) var latestVersion: String?
@@ -36,12 +36,12 @@ final class UpdateManager: NSObject, ObservableObject {
     @Published private(set) var updateState: UpdateState = .idle
     @Published private(set) var downloadProgress: Double = 0.0
 
-    private let apiSession: URLSession
+    private var apiSession: URLSession?
     private var downloadSession: URLSession?
     private var downloadTask: URLSessionDownloadTask?
     private var downloadingVersion: String?
     private var timer: Timer?
-    private var isRunning: Bool = false
+    private(set) var isRunning: Bool = false
     private let defaults = UserDefaults.standard
 
     private let apiURL = URL(string: "https://api.github.com/repos/nihmtaho/goxviet-ime/releases/latest")!
@@ -51,14 +51,29 @@ final class UpdateManager: NSObject, ObservableObject {
     private func releasePageURL(for version: String) -> URL {
         URL(string: "https://github.com/nihmtaho/goxviet-ime/releases/tag/v\(version)") ?? URL(string: "https://github.com/nihmtaho/goxviet-ime/releases")!
     }
-
-    private override init() {
+    
+    /// Lazy initialization of API session - only created when needed
+    private func makeAPISession() -> URLSession {
+        if let existing = apiSession { return existing }
+        
         let apiConfig = URLSessionConfiguration.default
         apiConfig.waitsForConnectivity = true
         apiConfig.timeoutIntervalForRequest = 12
         apiConfig.timeoutIntervalForResource = 12
-        apiSession = URLSession(configuration: apiConfig)
+        
+        let session = URLSession(configuration: apiConfig)
+        apiSession = session
+        Log.info("API URLSession created (lazy)")
+        return session
+    }
+
+    private override init() {
         super.init()
+    }
+    
+    deinit {
+        stop()
+        Log.info("UpdateManager deinitialized")
     }
 
     // MARK: - Public API
@@ -71,18 +86,28 @@ final class UpdateManager: NSObject, ObservableObject {
 
     func stop() {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.timer?.invalidate()
+            guard let self = self, self.isRunning else { return }
+            
+            // Unregister timer from ResourceManager
+            ResourceManager.shared.unregister(timerIdentifier: "UpdateManager.checkTimer")
             self.timer = nil
+            
+            // Cancel ongoing downloads
             self.downloadTask?.cancel()
             self.downloadTask = nil
+            
+            // Invalidate and nil out sessions to release network resources
             self.downloadSession?.invalidateAndCancel()
             self.downloadSession = nil
-            self.apiSession.invalidateAndCancel()
+            self.apiSession?.invalidateAndCancel()
+            self.apiSession = nil
+            
+            // Reset state
             self.isChecking = false
             self.isInstalling = false
             self.updateState = .idle
             self.isRunning = false
+            
             Log.info("UpdateManager stopped and cleaned up")
         }
     }
@@ -91,12 +116,14 @@ final class UpdateManager: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
-            self.timer?.invalidate()
-            self.timer = nil
-
-            self.timer = Timer.scheduledTimer(withTimeInterval: self.checkInterval, repeats: true) { [weak self] _ in
+            // Create new timer
+            let newTimer = Timer.scheduledTimer(withTimeInterval: self.checkInterval, repeats: true) { [weak self] _ in
                 self?.maybeCheck()
             }
+            
+            // Register with ResourceManager for automatic cleanup
+            ResourceManager.shared.register(timer: newTimer, identifier: "UpdateManager.checkTimer")
+            self.timer = newTimer
 
             if triggerImmediate {
                 self.maybeCheck()
@@ -118,7 +145,7 @@ final class UpdateManager: NSObject, ObservableObject {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("GoxViet-Update-Agent", forHTTPHeaderField: "User-Agent")
 
-        apiSession.dataTask(with: request) { [weak self] data, response, error in
+        makeAPISession().dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
 
             if let error = error {
@@ -321,7 +348,7 @@ final class UpdateManager: NSObject, ObservableObject {
             self.statusMessage = "Downloading update..."
         }
 
-        apiSession.downloadTask(with: url) { [weak self] tempURL, response, error in
+        makeAPISession().downloadTask(with: url) { [weak self] tempURL, response, error in
             guard let self = self else { return }
 
             if let error = error {
@@ -536,8 +563,10 @@ extension UpdateManager: URLSessionDownloadDelegate {
                 try FileManager.default.removeItem(at: dmgPath)
             }
             try FileManager.default.copyItem(at: location, to: dmgPath)
-            downloadSession?.finishTasksAndInvalidate()
-            downloadSession = nil
+            
+            // Clean up download session to release resources
+            self.downloadSession?.finishTasksAndInvalidate()
+            self.downloadSession = nil
             
             // Update state to ready to install
             DispatchQueue.main.async {
@@ -577,8 +606,10 @@ extension UpdateManager: URLSessionDownloadDelegate {
         } else {
             finishCheckWithError("Download failed: \(error.localizedDescription)", userInitiated: true)
         }
-        downloadSession?.finishTasksAndInvalidate()
-        downloadSession = nil
+        
+        // Clean up download session to release resources
+        self.downloadSession?.finishTasksAndInvalidate()
+        self.downloadSession = nil
     }
 }
 

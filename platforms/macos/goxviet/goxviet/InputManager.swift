@@ -10,12 +10,28 @@ import ApplicationServices
 
 // MARK: - Input Manager
 
-class InputManager {
+class InputManager: LifecycleManaged {
     static let shared = InputManager()
+    
+    // OPTIMIZATION: String pool for common Vietnamese characters (reduces allocations)
+    // Reduces 64B malloc overhead by reusing String objects for frequent chars
+    private static let commonCharPool: [Character: String] = {
+        var pool: [Character: String] = [:]
+        let chars = "aăâeêioôơuưyáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ" +
+                    "AĂÂEÊIOÔƠUƯYÁÀẢÃẠẮẰẲẴẶẤẦẨẪẬÉÈẺẼẸẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌỐỒỔỖỘỚỜỞỠỢÚÙỦŨỤỨỪỬỮỰÝỲỶỸỴ" +
+                    "bcdđghklmnpqrstvxzBCDĐGHKLMNPQRSTVXZ0123456789"
+        for char in chars {
+            pool[char] = String(char)
+        }
+        return pool
+    }()
     
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var bridge: RustBridge
+    
+    // Running state for LifecycleManaged protocol
+    private(set) var isRunning: Bool = false
     
     // Shortcut configuration
     private var currentShortcut: KeyboardShortcut
@@ -23,10 +39,6 @@ class InputManager {
     // Previous key for detecting double-tap shortcuts
     private var previousKeyCode: UInt16?
     private var previousKeyTimestamp: TimeInterval = 0
-    
-    // NotificationCenter observer tokens for proper cleanup
-    private var toggleObserver: NSObjectProtocol?
-    private var shortcutObserver: NSObjectProtocol?
     
     private init() {
         self.bridge = RustBridge()
@@ -41,6 +53,11 @@ class InputManager {
         
         // Setup observers for configuration changes
         setupObservers()
+    }
+    
+    deinit {
+        stop()
+        Log.info("InputManager deinitialized")
     }
     
     private func loadSavedSettings() {
@@ -74,26 +91,14 @@ class InputManager {
         Log.info("Initial Gõ Việt input state: \(AppState.shared.isEnabled ? "enabled" : "disabled")")
     }
     
-    deinit {
-        // Remove all observers to prevent memory leaks
-        cleanupObservers()
-        // Rust engine uses global singleton, no need to destroy
-    }
-    
-    private func cleanupObservers() {
-        if let token = toggleObserver {
-            NotificationCenter.default.removeObserver(token)
-            toggleObserver = nil
-        }
-        if let token = shortcutObserver {
-            NotificationCenter.default.removeObserver(token)
-            shortcutObserver = nil
-        }
-    }
-    
     // MARK: - Lifecycle
     
     func start() {
+        guard !isRunning else {
+            Log.info("InputManager already running")
+            return
+        }
+        
         // Note: Accessibility permission is checked in AppDelegate before calling start()
         // No need to check again here to avoid priority inversion issues
         
@@ -124,6 +129,7 @@ class InputManager {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), self.runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         
+        isRunning = true
         Log.info("InputManager started")
         
         // Start per-app mode manager
@@ -134,6 +140,11 @@ class InputManager {
     }
     
     func stop() {
+        guard isRunning else {
+            Log.info("InputManager already stopped")
+            return
+        }
+        
         if let runLoopSource = self.runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
             self.runLoopSource = nil
@@ -144,22 +155,22 @@ class InputManager {
             self.eventTap = nil
         }
         
-        // Clean up observers
-        cleanupObservers()
+        // Unregister all observers via ResourceManager
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
         
         PerAppModeManager.shared.stop()
         InputSourceMonitor.shared.stop()
+        
+        isRunning = false
         Log.info("InputManager stopped")
     }
     
     // MARK: - Configuration
     
     private func setupObservers() {
-        // Clear any existing observers first to prevent duplicates
-        cleanupObservers()
-        
         // Add observer for Vietnamese toggle
-        toggleObserver = NotificationCenter.default.addObserver(
+        let toggleObserver = NotificationCenter.default.addObserver(
             forName: .toggleVietnamese,
             object: nil,
             queue: .main
@@ -170,9 +181,10 @@ class InputManager {
                 self?.toggleEnabled()
             }
         }
+        ResourceManager.shared.register(observer: toggleObserver, identifier: "InputManager.toggleObserver")
         
         // Add observer for shortcut changes
-        shortcutObserver = NotificationCenter.default.addObserver(
+        let shortcutObserver = NotificationCenter.default.addObserver(
             forName: .shortcutChanged,
             object: nil,
             queue: .main
@@ -189,6 +201,7 @@ class InputManager {
             // Also reload text expansion shortcuts
             self?.reloadShortcuts()
         }
+        ResourceManager.shared.register(observer: shortcutObserver, identifier: "InputManager.shortcutObserver")
     }
     
     func setEnabled(_ enabled: Bool) {
@@ -296,7 +309,7 @@ class InputManager {
                     let (method, delays) = detectMethod()
                     TextInjector.shared.injectSync(
                         bs: backspaceCount,
-                        text: String(chars),
+                        text: Self.makeString(from: chars),
                         method: method,
                         delays: delays,
                         proxy: proxy
@@ -381,12 +394,12 @@ class InputManager {
                     let backspaceCount = Int(r.pointee.backspace)
                     let chars = extractChars(from: r.pointee)
                     
-                    Log.transform(backspaceCount, String(chars))
+                    Log.transform(backspaceCount, Self.makeString(from: chars))
                     
                     let (method, delays) = detectMethod()
                     TextInjector.shared.injectSync(
                         bs: backspaceCount,
-                        text: String(chars),
+                        text: Self.makeString(from: chars),
                         method: method,
                         delays: delays,
                         proxy: proxy
@@ -433,13 +446,13 @@ class InputManager {
                 return Unmanaged.passUnretained(event)
             }
             
-            Log.transform(backspaceCount, String(chars))
+            Log.transform(backspaceCount, Self.makeString(from: chars))
             
             // Inject replacement text using smart injection
             let (method, delays) = detectMethod()
             TextInjector.shared.injectSync(
                 bs: backspaceCount,
-                text: String(chars),
+                text: Self.makeString(from: chars),
                 method: method,
                 delays: delays,
                 proxy: proxy
@@ -453,12 +466,12 @@ class InputManager {
             let backspaceCount = Int(r.pointee.backspace)
             let chars = extractChars(from: r.pointee)
             
-            Log.info("Restore: bs=\(backspaceCount) text=\(String(chars))")
+            Log.info("Restore: bs=\(backspaceCount) text=\(Self.makeString(from: chars))")
             
             let (method, delays) = detectMethod()
             TextInjector.shared.injectSync(
                 bs: backspaceCount,
-                text: String(chars),
+                text: Self.makeString(from: chars),
                 method: method,
                 delays: delays,
                 proxy: proxy
@@ -487,7 +500,7 @@ class InputManager {
             if r.pointee.action == 1 { // Send - engine has content to replace
                 let bs = Int(r.pointee.backspace)
                 let chars = extractChars(from: r.pointee)
-                let text = String(chars)
+                let text = Self.makeString(from: chars)
                 
                 // Detect injection method
                 let (method, delays) = detectMethod()
@@ -521,6 +534,16 @@ class InputManager {
         Log.info("DELETE: passthrough (engine empty)")
     }
 
+    
+    /// Create String from chars array, using pool for common single chars
+    private static func makeString(from chars: [Character]) -> String {
+        // Use pool for single common characters
+        if chars.count == 1, let pooled = commonCharPool[chars[0]] {
+            return pooled
+        }
+        // Fallback to normal String construction
+        return String(chars)
+    }
     
     private func getCharFromEvent(event: CGEvent, keyCode: UInt16, caps: Bool) -> Character? {
         // Try to get the character from the event
@@ -581,10 +604,6 @@ class InputManager {
 extension InputManager {
     func getCurrentState() -> Bool {
         return AppState.shared.isEnabled
-    }
-    
-    func isRunning() -> Bool {
-        return eventTap != nil
     }
     
     func clearComposition() {

@@ -11,11 +11,8 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     var statusItem: NSStatusItem!
-    var toggleView: MenuToggleView?
-    var smartModeToggleView: MenuToggleView?
-    
-    // NotificationCenter observer tokens for proper cleanup
-    private var observerTokens: [NSObjectProtocol] = []
+    weak var toggleView: MenuToggleView?
+    weak var smartModeToggleView: MenuToggleView?
     
     // Timer for auto-polling accessibility permission
     private var accessibilityPollTimer: Timer?
@@ -23,9 +20,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Flag to track if permission was granted while modal was showing
     private var permissionGrantedWhileModalActive = false
     private var isModalAlertActive = false
+    private let notificationCenter = NotificationCenter.default
 
-    // Observer to restore Dock visibility after Settings closes
-    private var settingsCloseObserver: NSObjectProtocol?
+    private enum ObserverKey {
+        static let updateState = "AppDelegate.updateStateObserver"
+        static let toggleVietnamese = "AppDelegate.toggleObserver"
+        static let shortcutChanged = "AppDelegate.shortcutObserver"
+        static let smartMode = "AppDelegate.smartModeObserver"
+        static let appActivation = "AppDelegate.activationObserver"
+        static let openUpdateWindow = "AppDelegate.openUpdateObserver"
+        static let settingsClose = "AppDelegate.settingsCloseObserver"
+    }
     
     var isEnabled: Bool {
         return AppState.shared.isEnabled
@@ -113,12 +118,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stopAccessibilityPollTimer()
         
         // Poll every 1 second to check if permission was granted
-        accessibilityPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let accessEnabled = AXIsProcessTrusted()
             if accessEnabled {
                 Log.info("Accessibility permission detected via auto-polling")
-                self.stopAccessibilityPollTimer()
+                ResourceManager.shared.unregister(timerIdentifier: "AppDelegate.accessibilityPollTimer")
+                self.accessibilityPollTimer = nil
                 
                 // If modal is active, just set the flag - don't try to manipulate UI
                 if self.isModalAlertActive {
@@ -129,6 +135,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        ResourceManager.shared.register(timer: timer, identifier: "AppDelegate.accessibilityPollTimer")
+        accessibilityPollTimer = timer
         Log.info("Started accessibility permission auto-polling")
     }
     
@@ -141,7 +149,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         
-        accessibilityPollTimer?.invalidate()
+        ResourceManager.shared.unregister(timerIdentifier: "AppDelegate.accessibilityPollTimer")
         accessibilityPollTimer = nil
     }
     
@@ -382,13 +390,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Restore Dock visibility to user preference when system Settings window closes.
     private func registerSettingsCloseObserverForSystemSettings() {
-        // Remove previous observer if any
-        if let token = settingsCloseObserver {
-            NotificationCenter.default.removeObserver(token)
-            settingsCloseObserver = nil
-        }
+        ResourceManager.shared.unregister(observerIdentifier: ObserverKey.settingsClose, center: notificationCenter)
 
-        settingsCloseObserver = NotificationCenter.default.addObserver(
+        let observer = notificationCenter.addObserver(
             forName: NSWindow.willCloseNotification,
             object: nil,
             queue: .main
@@ -396,12 +400,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             // Restore Dock policy whenever any window closes; we will check if a Settings window remains.
             self.restoreDockPolicyIfNoSettingsWindow()
-
-            if let token = self.settingsCloseObserver {
-                NotificationCenter.default.removeObserver(token)
-                self.settingsCloseObserver = nil
-            }
+            ResourceManager.shared.unregister(observerIdentifier: ObserverKey.settingsClose, center: self.notificationCenter)
         }
+
+        ResourceManager.shared.register(observer: observer, identifier: ObserverKey.settingsClose, center: notificationCenter)
     }
 
     /// Apply user preference for Dock visibility when no Settings window remains.
@@ -432,7 +434,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         cleanupObservers()
         
         // Listen for state changes
-        let stateToken = NotificationCenter.default.addObserver(
+        let stateToken = notificationCenter.addObserver(
             forName: .updateStateChanged,
             object: nil,
             queue: .main
@@ -442,10 +444,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateToggleMenuItem()
             }
         }
-        observerTokens.append(stateToken)
+        ResourceManager.shared.register(observer: stateToken, identifier: ObserverKey.updateState, center: notificationCenter)
         
         // Listen for toggle requests
-        let toggleToken = NotificationCenter.default.addObserver(
+        let toggleToken = notificationCenter.addObserver(
             forName: .toggleVietnamese,
             object: nil,
             queue: .main
@@ -455,10 +457,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateToggleMenuItem()
             }
         }
-        observerTokens.append(toggleToken)
+        ResourceManager.shared.register(observer: toggleToken, identifier: ObserverKey.toggleVietnamese, center: notificationCenter)
         
         // Listen for shortcut changes
-        let shortcutToken = NotificationCenter.default.addObserver(
+        let shortcutToken = notificationCenter.addObserver(
             forName: .shortcutChanged,
             object: nil,
             queue: .main
@@ -466,10 +468,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Shortcut display is only in Settings, no menu update needed
             Log.info("Shortcut changed")
         }
-        observerTokens.append(shortcutToken)
+        ResourceManager.shared.register(observer: shortcutToken, identifier: ObserverKey.shortcutChanged, center: notificationCenter)
         
         // Listen for smart mode changes
-        let smartModeToken = NotificationCenter.default.addObserver(
+        let smartModeToken = notificationCenter.addObserver(
             forName: .smartModeChanged,
             object: nil,
             queue: .main
@@ -479,40 +481,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.info("Status bar smart mode updated: \(newState)")
             }
         }
-        observerTokens.append(smartModeToken)
+        ResourceManager.shared.register(observer: smartModeToken, identifier: ObserverKey.smartMode, center: notificationCenter)
         
         // Listen for app becoming active (detect permission changes)
-        let activateToken = NotificationCenter.default.addObserver(
+        let activateToken = notificationCenter.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.checkPermissionOnActivate()
         }
-        observerTokens.append(activateToken)
+        ResourceManager.shared.register(observer: activateToken, identifier: ObserverKey.appActivation, center: notificationCenter)
         
         // Listen for internal open window requests (from Settings UI buttons etc)
-        let openUpdateToken = NotificationCenter.default.addObserver(
+        let openUpdateToken = notificationCenter.addObserver(
             forName: .openUpdateWindow,
             object: nil,
             queue: .main
         ) { _ in
             WindowManager.shared.showUpdateWindow()
         }
-        observerTokens.append(openUpdateToken)
+        ResourceManager.shared.register(observer: openUpdateToken, identifier: ObserverKey.openUpdateWindow, center: notificationCenter)
     }
     
     private func cleanupObservers() {
-        for token in observerTokens {
-            NotificationCenter.default.removeObserver(token)
+        let identifiers = [
+            ObserverKey.updateState,
+            ObserverKey.toggleVietnamese,
+            ObserverKey.shortcutChanged,
+            ObserverKey.smartMode,
+            ObserverKey.appActivation,
+            ObserverKey.openUpdateWindow,
+            ObserverKey.settingsClose
+        ]
+        identifiers.forEach { identifier in
+            ResourceManager.shared.unregister(observerIdentifier: identifier, center: notificationCenter)
         }
-        observerTokens.removeAll()
     }
     
     deinit {
         cleanupObservers()
         cleanupMenuViews()
         stopAccessibilityPollTimer()
+        
+        // Release status item
+        if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+        
+        Log.info("AppDelegate deinitialized")
     }
     
     private func cleanupMenuViews() {
@@ -526,7 +544,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let accessEnabled = AXIsProcessTrusted()
         
         // If permission is now granted and InputManager isn't running, start it
-        if accessEnabled && !InputManager.shared.isRunning() {
+        if accessEnabled && !InputManager.shared.isRunning {
             Log.info("Accessibility permission detected on app activation - starting InputManager")
             InputManager.shared.start()
         }
@@ -636,9 +654,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ aNotification: Notification) {
         Log.info("Application terminating")
+        
+        // Stop all managers
         UpdateManager.shared.stop()
         InputManager.shared.stop()
+        
+        // Cleanup timers and observers
+        stopAccessibilityPollTimer()
+        cleanupObservers()
         cleanupMenuViews()
+        
+        // Cleanup ResourceManager
+        ResourceManager.shared.cleanup()
+        
+        Log.info("Application cleanup completed")
     }
     
     // MARK: - Application Lifecycle
