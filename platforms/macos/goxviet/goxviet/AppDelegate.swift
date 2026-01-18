@@ -23,6 +23,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Flag to track if permission was granted while modal was showing
     private var permissionGrantedWhileModalActive = false
     private var isModalAlertActive = false
+
+    // Observer to restore Dock visibility after Settings closes
+    private var settingsCloseObserver: NSObjectProtocol?
     
     var isEnabled: Bool {
         return AppState.shared.isEnabled
@@ -51,6 +54,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Create Status Bar Item first (before permission check)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
+        // Install hidden SwiftUI host to capture openSettingsAction
+        SettingsActionBridge.shared.installIfNeeded()
         
         updateStatusIcon()
         
@@ -67,11 +73,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("Application launched successfully")
     }
     
-    // MARK: - Settings Window (SwiftUI)
-    
-    @objc func showSettingsWindow() {
-        WindowManager.shared.showSettingsWindow()
-    }
+    // Settings window is now managed by macOS Settings scene
+    // Accessed via Cmd+, or "Settings..." menu item
     
     // MARK: - Accessibility Permission
     
@@ -254,6 +257,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func setupMenu() {
+        NSLog("[GoxViet] setupMenu() called")
         let menu = NSMenu()
         
         // Toggle Item with NSSwitch using custom view
@@ -286,57 +290,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
-        // Shortcut info (non-clickable)
-        let shortcutInfo = NSMenuItem(
-            title: "Toggle: \(InputManager.shared.getCurrentShortcut().displayString)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        shortcutInfo.isEnabled = false
-        menu.addItem(shortcutInfo)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Input Method submenu
-        let methodMenu = NSMenu()
-        let telexItem = NSMenuItem(title: "Telex", action: #selector(selectTelex), keyEquivalent: "")
-        telexItem.tag = 0
-        telexItem.state = (AppState.shared.inputMethod == 0) ? .on : .off
-        methodMenu.addItem(telexItem)
-        
-        let vniItem = NSMenuItem(title: "VNI", action: #selector(selectVNI), keyEquivalent: "")
-        vniItem.tag = 1
-        vniItem.state = (AppState.shared.inputMethod == 1) ? .on : .off
-        methodMenu.addItem(vniItem)
-        
-        let methodMenuItem = NSMenuItem(title: "Input Method", action: nil, keyEquivalent: "")
-        methodMenuItem.submenu = methodMenu
-        menu.addItem(methodMenuItem)
-        
-        // Tone Style submenu
-        let toneMenu = NSMenu()
-        let modernToneItem = NSMenuItem(title: "Modern (hoà, thuỷ)", action: #selector(selectModernTone), keyEquivalent: "")
-        modernToneItem.tag = 1
-        modernToneItem.state = AppState.shared.modernToneStyle ? .on : .off
-        toneMenu.addItem(modernToneItem)
-        
-        let oldToneItem = NSMenuItem(title: "Traditional (hòa, thủy)", action: #selector(selectOldTone), keyEquivalent: "")
-        oldToneItem.tag = 0
-        oldToneItem.state = AppState.shared.modernToneStyle ? .off : .on
-        toneMenu.addItem(oldToneItem)
-        
-        let toneMenuItem = NSMenuItem(title: "Tone Style", action: nil, keyEquivalent: "")
-        toneMenuItem.submenu = toneMenu
-        menu.addItem(toneMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Settings
-        menu.addItem(NSMenuItem(
+        // Settings - opens macOS standard Settings window
+        let settingsMenuItem = NSMenuItem(
             title: "Settings...",
-            action: #selector(showSettingsWindow),
+            action: #selector(AppDelegate.openSettings),
             keyEquivalent: ","
-        ))
+        )
+        settingsMenuItem.target = self
+        NSLog("[GoxViet] Added Settings menu item")
+        menu.addItem(settingsMenuItem)
 
         let updateMenuItem = NSMenuItem(
             title: "Check for Updates...",
@@ -346,18 +308,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenuItem.target = self
         menu.addItem(updateMenuItem)
         
-        // View Log (Debug)
-        #if DEBUG
-        menu.addItem(NSMenuItem(
-            title: "View Log...",
-            action: #selector(viewLog),
-            keyEquivalent: ""
-        ))
-        #endif
-        
-        menu.addItem(NSMenuItem.separator())
-        
         // About
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(
             title: "About GoxViet",
             action: #selector(showAbout),
@@ -373,6 +325,106 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         
         statusItem.menu = menu
+    }
+    
+    // MARK: - Settings Window
+    
+    @objc func openSettings() {
+        NSLog("[GoxViet] openSettings() called")
+
+        // Always elevate to regular to show Settings and bring it forward
+        ActivationPolicyCoordinator.shared.request(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Prefer SwiftUI openSettingsAction when available
+        if SettingsActionBridge.shared.open() {
+            NSLog("[GoxViet] openSettingsAction handled")
+            registerSettingsCloseObserverForSystemSettings()
+            focusSettingsWindow()
+            return
+        }
+
+        NSLog("[GoxViet] openSettingsAction unavailable, fallback to WindowManager")
+        WindowManager.shared.showSettingsWindow()
+
+        // Ensure app is visible
+        ActivationPolicyCoordinator.shared.request(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        focusSettingsWindow()
+
+        NSLog("[GoxViet] Settings window should now be visible (fallback)")
+    }
+
+    /// Ensure Settings window is key and visible after being opened.
+    private func focusSettingsWindow() {
+        // Multiple attempts with increasing delays to catch Settings window
+        for delay in [0.1, 0.2, 0.3] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate(ignoringOtherApps: true)
+                
+                if let window = NSApplication.shared.windows.first(where: { window in
+                    window.title == "Settings" || 
+                    window.className.contains("Settings") ||
+                    window.identifier?.rawValue.contains("settings") ?? false
+                }) {
+                    NSLog("[GoxViet] Found Settings window at delay \(delay), bringing to front")
+                    window.level = .floating
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.level = .normal
+                }
+            }
+        }
+    }
+
+    /// Restore Dock visibility to user preference when system Settings window closes.
+    private func registerSettingsCloseObserverForSystemSettings() {
+        // Remove previous observer if any
+        if let token = settingsCloseObserver {
+            NotificationCenter.default.removeObserver(token)
+            settingsCloseObserver = nil
+        }
+
+        settingsCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self else { return }
+            // Restore Dock policy whenever any window closes; we will check if a Settings window remains.
+            self.restoreDockPolicyIfNoSettingsWindow()
+
+            if let token = self.settingsCloseObserver {
+                NotificationCenter.default.removeObserver(token)
+                self.settingsCloseObserver = nil
+            }
+        }
+    }
+
+    /// Apply user preference for Dock visibility when no Settings window remains.
+    private func restoreDockPolicyIfNoSettingsWindow() {
+        // Delay check to allow window to fully close
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let hasSettingsWindow = NSApplication.shared.windows.contains { window in
+                if window.isVisible == false { return false }
+                let identifierMatch = window.identifier?.rawValue.lowercased().contains("settings") ?? false
+                return identifierMatch || window.className.contains("Settings") || window.title == "Settings"
+            }
+
+            guard !hasSettingsWindow else { return }
+
+            // Read current user preference (may have been changed in Settings UI)
+            let hideFromDock = AppState.shared.hideFromDock
+            let policy: NSApplication.ActivationPolicy = hideFromDock ? .accessory : .regular
+            
+            NSLog("[GoxViet] Restoring Dock policy: hideFromDock=\(hideFromDock), policy=\(policy == .accessory ? "accessory" : "regular")")
+            
+            // Force immediate application
+            NSApp.setActivationPolicy(policy)
+        }
     }
     
     func setupObservers() {
@@ -410,8 +462,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forName: .shortcutChanged,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.setupMenu()  // Rebuild menu to show new shortcut
+        ) { _ in
+            // Shortcut display is only in Settings, no menu update needed
+            Log.info("Shortcut changed")
         }
         observerTokens.append(shortcutToken)
         
@@ -427,32 +480,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         observerTokens.append(smartModeToken)
-        
-        // Listen for input method changes
-        let inputMethodToken = NotificationCenter.default.addObserver(
-            forName: .inputMethodChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let method = notification.object as? Int {
-                self?.updateMethodMenuSelection(selectedTag: method)
-                Log.info("Status bar input method updated: \(method == 0 ? "Telex" : "VNI")")
-            }
-        }
-        observerTokens.append(inputMethodToken)
-        
-        // Listen for tone style changes
-        let toneStyleToken = NotificationCenter.default.addObserver(
-            forName: .toneStyleChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let modern = notification.object as? Bool {
-                self?.updateToneMenuSelection(selectedTag: modern ? 1 : 0)
-                Log.info("Status bar tone style updated: \(modern ? "Modern" : "Traditional")")
-            }
-        }
-        observerTokens.append(toneStyleToken)
         
         // Listen for app becoming active (detect permission changes)
         let activateToken = NotificationCenter.default.addObserver(
@@ -547,72 +574,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func selectTelex() {
         InputManager.shared.setInputMethod(0)
-        updateMethodMenuSelection(selectedTag: 0)
-        Log.info("Input method: Telex")
+        Log.info("Input method: Telex (changed in Settings)")
     }
     
     @objc func selectVNI() {
         InputManager.shared.setInputMethod(1)
-        updateMethodMenuSelection(selectedTag: 1)
-        Log.info("Input method: VNI")
-    }
-    
-    func updateMethodMenuSelection(selectedTag: Int) {
-        guard let menu = statusItem.menu,
-              let methodMenuItem = menu.item(withTitle: "Input Method"),
-              let methodMenu = methodMenuItem.submenu else { return }
-        
-        for item in methodMenu.items {
-            item.state = (item.tag == selectedTag) ? .on : .off
-        }
+        Log.info("Input method: VNI (changed in Settings)")
     }
     
     @objc func selectModernTone() {
         InputManager.shared.setModernToneStyle(true)
-        updateToneMenuSelection(selectedTag: 1)
-        Log.info("Tone style: Modern")
+        Log.info("Tone style: Modern (changed in Settings)")
     }
     
     @objc func selectOldTone() {
         InputManager.shared.setModernToneStyle(false)
-        updateToneMenuSelection(selectedTag: 0)
-        Log.info("Tone style: Traditional")
+        Log.info("Tone style: Traditional (changed in Settings)")
     }
     
-    func updateToneMenuSelection(selectedTag: Int) {
-        guard let menu = statusItem.menu,
-              let toneMenuItem = menu.item(withTitle: "Tone Style"),
-              let toneMenu = toneMenuItem.submenu else { return }
-        
-        for item in toneMenu.items {
-            item.state = (item.tag == selectedTag) ? .on : .off
-        }
-    }
-    
-    @objc func showSettings() {
-        // Show settings window using GoxVietApp
-        showSettingsWindow()
-    }
-
     @objc func checkForUpdates() {
         WindowManager.shared.showUpdateWindow()
         // Trigger update check
         UpdateManager.shared.checkForUpdates(userInitiated: true)
-    }
-    
-    // Removed clearPerAppSettings() - now handled in SettingsView
-    
-    @objc func viewLog() {
-        if FileManager.default.fileExists(atPath: Log.logPath.path) {
-            NSWorkspace.shared.open(Log.logPath)
-        } else {
-            let alert = NSAlert()
-            alert.messageText = "Log File Not Found"
-            alert.informativeText = "No log file exists yet. Enable logging in debug mode and perform some typing to generate logs."
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
     }
     
     @objc func showAbout() {
@@ -641,16 +624,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
-
-        #if DEBUG
-        alert.addButton(withTitle: "View Log")
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            viewLog()
-        }
-        #else
         alert.runModal()
-        #endif
     }
     
     @objc func quitApp() {
@@ -670,9 +644,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Application Lifecycle
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // When user clicks app icon, always show Settings window
-        showSettingsWindow()
-        return false // prevent default About popup
+        // When user clicks app icon, open Settings window
+        openSettings()
+        return false
     }
 }
 

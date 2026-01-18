@@ -2,7 +2,7 @@
 //  GoxVietApp.swift
 //  GoxViet
 //
-//  SwiftUI App lifecycle - WindowGroup manages Settings UI
+//  SwiftUI App lifecycle for menu bar application
 //
 
 import SwiftUI
@@ -12,13 +12,20 @@ struct GoxVietApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        // We use manual window management via WindowManager/NSWindow
-        // to ensure complete memory cleanup when windows are closed.
-        // This Settings scene is just a placeholder to satisfy the App protocol
-        // efficiently without creating default windows.
+        // Setting scene - app is menu bar only, Settings handled via WindowManager
         Settings {
+            SettingsRootView()
+        }
+    }
+}
+
+// Empty scene to satisfy SwiftUI Scene requirement
+struct EmptyScene: Scene {
+    var body: some Scene {
+        WindowGroup("Dummy", id: "dummy") {
             EmptyView()
         }
     }
 }
+
 

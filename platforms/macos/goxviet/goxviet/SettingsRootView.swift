@@ -30,16 +30,35 @@ struct SettingsRootView: View {
 
     // MARK: - Body
     var body: some View {
-        ZStack {
-            SettingsGlassBackground()
-
-            NavigationSplitView {
-                sidebar
-            } detail: {
-                detailPanel
+        VStack(spacing: 0) {
+            // Tab Bar
+            HStack(spacing: 0) {
+                ForEach(SettingsSection.allCases, id: \.self) { section in
+                    TabButton(
+                        section: section,
+                        isSelected: selection == section,
+                        action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selection = section
+                            }
+                        }
+                    )
+                }
             }
-            .navigationSplitViewStyle(.balanced)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
+            
+            Divider()
+            
+            // Content Area
+            ScrollView {
+                detailContent
+                    .padding(32)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
+        .frame(minWidth: 700, minHeight: 600)
         .onAppear {
             loadPerAppModes()
             syncToAppState()
@@ -65,59 +84,7 @@ struct SettingsRootView: View {
         }
     }
 
-    // MARK: - Sidebar
-    private var sidebar: some View {
-        VStack(spacing: 0) {
-            SidebarHeader()
-                .padding(.horizontal, 16)
-                .padding(.top, 28)
-                .padding(.bottom, 12)
 
-            List(SettingsSection.allCases, id: \.self, selection: $selection) { section in
-                HStack(spacing: 8) {
-                    Image(systemName: section.icon)
-                        .foregroundColor(.secondary)
-                        .frame(width: 16, height: 16)
-                    Text(section.title)
-                        .font(.system(size: 14, weight: .medium))
-                }
-                .tag(section)
-            }
-            .scrollContentBackground(.hidden)
-            .listStyle(.sidebar)
-        }
-        .background(.ultraThinMaterial)
-        .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 240)
-        .navigationTitle("Settings")
-//        .toolbar {
-//            ToolbarItem(placement: .navigation) {
-//                Button(action: toggleSidebar) {
-//                    Image(systemName: "sidebar.left")
-//                }
-//            }
-//        }
-    }
-
-    // MARK: - Detail Panel
-    private var detailPanel: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.12), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.15), radius: 24, x: 0, y: 18)
-                .padding(.vertical, 10)
-                .padding(.trailing, 10)
-                .padding(.leading, 10)
-
-            detailContent
-                .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .navigationTitle(selection?.title ?? "Settings")
-    }
 
     private var detailContent: some View {
         let currentSelection = selection ?? .general
@@ -157,12 +124,6 @@ struct SettingsRootView: View {
         // Show *known* applications with their effective Vietnamese typing state.
         // This reflects which apps are enabled/disabled, instead of only listing disabled overrides.
         perAppModes = AppState.shared.getKnownAppsWithStates()
-    }
-
-    private func toggleSidebar() {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            _ = NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
-        }
     }
 
     private func syncToAppState() {
@@ -219,6 +180,41 @@ private struct SidebarHeader: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+// MARK: - Tab Button
+
+private struct TabButton: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 16))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                
+                Text(section.title)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
     }
 }
 
@@ -716,27 +712,26 @@ private struct ShortcutRecordingSheet: View {
 
 private struct AboutSettingsView: View {
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                Spacer(minLength: 16)
-
+        HStack(spacing: 40) {
+            // Left side - App info
+            VStack(spacing: 20) {
                 // App Icon
                 if let appIcon = NSImage(named: "AppIcon") {
                     Image(nsImage: appIcon)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 80, height: 80)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .frame(width: 100, height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .stroke(.white.opacity(0.22), lineWidth: 1)
                         )
-                        .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 6)
+                        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
                 }
 
-                VStack(spacing: 2) {
+                VStack(spacing: 4) {
                     Text("GoxViet")
-                        .font(.system(size: 32, weight: .bold))
+                        .font(.system(size: 28, weight: .bold))
                     Text("Gõ Việt")
                         .font(.title3)
                         .foregroundStyle(.secondary)
@@ -746,76 +741,88 @@ private struct AboutSettingsView: View {
                         Text("Version \(version) (\(build))")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .padding(.top, 4)
                     }
                 }
-
+                
                 Text("A modern Vietnamese input method editor for macOS.")
                     .font(.body)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 24)
-
-                // Feature grid, modern, aligned, hide ESC restore
-                let features: [(String, Color, String)] = [
-                    ("bolt.fill", .yellow, "Rust core <16ms"),
-                    ("brain.fill", .pink, "Smart per-app mode"),
-                    ("keyboard.badge.ellipsis", .blue, "Telex & VNI input"),
-                    ("textformat", .green, "Modern/traditional tone"),
-                    ("sparkles", .orange, "Auto-disable non-Latin")
-                ]
-                Grid(alignment: .center, horizontalSpacing: 0, verticalSpacing: 8) {
-                    GridRow {
-                        FeatureRow(icon: features[0].0, color: features[0].1, text: features[0].2)
-                        FeatureRow(icon: features[1].0, color: features[1].1, text: features[1].2)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                // Actions
+                VStack(spacing: 12) {
+                    Button {
+                        NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                            Text("Check for Updates...")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
-                    GridRow {
-                        FeatureRow(icon: features[2].0, color: features[2].1, text: features[2].2)
-                        FeatureRow(icon: features[3].0, color: features[3].1, text: features[3].2)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    
+                    HStack(spacing: 16) {
+                        Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
+                            Label("GitHub", systemImage: "link")
+                        }
+                        Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
+                            Label("Report Issue", systemImage: "exclamationmark.bubble")
+                        }
                     }
-                    GridRow {
-                        FeatureRow(icon: features[4].0, color: features[4].1, text: features[4].2)
-                        Spacer()
-                    }
+                    .font(.callout)
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                )
-
-                // Check for updates button (Modern style)
-                Button {
-                    NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.down.circle.fill")
-                        Text("Check for Updates...")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
-                .padding(.horizontal, 40)
-
-                // Links row
-                HStack(spacing: 18) {
-                    Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
-                        Label("GitHub", systemImage: "link")
-                    }
-                    Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
-                        Label("Report Issue", systemImage: "exclamationmark.bubble")
-                    }
-                }
-                .font(.callout)
-
+                
+                Spacer()
+                
                 Text("© 2025 GoxViet. All rights reserved.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                    .padding(.bottom, 8)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: 320)
+            
+            // Right side - Features
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Features")
+                    .font(.title2.bold())
+                    .padding(.bottom, 8)
+                
+                let features: [(String, Color, String, String)] = [
+                    ("bolt.fill", .yellow, "High Performance", "Rust core delivers <16ms latency for instant typing"),
+                    ("brain.fill", .pink, "Smart Per-App Mode", "Automatically remembers settings for each application"),
+                    ("keyboard.badge.ellipsis", .blue, "Flexible Input", "Support both Telex and VNI typing methods"),
+                    ("textformat", .green, "Tone Placement", "Choose between modern and traditional tone styles"),
+                    ("sparkles", .orange, "Multi-Language", "Auto-disable for Japanese, Korean, Chinese keyboards")
+                ]
+                
+                ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: feature.0)
+                            .font(.title2)
+                            .foregroundStyle(feature.1)
+                            .frame(width: 32)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(feature.2)
+                                .font(.system(size: 14, weight: .semibold))
+                            Text(feature.3)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func openReleasePage() {
@@ -883,6 +890,6 @@ private struct SettingsGlassBackground: View {
 
 #Preview {
     SettingsRootView()
-        .frame(width: 840, height: 580)
+        .frame(width: 800, height: 650)
 }
 
