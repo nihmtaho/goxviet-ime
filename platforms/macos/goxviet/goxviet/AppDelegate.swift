@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let smartMode = "AppDelegate.smartModeObserver"
         static let appActivation = "AppDelegate.activationObserver"
         static let openUpdateWindow = "AppDelegate.openUpdateObserver"
+        static let inputMethod = "AppDelegate.inputMethodObserver"
         static let settingsClose = "AppDelegate.settingsCloseObserver"
     }
     
@@ -281,6 +282,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(toggleMenuItem)
         
         menu.addItem(NSMenuItem.separator())
+
+        // Input Method Selection
+        let telexItem = NSMenuItem(title: "Input Method: Telex", action: #selector(selectTelex), keyEquivalent: "")
+        telexItem.tag = 200
+        menu.addItem(telexItem)
+
+        let vniItem = NSMenuItem(title: "Input Method: VNI", action: #selector(selectVNI), keyEquivalent: "")
+        vniItem.tag = 201
+        menu.addItem(vniItem)
+        
+        menu.addItem(NSMenuItem.separator())
         
         // Smart Per-App Mode Toggle
         let smartModeMenuItem = NSMenuItem()
@@ -333,6 +345,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         
         statusItem.menu = menu
+        
+        // precise initial state
+        updateInputMethodMenuState()
+    }
+
+    func updateInputMethodMenuState() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let menu = self.statusItem.menu else { return }
+            let currentMethod = AppState.shared.inputMethod
+            
+            if let telexItem = menu.item(withTag: 200) {
+                telexItem.state = (currentMethod == 0) ? .on : .off
+            }
+            if let vniItem = menu.item(withTag: 201) {
+                vniItem.state = (currentMethod == 1) ? .on : .off
+            }
+        }
     }
     
     // MARK: - Settings Window
@@ -469,6 +498,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Log.info("Shortcut changed")
         }
         ResourceManager.shared.register(observer: shortcutToken, identifier: ObserverKey.shortcutChanged, center: notificationCenter)
+
+        // Listen for input method changes
+        let inputMethodToken = notificationCenter.addObserver(
+            forName: .inputMethodChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateInputMethodMenuState()
+        }
+        ResourceManager.shared.register(observer: inputMethodToken, identifier: ObserverKey.inputMethod, center: notificationCenter)
         
         // Listen for smart mode changes
         let smartModeToken = notificationCenter.addObserver(
@@ -511,7 +550,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ObserverKey.shortcutChanged,
             ObserverKey.smartMode,
             ObserverKey.appActivation,
+            ObserverKey.appActivation,
             ObserverKey.openUpdateWindow,
+            ObserverKey.inputMethod,
             ObserverKey.settingsClose
         ]
         identifiers.forEach { identifier in
@@ -591,13 +632,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func selectTelex() {
+        AppState.shared.inputMethod = 0
         InputManager.shared.setInputMethod(0)
-        Log.info("Input method: Telex (changed in Settings)")
+        updateInputMethodMenuState()
+        Log.info("Input method: Telex (selected from Menu)")
     }
     
     @objc func selectVNI() {
+        AppState.shared.inputMethod = 1
         InputManager.shared.setInputMethod(1)
-        Log.info("Input method: VNI (changed in Settings)")
+        updateInputMethodMenuState()
+        Log.info("Input method: VNI (selected from Menu)")
     }
     
     @objc func selectModernTone() {

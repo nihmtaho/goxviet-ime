@@ -328,29 +328,28 @@ class AppState: ObservableObject {
     }
 
     /// Save the mode for a specific app
-    /// Only stores apps with Vietnamese ENABLED (default is disabled/English)
+    /// Stores both Enabled (Vietnamese) and Disabled (English) states
+    /// Default behavior for unknown apps is Disabled (English), but saving it explicitly
+    /// allows the app to appear in the "Saved Applications" list.
     /// Enforces MAX_PER_APP_ENTRIES limit to prevent unbounded memory growth
     func setPerAppMode(bundleId: String, enabled: Bool) {
         var dict = UserDefaults.standard.dictionary(forKey: Keys.perAppModes) as? [String: Bool] ?? [:]
 
-        if !enabled {
-            // Remove from dictionary if disabled (default state = English)
-            dict.removeValue(forKey: bundleId)
-            // Also remove from known apps list
-            removeKnownApp(bundleId: bundleId)
-        } else {
-            // Check capacity limit before adding new entry
-            if dict[bundleId] == nil && dict.count >= MAX_PER_APP_ENTRIES {
+        // Check if this is a new entry (to enforce capacity)
+        if dict[bundleId] == nil {
+             // Check capacity limit before adding new entry
+            if dict.count >= MAX_PER_APP_ENTRIES {
                 Log.warning("Per-app settings at capacity (\(MAX_PER_APP_ENTRIES)). Not saving new entry for: \(bundleId)")
                 Log.warning("Consider clearing old per-app settings from Preferences.")
                 return
             }
-
-            // Store only Vietnamese-enabled apps
-            dict[bundleId] = true
-            // Auto-record as known app for Saved Applications UI
-            recordKnownApp(bundleId: bundleId)
         }
+
+        // Store the state (true or false)
+        dict[bundleId] = enabled
+        
+        // Auto-record as known app for Saved Applications UI
+        recordKnownApp(bundleId: bundleId)
 
         UserDefaults.standard.set(dict, forKey: Keys.perAppModes)
 

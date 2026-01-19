@@ -9,6 +9,12 @@
 import SwiftUI
 import AppKit
 
+struct EngineMetrics {
+    let totalKeystrokes: UInt64
+    let backspaceCount: UInt64
+    let avgBufferLength: Double
+}
+
 struct SettingsRootView: View {
     // MARK: - Stored Settings
     @AppStorage("inputMethod") private var inputMethod = 0
@@ -24,41 +30,49 @@ struct SettingsRootView: View {
     @ObservedObject private var appState = AppState.shared
 
     // MARK: - View State
-    @State private var selection: SettingsSection? = .general
     @State private var perAppModes: [String: Bool] = [:]
     @State private var showClearConfirmation = false
 
     // MARK: - Body
     var body: some View {
-        VStack(spacing: 0) {
-            // Tab Bar
-            HStack(spacing: 0) {
-                ForEach(SettingsSection.allCases, id: \.self) { section in
-                    TabButton(
-                        section: section,
-                        isSelected: selection == section,
-                        action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selection = section
-                            }
-                        }
-                    )
-                }
+        TabView {
+            GeneralSettingsView(
+                inputMethod: $inputMethod,
+                modernToneStyle: $modernToneStyle,
+                escRestoreEnabled: $escRestoreEnabled,
+                freeToneEnabled: $freeToneEnabled,
+                instantRestoreEnabled: $instantRestoreEnabled,
+                autoDisableForNonLatin: $autoDisableForNonLatin
+            )
+            .tabItem {
+                Label("General", systemImage: "gearshape")
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
-            
-            Divider()
-            
-            // Content Area
-            ScrollView {
-                detailContent
-                    .padding(32)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            PerAppSettingsView(
+                smartModeEnabled: $smartModeEnabled,
+                perAppModes: $perAppModes,
+                showClearConfirmation: $showClearConfirmation,
+                reloadAction: loadPerAppModes
+            )
+            .tabItem {
+                Label("Per-App", systemImage: "app.badge")
+            }
+
+            AdvancedSettingsView(
+                metrics: getEngineMetrics(),
+                resetAction: resetEngineMetrics,
+                openLogAction: openLogFile
+            )
+            .tabItem {
+                Label("Advanced", systemImage: "slider.horizontal.3")
+            }
+
+            AboutSettingsView()
+            .tabItem {
+                Label("About", systemImage: "info.circle")
             }
         }
-        .frame(minWidth: 700, minHeight: 600)
+        .frame(minWidth: 900, minHeight: 540)
         .onAppear {
             loadPerAppModes()
             syncToAppState()
@@ -85,39 +99,6 @@ struct SettingsRootView: View {
     }
 
 
-
-    private var detailContent: some View {
-        let currentSelection = selection ?? .general
-        return Group {
-            switch currentSelection {
-            case .general:
-                GeneralSettingsView(
-                    inputMethod: $inputMethod,
-                    modernToneStyle: $modernToneStyle,
-                    escRestoreEnabled: $escRestoreEnabled,
-                    freeToneEnabled: $freeToneEnabled,
-                    instantRestoreEnabled: $instantRestoreEnabled,
-                    autoDisableForNonLatin: $autoDisableForNonLatin
-                )
-            case .perApp:
-                PerAppSettingsView(
-                    smartModeEnabled: $smartModeEnabled,
-                    perAppModes: $perAppModes,
-                    showClearConfirmation: $showClearConfirmation,
-                    reloadAction: loadPerAppModes
-                )
-            case .advanced:
-                AdvancedSettingsView(
-                    metrics: getEngineMetrics(),
-                    resetAction: resetEngineMetrics,
-                    openLogAction: openLogFile
-                )
-            case .about:
-                AboutSettingsView()
-            }
-        }
-        .id(currentSelection)
-    }
 
     // MARK: - Helpers
     private func loadPerAppModes() {
@@ -175,6 +156,7 @@ private struct SidebarHeader: View {
             VStack(spacing: 2) {
                 Text("GoxViet")
                     .font(.headline)
+                    .foregroundStyle(.primary)
                 Text("Settings")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -183,40 +165,7 @@ private struct SidebarHeader: View {
     }
 }
 
-// MARK: - Tab Button
 
-private struct TabButton: View {
-    let section: SettingsSection
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: section.icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-                
-                Text(section.title)
-                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-    }
-}
 
 // MARK: - Sections
 
@@ -256,122 +205,203 @@ private struct GeneralSettingsView: View {
     @ObservedObject private var appState = AppState.shared
 
     var body: some View {
-        Form {
-            Section {
-                Picker("Input Method", selection: $inputMethod) {
-                    Text("Telex").tag(0)
-                    Text("VNI").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: inputMethod) { oldValue, newValue in
-                    AppState.shared.inputMethod = newValue
-                    InputManager.shared.setInputMethod(newValue)
-                    Log.info("Input method: (newValue == 0 ? 'Telex' : 'VNI')")
-                }
-                Text(inputMethodDescription)
-                    .font(.caption)
-            } header: {
-                Label("Input Method", systemImage: "keyboard")
-            }
-
-            Section {
-                Picker("Tone Style", selection: $modernToneStyle) {
-                    Text("Traditional (hòa, thủy)").tag(false)
-                    Text("Modern (hoà, thuỷ)").tag(true)
-                }
-                .pickerStyle(.radioGroup)
-                .onChange(of: modernToneStyle) { _, newValue in
-                    AppState.shared.modernToneStyle = newValue
-                    InputManager.shared.setModernToneStyle(newValue)
-                    Log.info("Tone style: \(newValue ? "Modern" : "Traditional")")
-                }
-
-                Text("Choose where tone marks are placed in compound vowels.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Label("Tone Placement", systemImage: "textformat")
-            }
-
-            Section {
-                Toggle("Free tone placement", isOn: $freeToneEnabled)
-                    .onChange(of: freeToneEnabled) { _, newValue in
-                        AppState.shared.freeToneEnabled = newValue
-                        InputManager.shared.setFreeTone(newValue)
-                        Log.info("Free tone: \(newValue)")
-                    }
-
-                Text("Allow tone marks before completing the vowel.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                
-                Toggle("Auto-restore English words", isOn: $instantRestoreEnabled)
-                    .onChange(of: instantRestoreEnabled) { _, newValue in
-                        AppState.shared.instantRestoreEnabled = newValue
-                        InputManager.shared.setInstantRestore(newValue)
-                        Log.info("Instant auto-restore: \(newValue)")
-                    }
-                
-                Text("Automatically restore English words (like \"Windows\", \"GitHub\") without waiting for space.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                // --- Multi-Language Support ---
-                Toggle("Auto-disable for non-Latin keyboards", isOn: $autoDisableForNonLatin)
-                    .onChange(of: autoDisableForNonLatin) { _, newValue in
-                        AppState.shared.autoDisableForNonLatinEnabled = newValue
-                        if newValue {
-                            InputSourceMonitor.shared.refresh()
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 20, alignment: .top)], spacing: 20) {
+                // Input Method & Tone Style Group
+                GroupBox(label: Label("Input Configuration", systemImage: "keyboard")) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Input Method
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Input Method")
+                                .font(.headline)
+                            
+                            Picker("Input Method", selection: $inputMethod) {
+                                Text("Telex").tag(0)
+                                Text("VNI").tag(1)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .onChange(of: inputMethod) { oldValue, newValue in
+                                AppState.shared.inputMethod = newValue
+                                InputManager.shared.setInputMethod(newValue)
+                                Log.info("Input method: (newValue == 0 ? 'Telex' : 'VNI')")
+                            }
+                            
+                            Text(inputMethodDescription)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        Log.info("Auto-disable for non-Latin: \(newValue)")
+                        
+                        Divider()
+                        
+                        // Tone Placement
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Tone Placement")
+                                .font(.headline)
+                            
+                            HStack(spacing: 24) {
+                                HStack {
+                                    RadioButton(isSelected: !modernToneStyle)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Traditional")
+                                            .font(.callout)
+                                        Text("hòa, thủy")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    modernToneStyle = false
+                                    AppState.shared.modernToneStyle = false
+                                    InputManager.shared.setModernToneStyle(false)
+                                }
+                                
+                                HStack {
+                                    RadioButton(isSelected: modernToneStyle)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Modern")
+                                            .font(.callout)
+                                        Text("hoà, thuỷ")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    modernToneStyle = true
+                                    AppState.shared.modernToneStyle = true
+                                    InputManager.shared.setModernToneStyle(true)
+                                }
+                            }
+                        }
                     }
-
-                Text("Temporarily disable Vietnamese typing when using Japanese, Korean, Chinese, or other non-Latin input methods.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if InputSourceMonitor.shared.isTemporarilyDisabled,
-                   let inputSourceName = InputSourceMonitor.shared.getCurrentInputSourceDisplayName() {
-                    HStack(spacing: 8) {
-                        Image(systemName: "keyboard.badge.ellipsis")
-                            .foregroundStyle(.orange)
-                        Text("Vietnamese temporarily disabled")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(inputSourceName)
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                    .padding(.vertical, 4)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } header: {
-                Label("Smart Features", systemImage: "sparkles")
-            }
-            
-            Section {
-                Toggle("Hide from Dock", isOn: $appState.hideFromDock)
                 
-                Text("When enabled, GoxViet will only appear in the menu bar.")
+                // Smart Features Group
+                GroupBox(label: Label("Smart Features", systemImage: "sparkles")) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ToggleRow(
+                            title: "Free tone placement",
+                            description: "Allow tone marks before completing the vowel.",
+                            isOn: $freeToneEnabled
+                        ) { newValue in
+                            AppState.shared.freeToneEnabled = newValue
+                            InputManager.shared.setFreeTone(newValue)
+                            Log.info("Free tone: \(newValue)")
+                        }
+                        
+                        Divider()
+                        
+                        ToggleRow(
+                            title: "Auto-restore English words",
+                            description: "Automatically restore English words without waiting for space.",
+                            isOn: $instantRestoreEnabled
+                        ) { newValue in
+                            AppState.shared.instantRestoreEnabled = newValue
+                            InputManager.shared.setInstantRestore(newValue)
+                            Log.info("Instant auto-restore: \(newValue)")
+                        }
+                        
+                        Divider()
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Auto-disable for non-Latin keyboards", isOn: $autoDisableForNonLatin)
+                                .onChange(of: autoDisableForNonLatin) { _, newValue in
+                                    AppState.shared.autoDisableForNonLatinEnabled = newValue
+                                    if newValue {
+                                        InputSourceMonitor.shared.refresh()
+                                    }
+                                    Log.info("Auto-disable for non-Latin: \(newValue)")
+                                }
+                            
+                            Text("Disable Vietnamese typing when using Japanese, Korean, or Chinese keyboards.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            
+                            if InputSourceMonitor.shared.isTemporarilyDisabled,
+                               let inputSourceName = InputSourceMonitor.shared.getCurrentInputSourceDisplayName() {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "keyboard.badge.ellipsis")
+                                        .foregroundStyle(.orange)
+                                    Text("Temporarily disabled: \(inputSourceName)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.top, 4)
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("Hide from Dock", isOn: $appState.hideFromDock)
+                            Text("GoxViet appears only in the menu bar and Settings.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 1000)
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    // Helper for consistency
+    private struct ToggleRow: View {
+        let title: String
+        let description: String
+        @Binding var isOn: Bool
+        let onChange: (Bool) -> Void
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(title, isOn: $isOn)
+                    .onChange(of: isOn) { _, newValue in
+                        onChange(newValue)
+                    }
+                Text(description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } header: {
-                Label("Appearance", systemImage: "dock.rectangle")
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
     }
+    
 
     private var inputMethodDescription: String {
         switch inputMethod {
         case 0:
-            return "Telex: s, f, r, x, j for tone marks. aw → ă, aa → â, ee → ê, dd → đ."
+            return "s, f, r, x, j for tone marks. aw→ă, aa→â, ee→ê, dd→đ"
         case 1:
-            return "VNI: 1-5 for tone marks, 6 → â/ê/ô, 7 → ư/ơ, 8 → ă, 9 → đ."
+            return "1-5 for tone marks, 6→â/ê/ô, 7→ư/ơ, 8→ă, 9→đ"
         default:
             return ""
         }
+    }
+}
+
+private struct RadioButton: View {
+    let isSelected: Bool
+    
+    var body: some View {
+        Circle()
+            .stroke(Color.accentColor, lineWidth: 2)
+            .frame(width: 16, height: 16)
+            .overlay(
+                isSelected ? Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 6, height: 6)
+                : nil
+            )
     }
 }
 
@@ -385,89 +415,180 @@ private struct PerAppSettingsView: View {
     let reloadAction: () -> Void
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Enable Smart Per-App Mode", isOn: $smartModeEnabled)
-                    .onChange(of: smartModeEnabled) { _, newValue in
-                        AppState.shared.isSmartModeEnabled = newValue
-                        if newValue {
-                            PerAppModeManager.shared.refresh()
-                        }
-                        Log.info("Smart mode: \(newValue)")
-                    }
-
-                Text("Automatically remember Vietnamese input state for each application.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Label("Smart Mode", systemImage: "brain")
-            }
-
-            Section {
-                if perAppModes.isEmpty {
-                    ContentUnavailableView(
-                        "No Applications Detected",
-                        systemImage: "app.dashed",
-                        description: Text("Saved Applications will show which apps have Vietnamese typing enabled or disabled.")
-                    )
-                } else {
-                    ForEach(Array(perAppModes.keys.sorted()), id: \.self) { bundleId in
-                        LabeledContent {
-                            HStack(spacing: 8) {
-                                let isEnabled = perAppModes[bundleId] ?? true
-                                Text(isEnabled ? "Enabled" : "Disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(isEnabled ? .green : .red)
-
-                                Button {
-                                    // Remove saved visibility + any override for this app
-                                    AppState.shared.clearPerAppMode(bundleId: bundleId)
-                                    reloadAction()
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 20, alignment: .top)], spacing: 20) {
+                // Smart Mode Configuration
+                GroupBox(label: Label("Smart Mode Configuration", systemImage: "brain")) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Toggle("Enable Smart Per-App Mode", isOn: $smartModeEnabled)
+                                .toggleStyle(.switch)
+                                .onChange(of: smartModeEnabled) { _, newValue in
+                                    AppState.shared.isSmartModeEnabled = newValue
+                                    if newValue {
+                                        PerAppModeManager.shared.refresh()
+                                    }
+                                    Log.info("Smart mode: \(newValue)")
                                 }
-                                .buttonStyle(.plain)
-                                .help("Remove this app")
-                            }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(AppState.shared.getAppName(bundleId: bundleId))
-                                Text(bundleId)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Spacer()
+                        }
+                        
+                        Text("When enabled, GoxViet automatically remembers your typing preference (On/Off) for each application individually.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        HStack(spacing: 12) {
+                            Text("Example:")
+                                .fontWeight(.semibold)
+                                .font(.caption)
+                            Text("Vietnamese ON in Mail")
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.1))
+                                .foregroundStyle(.green)
+                                .cornerRadius(4)
+                            Text("OFF in Terminal")
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.1))
+                                .foregroundStyle(.secondary)
+                                .cornerRadius(4)
                         }
                     }
-
-                    Button("Clear All", role: .destructive) {
-                        showClearConfirmation = true
-                    }
-                    .alert("Clear All Settings?", isPresented: $showClearConfirmation) {
-                        Button("Cancel", role: .cancel) {}
-                        Button("Clear All", role: .destructive) {
-                            AppState.shared.clearAllPerAppModes()
-                            reloadAction()
-                        }
-                    } message: {
-                        Text("This will remove all saved per-app Vietnamese input states.")
-                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } header: {
-                HStack {
+                
+                // Saved Applications
+                GroupBox(label: HStack {
                     Label("Saved Applications", systemImage: "list.bullet")
                     Spacer()
                     Text("\(perAppModes.count) / \(AppState.shared.getPerAppModesCapacity())")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if perAppModes.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "app.dashed")
+                                    .font(.system(size: 32))
+                                    .foregroundStyle(.tertiary)
+                                Text("No saved applications")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                Text("Toggle Vietnamese input in any app to save its state here.")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                        } else {
+                            ScrollView {
+                                LazyVStack(spacing: 0) {
+                                    ForEach(Array(perAppModes.keys.sorted()), id: \.self) { bundleId in
+                                        VStack(spacing: 0) {
+                                            PerAppModeRow(bundleId: bundleId, isEnabled: perAppModes[bundleId] ?? false, onRemove: {
+                                                AppState.shared.clearPerAppMode(bundleId: bundleId)
+                                                reloadAction()
+                                            })
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            
+                                            if bundleId != perAppModes.keys.sorted().last {
+                                                Divider()
+                                                    .padding(.leading, 44)
+                                            }
+                                        }
+                                    }
+                                }
+                                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                            }
+                            .frame(maxHeight: 300)
+                            .cornerRadius(6)
+                            
+                            HStack {
+                                Spacer()
+                                Button("Clear All Settings", role: .destructive) {
+                                    showClearConfirmation = true
+                                }
+                                .font(.caption)
+                                .padding(.top, 12)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .padding(24)
+            .frame(maxWidth: 1000)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .alert("Clear All Settings?", isPresented: $showClearConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear All", role: .destructive) {
+                AppState.shared.clearAllPerAppModes()
+                reloadAction()
+            }
+        } message: {
+            Text("This will remove all saved per-app Vietnamese input states.")
+        }
         .onAppear {
             reloadAction()
         }
+    }
+}
+
+private struct PerAppModeRow: View {
+    let bundleId: String
+    let isEnabled: Bool
+    let onRemove: () -> Void
+    
+    var displayName: String {
+        AppState.shared.getAppName(bundleId: bundleId)
+    }
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(isEnabled ? Color.green.opacity(0.3) : Color.gray.opacity(0.2))
+                .frame(width: 8, height: 8)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName)
+                    .font(.callout)
+                Text(bundleId)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            HStack(spacing: 8) {
+                Text(isEnabled ? "ON" : "OFF")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(isEnabled ? .green : .gray)
+                
+                Button {
+                    onRemove()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("Remove this app")
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(.fill.opacity(0.3))
+        .cornerRadius(6)
     }
 }
 
@@ -482,78 +603,99 @@ private struct AdvancedSettingsView: View {
     @State private var showRecordingSheet = false
 
     var body: some View {
-        Form {
-            Section {
-                LabeledContent("Toggle Input") {
-                    Button(action: { showRecordingSheet = true }) {
-                        HStack(spacing: 10) {
-                            Text(currentShortcut.displayString)
-                                .font(.body.monospaced())
-                                .fontWeight(.semibold)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "pencil.circle.fill")
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 20, alignment: .top)], spacing: 20) {
+                // Keyboard Shortcuts Group
+                GroupBox(label: Label("Keyboard Shortcuts", systemImage: "command")) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            Text("Toggle Input Source")
                                 .font(.body)
-                                .foregroundStyle(.blue)
+                            Spacer()
+                            Button(action: { showRecordingSheet = true }) {
+                                HStack(spacing: 8) {
+                                    Text(currentShortcut.displayString)
+                                        .font(.system(.body, design: .monospaced))
+                                        .fontWeight(.semibold)
+                                    Image(systemName: "keyboard")
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                            }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.quaternary)
-                        .cornerRadius(8)
+                        
+                        Text("Click the button above to record a new shortcut. Supports Control, Option, Shift, Command, and Fn modifiers.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .buttonStyle(.plain)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 
-                Text("Click to record a new shortcut")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Label("Keyboard Shortcuts", systemImage: "command")
+                // Performance Metrics Group
+                GroupBox(label: Label("Engine Performance", systemImage: "gauge.high")) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 40) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Total Keystrokes")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(String(metrics.totalKeystrokes))
+                                    .font(.title2.monospaced())
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Backspace Count")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(String(metrics.backspaceCount))
+                                    .font(.title2.monospaced())
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Avg Buffer")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(String(format: "%.1f", metrics.avgBufferLength))
+                                    .font(.title2.monospaced())
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button("Reset Statistics") {
+                            resetAction()
+                        }
+                        .font(.caption)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                
+                #if DEBUG
+                GroupBox(label: Label("Debug", systemImage: "ladybug")) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Logs")
+                                .font(.headline)
+                            Text(Log.logPath.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button("Open Log File", action: openLogAction)
+                    }
+                    .padding(12)
+                }
+                #endif
             }
-
-            Section {
-                LabeledContent("Total Keystrokes") {
-                    Text("\(metrics.totalKeystrokes)")
-                        .font(.title3.monospacedDigit())
-                        .fontWeight(.semibold)
-                }
-
-                LabeledContent("Backspace Count") {
-                    Text("\(metrics.backspaceCount)")
-                        .font(.title3.monospacedDigit())
-                        .fontWeight(.semibold)
-                }
-
-                LabeledContent("Avg Buffer Length") {
-                    Text(String(format: "%.1f", metrics.avgBufferLength))
-                        .font(.title3.monospacedDigit())
-                        .fontWeight(.semibold)
-                }
-
-                Button("Reset Statistics") {
-                    resetAction()
-                }
-            } header: {
-                Label("Performance", systemImage: "gauge.high")
-            }
-
-            #if DEBUG
-            Section {
-                Button("Open Log File") {
-                    openLogAction()
-                }
-
-                Text("Location: ~/Library/Logs/GoxViet/keyboard.log")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Label("Debug", systemImage: "ladybug")
-            }
-            #endif
+            .padding(24)
+            .frame(maxWidth: 1000)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        .frame(maxWidth: .infinity, alignment: .top)
         .sheet(isPresented: $showRecordingSheet) {
             ShortcutRecordingSheet(
                 isPresented: $showRecordingSheet,
@@ -565,6 +707,31 @@ private struct AdvancedSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .shortcutChanged)) { _ in
             currentShortcut = InputManager.shared.getCurrentShortcut()
         }
+    }
+}
+
+private struct MetricRow: View {
+    let label: String
+    let value: String
+    let icon: String
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.callout)
+                .foregroundStyle(.blue)
+                .frame(width: 20)
+            
+            Text(label)
+                .font(.callout)
+            
+            Spacer()
+            
+            Text(value)
+                .font(.system(.callout, design: .monospaced))
+                .fontWeight(.semibold)
+        }
+        .padding(.vertical, 6)
     }
 }
 
@@ -621,6 +788,7 @@ private struct ShortcutRecordingSheet: View {
                 Text("Cảnh báo: Shortcut có thể ghi đè phím tắt của ứng dụng khác, hãy chọn cẩn trọng.")
                     .font(.caption)
                     .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
                 
                 if capturedShortcut != nil {
                     VStack(alignment: .leading, spacing: 8) {
@@ -641,14 +809,25 @@ private struct ShortcutRecordingSheet: View {
                         }
                         
                         if let conflict = conflictWarning {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.circle.fill")
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.orange)
+                                    .font(.body)
+                                
                                 Text(conflict)
                                     .font(.caption)
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            .padding(.top, 4)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.1))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                            )
+                            .cornerRadius(8)
+                            .help(conflict)
                         }
                     }
                 } else {
@@ -712,117 +891,129 @@ private struct ShortcutRecordingSheet: View {
 
 private struct AboutSettingsView: View {
     var body: some View {
-        HStack(spacing: 40) {
-            // Left side - App info
-            VStack(spacing: 20) {
-                // App Icon
-                if let appIcon = NSImage(named: "AppIcon") {
-                    Image(nsImage: appIcon)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 100, height: 100)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(.white.opacity(0.22), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
-                }
-
-                VStack(spacing: 4) {
-                    Text("GoxViet")
-                        .font(.system(size: 28, weight: .bold))
-                    Text("Gõ Việt")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-
-                    if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-                       let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
-                        Text("Version \(version) (\(build))")
-                            .font(.caption)
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 20, alignment: .top)], spacing: 20) {
+                
+                // App Information Group
+                GroupBox(label: Label("Application", systemImage: "app")) {
+                    VStack(spacing: 20) {
+                        // Icon & Title
+                        VStack(spacing: 8) {
+                            if let appIcon = NSImage(named: "AppIcon") {
+                                Image(nsImage: appIcon)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                            .stroke(.white.opacity(0.1), lineWidth: 1)
+                                    )
+                                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                            }
+                            
+                            VStack(spacing: 4) {
+                                Text("Gõ Việt")
+                                    .font(.title2.bold())
+                                
+                                if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                                   let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
+                                    Text("Version \(version) (\(build))")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        
+                        Text("A modern Vietnamese input method editor for macOS, built with performance and simplicity in mind.")
+                            .font(.callout)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 8)
+                        
+                        Divider()
+                        
+                        // Actions
+                        VStack(spacing: 12) {
+                            Button {
+                                NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                    Text("Check for Updates")
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+                            .controlSize(.large)
+                            
+                            HStack(spacing: 16) {
+                                Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
+                                    Label("GitHub", systemImage: "link")
+                                }
+                                Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
+                                    Label("Report Issue", systemImage: "exclamationmark.bubble")
+                                }
+                            }
+                            .font(.subheadline)
+                            .buttonStyle(.link)
+                        }
+                        
+                        Text("© 2025 GoxViet. All rights reserved.")
+                            .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .padding(.top, 4)
                     }
+                    .padding(20)
+                    .frame(maxWidth: .infinity)
                 }
                 
-                Text("A modern Vietnamese input method editor for macOS.")
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                // Actions
-                VStack(spacing: 12) {
-                    Button {
-                        NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
-                    } label: {
-                        HStack {
-                            Image(systemName: "arrow.down.circle.fill")
-                            Text("Check for Updates...")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-                    
-                    HStack(spacing: 16) {
-                        Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
-                            Label("GitHub", systemImage: "link")
-                        }
-                        Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
-                            Label("Report Issue", systemImage: "exclamationmark.bubble")
-                        }
-                    }
-                    .font(.callout)
-                }
-                
-                Spacer()
-                
-                Text("© 2025 GoxViet. All rights reserved.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: 320)
-            
-            // Right side - Features
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Features")
-                    .font(.title2.bold())
-                    .padding(.bottom, 8)
-                
-                let features: [(String, Color, String, String)] = [
-                    ("bolt.fill", .yellow, "High Performance", "Rust core delivers <16ms latency for instant typing"),
-                    ("brain.fill", .pink, "Smart Per-App Mode", "Automatically remembers settings for each application"),
-                    ("keyboard.badge.ellipsis", .blue, "Flexible Input", "Support both Telex and VNI typing methods"),
-                    ("textformat", .green, "Tone Placement", "Choose between modern and traditional tone styles"),
-                    ("sparkles", .orange, "Multi-Language", "Auto-disable for Japanese, Korean, Chinese keyboards")
-                ]
-                
-                ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: feature.0)
-                            .font(.title2)
-                            .foregroundStyle(feature.1)
-                            .frame(width: 32)
+                // Features Group
+                GroupBox(label: Label("Key Features", systemImage: "star")) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        let features: [(String, Color, String, String)] = [
+                            ("bolt.fill", .yellow, "High Performance", "Rust core delivers <16ms latency for instant typing"),
+                            ("brain.fill", .pink, "Smart Per-App Mode", "Automatically remembers settings for each application"),
+                            ("keyboard.badge.ellipsis", .blue, "Flexible Input", "Support both Telex and VNI typing methods"),
+                            ("textformat", .green, "Tone Placement", "Choose between modern and traditional tone styles"),
+                            ("sparkles", .orange, "Multi-Language", "Auto-disable for Japanese, Korean, Chinese keyboards")
+                        ]
                         
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(feature.2)
-                                .font(.system(size: 14, weight: .semibold))
-                            Text(feature.3)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: feature.0)
+                                    .font(.title3)
+                                    .foregroundStyle(feature.1)
+                                    .frame(width: 24)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(feature.2)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(feature.3)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                            
+                            if index < features.count - 1 {
+                                Divider()
+                                    .padding(.leading, 36)
+                            }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(24)
+            .frame(maxWidth: 1000)
         }
-        .padding(.horizontal, 40)
-        .padding(.vertical, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private func openReleasePage() {
@@ -848,12 +1039,6 @@ private struct FeatureRow: View {
                 .font(.callout)
         }
     }
-}
-
-struct EngineMetrics {
-    let totalKeystrokes: UInt64
-    let backspaceCount: UInt64
-    let avgBufferLength: Double
 }
 
 // MARK: - Background
@@ -892,4 +1077,3 @@ private struct SettingsGlassBackground: View {
     SettingsRootView()
         .frame(width: 800, height: 650)
 }
-
