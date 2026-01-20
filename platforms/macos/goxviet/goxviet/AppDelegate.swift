@@ -320,21 +320,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[GoxViet] Added Settings menu item")
         menu.addItem(settingsMenuItem)
 
-        let updateMenuItem = NSMenuItem(
-            title: "Check for Updates...",
-            action: #selector(checkForUpdates),
-            keyEquivalent: ""
-        )
-        updateMenuItem.target = self
-        menu.addItem(updateMenuItem)
+        // let updateMenuItem = NSMenuItem(
+        //     title: "Check for Updates...",
+        //     action: #selector(checkForUpdates),
+        //     keyEquivalent: ""
+        // )
+        // updateMenuItem.target = self
+        // menu.addItem(updateMenuItem)
         
         // About
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(
-            title: "About GoxViet",
-            action: #selector(showAbout),
-            keyEquivalent: ""
-        ))
+//        menu.addItem(NSMenuItem.separator())
+//        menu.addItem(NSMenuItem(
+//            title: "About GoxViet",
+//            action: #selector(showAbout),
+//            keyEquivalent: ""
+//        ))
         
         // Quit
         menu.addItem(NSMenuItem.separator())
@@ -538,7 +538,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { _ in
-            WindowManager.shared.showUpdateWindow()
+            WindowManager.shared.showSettingsWindow()
         }
         ResourceManager.shared.register(observer: openUpdateToken, identifier: ObserverKey.openUpdateWindow, center: notificationCenter)
     }
@@ -655,40 +655,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("Tone style: Traditional (changed in Settings)")
     }
     
-    @objc func checkForUpdates() {
-        WindowManager.shared.showUpdateWindow()
-        // Trigger update check
-        UpdateManager.shared.checkForUpdates(userInitiated: true)
-    }
+//    @objc func checkForUpdates() {
+//        // Open Settings window to About tab where update UI is now located
+//        WindowManager.shared.showSettingsWindow()
+//        // Update check is auto-triggered when About tab appears
+//    }
     
-    @objc func showAbout() {
-        let shortcut = InputManager.shared.getCurrentShortcut()
-        let alert = NSAlert()
-        alert.messageText = "GoxViet - Gõ Việt"
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        alert.informativeText = """
-        A high-performance Vietnamese IME powered by Rust.
-
-        Version: \(version) (Build \(build))
-
-        Features:
-        • Native macOS integration via Accessibility API
-        • Ultra-low latency input processing (< 5ms)
-        • Smart text injection (app-aware)
-        • Per-app Vietnamese mode memory
-        • Telex and VNI input methods
-        • Modern and traditional tone styles
-
-        Toggle Shortcut: \(shortcut.displayString)
-        (Use \(shortcut.displayString) to switch between Gõ Việt and English)
-
-        Built with ❤️ using Rust + Swift
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
+//    @objc func showAbout() {
+//        let shortcut = InputManager.shared.getCurrentShortcut()
+//        let alert = NSAlert()
+//        alert.messageText = "GoxViet - Gõ Việt"
+//        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+//        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+//        alert.informativeText = """
+//        A high-performance Vietnamese IME powered by Rust.
+//
+//        Version: \(version) (Build \(build))
+//
+//        Features:
+//        • Native macOS integration via Accessibility API
+//        • Ultra-low latency input processing (< 5ms)
+//        • Smart text injection (app-aware)
+//        • Per-app Vietnamese mode memory
+//        • Telex and VNI input methods
+//        • Modern and traditional tone styles
+//
+//        Toggle Shortcut: \(shortcut.displayString)
+//        (Use \(shortcut.displayString) to switch between Gõ Việt and English)
+//
+//        Built with ❤️ using Rust + Swift
+//        """
+//        alert.alertStyle = .informational
+//        alert.addButton(withTitle: "OK")
+//        alert.runModal()
+//    }
     
     @objc func quitApp() {
         Log.info("Application quitting")
@@ -700,7 +700,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ aNotification: Notification) {
         Log.info("Application terminating")
         
-        // Stop all managers
+        // CRITICAL: Guard against premature termination when just closing a window
+        // Only terminate if truly exiting the app, not just closing a window
+        let visibleWindows = NSApp.windows.filter { $0.isVisible }
+        if !visibleWindows.isEmpty {
+            Log.warning("Application terminating but windows still visible - possible false positive")
+            // Still proceed with cleanup, but be careful
+        }
+        
+        // Stop all managers in safe order
+        // IMPORTANT: UpdateManager.stop() uses DispatchQueue.main.async internally,
+        // so it won't block InputManager from processing final keystrokes
         UpdateManager.shared.stop()
         InputManager.shared.stop()
         

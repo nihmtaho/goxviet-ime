@@ -68,6 +68,7 @@ struct SettingsRootView: View {
             }
 
             AboutSettingsView()
+                .environmentObject(UpdateManager.shared)
             .tabItem {
                 Label("About", systemImage: "info.circle")
             }
@@ -890,12 +891,14 @@ private struct ShortcutRecordingSheet: View {
 // MARK: - About View
 
 private struct AboutSettingsView: View {
+    @EnvironmentObject private var updateManager: UpdateManager
+    
     var body: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 20, alignment: .top)], spacing: 20) {
                 
                 // App Information Group
-                GroupBox(label: Label("Application", systemImage: "app")) {
+                GroupBox() {
                     VStack(spacing: 20) {
                         // Icon & Title
                         VStack(spacing: 8) {
@@ -934,33 +937,20 @@ private struct AboutSettingsView: View {
                         
                         Divider()
                         
-                        // Actions
-                        VStack(spacing: 12) {
-                            Button {
-                                NotificationCenter.default.post(name: .openUpdateWindow, object: nil)
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.down.circle.fill")
-                                    Text("Check for Updates")
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 6)
+                        // Update Status (dynamic based on state)
+                        updateStatusView
+                        
+                        // External Links
+                        HStack(spacing: 16) {
+                            Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
+                                Label("GitHub", systemImage: "link")
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.blue)
-                            .controlSize(.large)
-                            
-                            HStack(spacing: 16) {
-                                Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime")!) {
-                                    Label("GitHub", systemImage: "link")
-                                }
-                                Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
-                                    Label("Report Issue", systemImage: "exclamationmark.bubble")
-                                }
+                            Link(destination: URL(string: "https://github.com/nihmtaho/goxviet-ime/issues")!) {
+                                Label("Report Issue", systemImage: "exclamationmark.bubble")
                             }
-                            .font(.subheadline)
-                            .buttonStyle(.link)
                         }
+                        .font(.subheadline)
+                        .buttonStyle(.link)
                         
                         Text("© 2025 GoxViet. All rights reserved.")
                             .font(.caption2)
@@ -972,7 +962,7 @@ private struct AboutSettingsView: View {
                 }
                 
                 // Features Group
-                GroupBox(label: Label("Key Features", systemImage: "star")) {
+                GroupBox() {
                     VStack(alignment: .leading, spacing: 16) {
                         let features: [(String, Color, String, String)] = [
                             ("bolt.fill", .yellow, "High Performance", "Rust core delivers <16ms latency for instant typing"),
@@ -1014,6 +1004,215 @@ private struct AboutSettingsView: View {
             .frame(maxWidth: 1000)
         }
         .frame(maxWidth: .infinity, alignment: .top)
+        .onAppear {
+            // Auto-check for updates when About tab appears if idle
+            if updateManager.updateState == .idle {
+                updateManager.checkForUpdates(userInitiated: false)
+            }
+        }
+    }
+    
+    // MARK: - Update Status Views
+    
+    @ViewBuilder
+    private var updateStatusView: some View {
+        VStack(spacing: 16) {
+            switch updateManager.updateState {
+            case .idle:
+                idleUpdateView
+            case .checking:
+                checkingUpdateView
+            case .updateAvailable:
+                updateAvailableView
+            case .downloading:
+                downloadingView
+            case .readyToInstall:
+                readyToInstallView
+            case .upToDate:
+                upToDateView
+            case .error:
+                errorView
+            }
+        }
+    }
+    
+    private var idleUpdateView: some View {
+        Button {
+            updateManager.checkForUpdates(userInitiated: true)
+        } label: {
+            HStack {
+                Image(systemName: "arrow.down.circle.fill")
+                Text("Check for Updates")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.blue)
+        .controlSize(.large)
+    }
+    
+    private var checkingUpdateView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(1.2)
+            Text("Checking for updates...")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(height: 60)
+    }
+    
+    private var updateAvailableView: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.green)
+                if let latestVersion = updateManager.latestVersion {
+                    Text("Version \(latestVersion) Available")
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            
+            Button {
+                updateManager.downloadUpdate()
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.down.circle")
+                    Text("Download Update")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .controlSize(.large)
+        }
+    }
+    
+    private var downloadingView: some View {
+        VStack(spacing: 12) {
+            // Compact circular progress
+            ZStack {
+                Circle()
+                    .stroke(Color.blue.opacity(0.2), lineWidth: 8)
+                    .frame(width: 80, height: 80)
+                
+                Circle()
+                    .trim(from: 0, to: updateManager.downloadProgress)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.blue, .purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                    )
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.3), value: updateManager.downloadProgress)
+                
+                Text("\(Int(updateManager.downloadProgress * 100))%")
+                    .font(.system(size: 18, weight: .bold))
+                    .monospacedDigit()
+            }
+            
+            Text(updateManager.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Button {
+                updateManager.cancelDownload()
+            } label: {
+                Text("Cancel")
+                    .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+    
+    private var readyToInstallView: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                if let latestVersion = updateManager.latestVersion {
+                    Text("Version \(latestVersion) Ready")
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            
+            Button {
+                // Installation happens automatically when download completes
+                // This button is just informational/disabled in production
+                #if DEBUG
+                // In debug, could reset for testing
+                #endif
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.clockwise.circle")
+                    Text("Install & Relaunch")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .controlSize(.large)
+            .disabled(true) // Installation is automatic
+            
+            Text("Installation will begin automatically")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+    
+    private var upToDateView: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("You're up to date")
+                    .font(.subheadline.weight(.semibold))
+            }
+            
+            if let lastChecked = updateManager.lastChecked {
+                Text("Last checked: \(lastChecked, style: .relative) ago")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+    
+    private var errorView: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Update check failed")
+                    .font(.subheadline.weight(.semibold))
+            }
+            
+            Text(updateManager.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button {
+                updateManager.checkForUpdates(userInitiated: true)
+            } label: {
+                Text("Try Again")
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+    
+    private func currentVersion() -> String? {
+        guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else {
+            return nil
+        }
+        return "\(version) (\(build))"
     }
 
     private func openReleasePage() {

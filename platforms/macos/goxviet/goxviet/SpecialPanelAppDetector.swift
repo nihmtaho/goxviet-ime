@@ -32,10 +32,11 @@ class SpecialPanelAppDetector {
     // MARK: - Cache
 
     /// PERFORMANCE: Uses CFAbsoluteTimeGetCurrent() instead of Date() for faster timestamp
+    /// THREAD-SAFETY: Protected by NSLock to prevent race conditions during concurrent access
     private enum Cache {
         static var result: String?
         static var timestamp: CFAbsoluteTime = 0
-        static let ttl: CFAbsoluteTime = 0.1  // 100ms (reduced from 300ms)
+        static let ttl: CFAbsoluteTime = 0.1  // 100ms
         
         // Statistics
         static var hits: Int = 0

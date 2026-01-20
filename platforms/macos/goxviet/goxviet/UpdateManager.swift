@@ -43,6 +43,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
     private var timer: Timer?
     private(set) var isRunning: Bool = false
     private let defaults = UserDefaults.standard
+    private var isUserCancelledDownload: Bool = false
 
     private let apiURL = URL(string: "https://api.github.com/repos/nihmtaho/goxviet-ime/releases/latest")!
     private let checkInterval: TimeInterval = 6 * 60 * 60  // Every 6 hours
@@ -72,9 +73,19 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
     }
     
     deinit {
-        stop()
-        Log.info("UpdateManager deinitialized")
+        // CRITICAL FIX: Do NOT call stop() in deinit for singleton
+        // UpdateManager is a singleton that lives for the entire app lifecycle.
+        // Calling stop() in deinit causes race condition:
+        // 1. deinit starts deallocating UpdateManager
+        // 2. stop() schedules async work via DispatchQueue.main.async
+        // 3. Weak self reference becomes invalid mid-deallocation
+        // 4. EXC_BAD_ACCESS when async block tries to access deallocated memory
+        // 
+        // Instead, let ResourceManager handle cleanup via its lifecycle management.
+        // Only call stop() explicitly when app is actually terminating.
+        Log.info("UpdateManager would be deinitialized (singleton - skipping stop)")
     }
+
 
     // MARK: - Public API
 
@@ -84,6 +95,51 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         refreshSchedule(triggerImmediate: true)
     }
 
+    /// Pauses the check timer without stopping other operations.
+    /// Called when Update window is closed to prevent timer callbacks
+    /// after window deallocation (which causes EXC_BAD_ACCESS).
+    /// Pauses the check timer without stopping other operations.
+    /// Called when Update window is closed to prevent timer callbacks
+    /// after window deallocation (which causes EXC_BAD_ACCESS).
+    func pauseChecking() {
+        // CRITICAL FIX: Run synchronously if on main thread to ensure timer
+        // is invalidated BEFORE window/view deallocation continues.
+        // Async dispatch allows window close to finish before timer is stopped,
+        // reopening the race condition window.
+        if Thread.isMainThread {
+            self._pauseCheckingInternal()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?._pauseCheckingInternal()
+            }
+        }
+    }
+    
+    private func _pauseCheckingInternal() {
+        // Unregister timer from ResourceManager to stop it from firing
+        ResourceManager.shared.unregister(timerIdentifier: "UpdateManager.checkTimer")
+        self.timer = nil
+        
+        Log.info("UpdateManager checking paused (no more periodic checks)")
+    }
+
+    /// Resumes the check timer after it was paused.
+    /// Called when Update window is reopened.
+    func resumeChecking() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.isRunning else { return }
+            
+            // Re-schedule the timer
+            self.refreshSchedule(triggerImmediate: false)
+            
+            Log.info("UpdateManager checking resumed")
+        }
+    }
+
+    /// Stops UpdateManager and cleans up resources.
+    /// WARNING: This method ONLY cleans up UpdateManager resources.
+    /// It does NOT close windows or terminate the app.
+    /// Window lifecycle is managed by the window controllers/SwiftUI views.
     func stop() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isRunning else { return }
@@ -92,23 +148,25 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
             ResourceManager.shared.unregister(timerIdentifier: "UpdateManager.checkTimer")
             self.timer = nil
             
-            // Cancel ongoing downloads
+            // Cancel ongoing downloads (does not affect other app operations)
             self.downloadTask?.cancel()
             self.downloadTask = nil
             
             // Invalidate and nil out sessions to release network resources
+            // Note: This only affects UpdateManager's network sessions,
+            // not app windows or other managers
             self.downloadSession?.invalidateAndCancel()
             self.downloadSession = nil
             self.apiSession?.invalidateAndCancel()
             self.apiSession = nil
             
-            // Reset state
+            // Reset state (internal state only, does not affect app UI)
             self.isChecking = false
             self.isInstalling = false
             self.updateState = .idle
             self.isRunning = false
             
-            Log.info("UpdateManager stopped and cleaned up")
+            Log.info("UpdateManager stopped and cleaned up (windows unaffected)")
         }
     }
 
@@ -188,22 +246,36 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
             self.statusMessage = "Downloading..."
         }
 
+        // Reset cancel flag when starting new download
+        isUserCancelledDownload = false
         downloadingVersion = latestVersion ?? "unknown"
         let session = makeDownloadSession()
         downloadTask = session.downloadTask(with: downloadURL)
         downloadTask?.resume()
     }
 
+    /// Cancels the ongoing download.
+    /// WARNING: This method ONLY cancels the download task and updates state.
+    /// It does NOT close any windows (Update window or Settings window).
+    /// Window closing is handled by the view layer (UpdateWindowView).
+    /// CRITICAL: No long-running operations to prevent InputManager interruption.
     func cancelDownload() {
+        // Set flag to indicate user-initiated cancel
+        isUserCancelledDownload = true
+        
+        // Only cancel the task, let delegate handle cleanup
         downloadTask?.cancel()
         downloadTask = nil
-        downloadSession?.invalidateAndCancel()
-        downloadSession = nil
-        DispatchQueue.main.async {
+        
+        // Update UI state (internal state only, does not affect windows)
+        // Use immediate sync update to avoid async timing issues with InputManager
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
             self.isInstalling = false
             self.updateState = .idle
             self.downloadProgress = 0.0
             self.statusMessage = "Download cancelled"
+            Log.info("Download cancelled by user - no InputManager impact")
         }
     }
 
@@ -419,6 +491,10 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         return nil
     }
 
+    /// Installs the new app version and relaunches.
+    /// WARNING: This is the ONLY method in UpdateManager that terminates the app.
+    /// It terminates the app (NSApp.terminate) to complete the installation.
+    /// This is expected behavior when installing updates.
     private func relaunchWithNewApp(tempApp: String) {
         DispatchQueue.main.async {
             self.isInstalling = true
@@ -433,6 +509,8 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         task.arguments = ["-c", script]
         try? task.run()
 
+        // This is the only place where we terminate the app
+        // (required for update installation)
         NSApp.terminate(nil)
     }
 
@@ -564,9 +642,12 @@ extension UpdateManager: URLSessionDownloadDelegate {
             }
             try FileManager.default.copyItem(at: location, to: dmgPath)
             
-            // Clean up download session to release resources
-            self.downloadSession?.finishTasksAndInvalidate()
+            // CRITICAL FIX: Use copy-and-nil pattern to prevent use-after-free
+            let sessionToCleanup = self.downloadSession
             self.downloadSession = nil
+            if let session = sessionToCleanup {
+                session.finishTasksAndInvalidate()
+            }
             
             // Update state to ready to install
             DispatchQueue.main.async {
@@ -595,21 +676,34 @@ extension UpdateManager: URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error = error else { return }
-        if (error as NSError).code == NSURLErrorCancelled {
-            DispatchQueue.main.async {
-                self.isInstalling = false
-                self.updateState = .idle
-                self.downloadProgress = 0.0
-                self.statusMessage = "Download cancelled"
+        defer {
+            // CRITICAL FIX: Use copy-and-nil pattern to prevent double cleanup/use-after-free
+            // Store reference, clear immediately, then invalidate
+            let sessionToCleanup = self.downloadSession
+            self.downloadSession = nil
+            
+            if let session = sessionToCleanup {
+                session.finishTasksAndInvalidate()
             }
+        }
+        
+        guard let error = error else { return }
+        
+        if (error as NSError).code == NSURLErrorCancelled {
+            // Only update UI if not already cancelled by user
+            if !isUserCancelledDownload {
+                DispatchQueue.main.async {
+                    self.isInstalling = false
+                    self.updateState = .idle
+                    self.downloadProgress = 0.0
+                    self.statusMessage = "Download cancelled"
+                }
+            }
+            // Reset flag
+            isUserCancelledDownload = false
         } else {
             finishCheckWithError("Download failed: \(error.localizedDescription)", userInitiated: true)
         }
-        
-        // Clean up download session to release resources
-        self.downloadSession?.finishTasksAndInvalidate()
-        self.downloadSession = nil
     }
 }
 

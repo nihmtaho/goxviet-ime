@@ -9,7 +9,11 @@ import SwiftUI
 import AppKit
 
 struct UpdateWindowView: View {
-    @ObservedObject private var updateManager = UpdateManager.shared
+    /// CRITICAL FIX: Use @EnvironmentObject for singleton instead of @ObservedObject
+    /// @ObservedObject creates extra observer binding that causes use-after-free crash
+    /// on window deallocation because UpdateManager is a singleton shared globally.
+    /// @EnvironmentObject avoids this by using SwiftUI's environment chain.
+    @EnvironmentObject private var updateManager: UpdateManager
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -51,6 +55,11 @@ struct UpdateWindowView: View {
             if updateManager.updateState == .idle || updateManager.updateState == .error {
                 updateManager.checkForUpdates(userInitiated: true)
             }
+        }
+        .onDisappear {
+            // CRITICAL: Stop timer IMMEDIATELY when view is disappearing
+            // This prevents timer callbacks from firing during/after deallocation
+            updateManager.pauseChecking()
         }
     }
     
@@ -362,10 +371,7 @@ struct UpdateWindowView: View {
                 .controlSize(.large)
                 
             case .upToDate:
-                Button("Close") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
+                EmptyView() // No button needed, Settings window remains open
                 
             default:
                 EmptyView()
@@ -374,6 +380,8 @@ struct UpdateWindowView: View {
     }
     
     // MARK: - Helpers
+    
+    /// Safely closes the Update window without affecting other windows (e.g., Settings)
     
     private func currentVersion() -> String? {
         guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
@@ -401,5 +409,6 @@ struct UpdateWindowView: View {
 
 #Preview {
     UpdateWindowView()
+        .environmentObject(UpdateManager.shared)
         .frame(width: 480, height: 520)
 }
