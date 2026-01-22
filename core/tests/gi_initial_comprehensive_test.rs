@@ -41,8 +41,8 @@ fn test_gi_initial_words_comprehensive() {
         ("gioonggs", "giống", "gi + ô + ng + sắc (tone at end)"),
         ("giauf", "giàu", "gi + a + u + huyền"), // ia+u pattern, not â+u
         ("gieesngs", "giếng", "gi + ê + ng + sắc"),
-        ("giojt", "giọt", "gi + o + j + t -> giọt"),  // Fixed: was "giootj"
-        ("giaf", "già", "gi + a + huyền"),  // Fixed: was "giaar"
+        ("giojt", "giọt", "gi + o + j + t -> giọt"), // Fixed: was "giootj"
+        ("giaf", "già", "gi + a + huyền"),           // Fixed: was "giaar"
         ("gioox", "giỗ", "gi + ô + tone"),
         ("gias", "giá", "gi + a + tone"),
     ];

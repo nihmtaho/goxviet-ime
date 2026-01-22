@@ -569,7 +569,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if BundleConstants.modernEditors.contains(bundleId) { Log.method("instant:editor"); return (.instant, (0, 0, 0)) }
     
     // Terminal apps - need conservative delays for reliable rendering
-    if BundleConstants.terminals.contains(bundleId) { Log.method("slow:term"); return (.slow, (3000, 8000, 3000)) }
+    if BundleConstants.terminals.contains(bundleId) { Log.method("fast:term"); return (.fast, (3000, 8000, 3000)) }
     
     // JetBrains IDEs - need moderate delays for stability
     if bundleId.hasPrefix("com.jetbrains") { Log.method("slow:jb"); return (.slow, (3000, 8000, 3000)) }
@@ -578,7 +578,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Old: (1000, 3000, 1500) - conservative but slow
     // New: (0, 0, 0) - fast for most modern apps
     Log.method("default")
-    return (.fast, (0, 0, 0))
+    return (.instant, (0, 0, 0))
 }
 
 // MARK: - Screen Text Reading (for word restoration)

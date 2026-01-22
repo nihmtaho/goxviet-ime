@@ -17,7 +17,8 @@ pub fn is_valid_vietnamese_syllable(keys: &[u16]) -> bool {
 /// (like aa → â) if the resulting syllable would be valid Vietnamese.
 #[inline]
 pub fn would_be_valid_with_key(current_keys: &[u16], new_key: u16) -> bool {
-    let mut simulated = current_keys.to_vec();
+    let mut simulated = Vec::with_capacity(current_keys.len() + 1);
+    simulated.extend_from_slice(current_keys);
     simulated.push(new_key);
     is_valid_vietnamese_syllable(&simulated)
 }

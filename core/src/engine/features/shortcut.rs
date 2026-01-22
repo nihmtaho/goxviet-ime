@@ -229,25 +229,26 @@ impl ShortcutTable {
     }
 
     /// Add a shortcut
-    /// 
+    ///
     /// Returns true if added successfully, false if limit reached
     pub fn add(&mut self, shortcut: Shortcut) -> bool {
         // Check capacity limit (only if adding new shortcut, not replacing)
-        if !self.shortcuts.contains_key(&shortcut.trigger) && self.shortcuts.len() >= MAX_SHORTCUTS {
+        if !self.shortcuts.contains_key(&shortcut.trigger) && self.shortcuts.len() >= MAX_SHORTCUTS
+        {
             return false;
         }
-        
+
         let trigger = shortcut.trigger.clone();
         self.shortcuts.insert(trigger.clone(), shortcut);
         self.rebuild_sorted_triggers();
         true
     }
-    
+
     /// Check if shortcut table is at capacity
     pub fn is_at_capacity(&self) -> bool {
         self.shortcuts.len() >= MAX_SHORTCUTS
     }
-    
+
     /// Get maximum capacity
     pub fn capacity(&self) -> usize {
         MAX_SHORTCUTS
@@ -406,17 +407,22 @@ impl ShortcutTable {
         self.shortcuts.clear();
         self.sorted_triggers.clear();
     }
-    
+
     /// Get memory usage estimate in bytes
     pub fn memory_usage(&self) -> usize {
         // Estimate: HashMap overhead + Vec overhead + string data
-        let hashmap_overhead = self.shortcuts.capacity() * (std::mem::size_of::<String>() + std::mem::size_of::<Shortcut>());
+        let hashmap_overhead = self.shortcuts.capacity()
+            * (std::mem::size_of::<String>() + std::mem::size_of::<Shortcut>());
         let vec_overhead = self.sorted_triggers.capacity() * std::mem::size_of::<String>();
-        
-        let string_data: usize = self.shortcuts.iter()
-            .map(|(trigger, shortcut)| trigger.len() + shortcut.trigger.len() + shortcut.replacement.len())
+
+        let string_data: usize = self
+            .shortcuts
+            .iter()
+            .map(|(trigger, shortcut)| {
+                trigger.len() + shortcut.trigger.len() + shortcut.replacement.len()
+            })
             .sum();
-        
+
         hashmap_overhead + vec_overhead + string_data
     }
 }
@@ -724,41 +730,50 @@ mod tests {
     #[test]
     fn test_bounded_capacity() {
         let mut table = ShortcutTable::new();
-        
+
         // Add shortcuts up to capacity
         for i in 0..MAX_SHORTCUTS {
             let trigger = format!("trigger{}", i);
             let replacement = format!("replacement{}", i);
             let result = table.add(Shortcut::new(&trigger, &replacement));
-            assert!(result, "Should be able to add shortcut {} of {}", i + 1, MAX_SHORTCUTS);
+            assert!(
+                result,
+                "Should be able to add shortcut {} of {}",
+                i + 1,
+                MAX_SHORTCUTS
+            );
         }
-        
+
         // Verify we're at capacity
         assert_eq!(table.len(), MAX_SHORTCUTS);
         assert!(table.is_at_capacity());
-        
+
         // Try to add one more - should fail
         let result = table.add(Shortcut::new("overflow", "should fail"));
         assert!(!result, "Should not be able to add beyond capacity");
-        assert_eq!(table.len(), MAX_SHORTCUTS, "Length should remain at capacity");
+        assert_eq!(
+            table.len(),
+            MAX_SHORTCUTS,
+            "Length should remain at capacity"
+        );
     }
 
     #[test]
     fn test_capacity_replace_existing() {
         let mut table = ShortcutTable::new();
-        
+
         // Fill to capacity
         for i in 0..MAX_SHORTCUTS {
             let trigger = format!("t{}", i);
             assert!(table.add(Shortcut::new(&trigger, "original")));
         }
-        
+
         assert!(table.is_at_capacity());
-        
+
         // Replacing existing shortcut should still work
         let result = table.add(Shortcut::new("t0", "updated"));
         assert!(result, "Should be able to replace existing shortcut");
-        
+
         // Verify replacement happened
         let (_, shortcut) = table.lookup("t0").unwrap();
         assert_eq!(shortcut.replacement, "updated");
@@ -768,7 +783,7 @@ mod tests {
     #[test]
     fn test_capacity_methods() {
         let table = ShortcutTable::new();
-        
+
         assert_eq!(table.capacity(), MAX_SHORTCUTS);
         assert!(!table.is_at_capacity());
         assert_eq!(table.len(), 0);
@@ -777,35 +792,38 @@ mod tests {
     #[test]
     fn test_memory_usage_estimate() {
         let mut table = ShortcutTable::new();
-        
+
         // Empty table should have minimal memory
         let empty_usage = table.memory_usage();
         // Note: usize is always >= 0, so we just verify it exists
-        
+
         // Add some shortcuts
         table.add(Shortcut::new("vn", "Việt Nam"));
         table.add(Shortcut::new("hcm", "Hồ Chí Minh"));
-        
+
         let usage_with_shortcuts = table.memory_usage();
-        assert!(usage_with_shortcuts > empty_usage, "Memory usage should increase with shortcuts");
+        assert!(
+            usage_with_shortcuts > empty_usage,
+            "Memory usage should increase with shortcuts"
+        );
     }
 
     #[test]
     fn test_clear_resets_capacity_check() {
         let mut table = ShortcutTable::new();
-        
+
         // Fill to capacity
         for i in 0..MAX_SHORTCUTS {
             assert!(table.add(Shortcut::new(&format!("t{}", i), "test")));
         }
-        
+
         assert!(table.is_at_capacity());
-        
+
         // Clear and verify we can add again
         table.clear();
         assert!(!table.is_at_capacity());
         assert_eq!(table.len(), 0);
-        
+
         // Should be able to add again
         assert!(table.add(Shortcut::new("new", "test")));
     }

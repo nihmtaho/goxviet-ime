@@ -23,6 +23,7 @@ class RustBridge {
         ime_enabled(true)  // Enable by default
         ime_modern(false)  // Use traditional tone placement
         ime_esc_restore(true)  // Enable ESC restore
+        ime_instant_restore(true)  // Enable instant auto-restore by default
         
         isInitialized = true
         Log.info("RustBridge initialized with Telex mode enabled")
@@ -56,6 +57,11 @@ class RustBridge {
     func setModernTone(_ modern: Bool) {
         Log.info("Modern tone style: \(modern)")
         ime_modern(modern)
+    }
+    
+    func setInstantRestore(_ enabled: Bool) {
+        Log.info("Instant auto-restore: \(enabled)")
+        ime_instant_restore(enabled)
     }
     
     func clearBuffer() {

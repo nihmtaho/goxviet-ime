@@ -61,7 +61,7 @@ fn type_string(word: &str) {
 }
 
 /// Benchmark: Memory allocation patterns during normal typing
-/// 
+///
 /// This simulates a realistic typing session with word boundaries.
 /// The RawInputBuffer should have:
 /// - Zero heap allocations during push/pop operations
@@ -69,23 +69,22 @@ fn type_string(word: &str) {
 /// - Bounded memory usage regardless of session length
 fn bench_memory_normal_typing(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_normal_typing");
-    
+
     // Simulate typing words with varying lengths
     let words = vec![
-        "xin", "chao", "vietnam", "tieng", "viet", 
-        "go", "nhanh", "hieu", "qua"
+        "xin", "chao", "vietnam", "tieng", "viet", "go", "nhanh", "hieu", "qua",
     ];
-    
+
     group.bench_function("typing_with_spaces", |b| {
         b.iter(|| {
             ime_init();
             ime_enabled(true);
             ime_method(0); // Telex
-            
+
             for word in &words {
                 // Type each word
                 black_box(type_string(word));
-                
+
                 // Type space (triggers buffer clear)
                 let result = ime_key(KEY_SPACE, false, false);
                 unsafe {
@@ -94,11 +93,11 @@ fn bench_memory_normal_typing(c: &mut Criterion) {
                     }
                 }
             }
-            
+
             ime_clear();
         });
     });
-    
+
     group.finish();
 }
 
@@ -108,7 +107,7 @@ fn bench_memory_normal_typing(c: &mut Criterion) {
 /// Should be O(1) for all operations.
 fn bench_memory_buffer_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_buffer_ops");
-    
+
     // Test different buffer sizes
     for size in [10, 30, 50, 63].iter() {
         group.bench_with_input(
@@ -119,7 +118,7 @@ fn bench_memory_buffer_operations(c: &mut Criterion) {
                     ime_init();
                     ime_enabled(true);
                     ime_method(0); // Telex
-                    
+
                     // Push N characters
                     for i in 0..size {
                         let key = KEY_A + (i % 26) as u16;
@@ -131,7 +130,7 @@ fn bench_memory_buffer_operations(c: &mut Criterion) {
                             }
                         }
                     }
-                    
+
                     // Pop all characters via backspace
                     for _ in 0..size {
                         let result = ime_key(KEY_BACKSPACE, false, false);
@@ -142,13 +141,13 @@ fn bench_memory_buffer_operations(c: &mut Criterion) {
                             }
                         }
                     }
-                    
+
                     ime_clear();
                 });
             },
         );
     }
-    
+
     group.finish();
 }
 
@@ -158,13 +157,13 @@ fn bench_memory_buffer_operations(c: &mut Criterion) {
 /// Should gracefully handle overflow without performance degradation.
 fn bench_memory_capacity_overflow(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_capacity_overflow");
-    
+
     group.bench_function("overflow_64_to_80", |b| {
         b.iter(|| {
             ime_init();
             ime_enabled(true);
             ime_method(0); // Telex
-            
+
             // Fill to capacity (64 chars)
             for i in 0..64 {
                 let key = KEY_A + (i % 26) as u16;
@@ -176,7 +175,7 @@ fn bench_memory_capacity_overflow(c: &mut Criterion) {
                     }
                 }
             }
-            
+
             // Push 16 more (triggers shift behavior)
             for i in 0..16 {
                 let key = KEY_A + (i % 26) as u16;
@@ -188,11 +187,11 @@ fn bench_memory_capacity_overflow(c: &mut Criterion) {
                     }
                 }
             }
-            
+
             ime_clear();
         });
     });
-    
+
     group.finish();
 }
 
@@ -202,17 +201,17 @@ fn bench_memory_capacity_overflow(c: &mut Criterion) {
 /// Tests that memory usage remains bounded over time.
 fn bench_memory_long_session(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_long_session");
-    
+
     group.bench_function("100_words_with_edits", |b| {
         b.iter(|| {
             ime_init();
             ime_enabled(true);
             ime_method(0); // Telex
-            
+
             for _ in 0..100 {
                 // Type "vietnam"
                 black_box(type_string("vietnam"));
-                
+
                 // Do some backspaces (simulate corrections)
                 for _ in 0..2 {
                     let result = ime_key(KEY_BACKSPACE, false, false);
@@ -222,10 +221,10 @@ fn bench_memory_long_session(c: &mut Criterion) {
                         }
                     }
                 }
-                
+
                 // Type "ese"
                 black_box(type_string("ese"));
-                
+
                 // Space to commit word (clears buffer)
                 let result = ime_key(KEY_SPACE, false, false);
                 unsafe {
@@ -234,11 +233,11 @@ fn bench_memory_long_session(c: &mut Criterion) {
                     }
                 }
             }
-            
+
             ime_clear();
         });
     });
-    
+
     group.finish();
 }
 
@@ -248,17 +247,17 @@ fn bench_memory_long_session(c: &mut Criterion) {
 /// RawInputBuffer iterator should be zero-allocation.
 fn bench_memory_esc_restore(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_esc_restore");
-    
+
     group.bench_function("restore_after_transforms", |b| {
         b.iter(|| {
             ime_init();
             ime_enabled(true);
             ime_esc_restore(true);
             ime_method(0); // Telex
-            
+
             // Type "tooi" -> "tôi" (with transforms)
             black_box(type_string("tooi"));
-            
+
             // ESC to restore (uses raw_input iteration)
             let result = ime_key(KEY_ESC, false, false);
             unsafe {
@@ -267,11 +266,11 @@ fn bench_memory_esc_restore(c: &mut Criterion) {
                     ime_free(result);
                 }
             }
-            
+
             ime_clear();
         });
     });
-    
+
     group.finish();
 }
 
@@ -281,16 +280,16 @@ fn bench_memory_esc_restore(c: &mut Criterion) {
 /// Should efficiently restore previous words.
 fn bench_memory_word_restoration(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_word_restoration");
-    
+
     group.bench_function("restore_after_backspace", |b| {
         b.iter(|| {
             ime_init();
             ime_enabled(true);
             ime_method(0); // Telex
-            
+
             // Type "xin"
             black_box(type_string("xin"));
-            
+
             // Type space
             let result = ime_key(KEY_SPACE, false, false);
             unsafe {
@@ -298,7 +297,7 @@ fn bench_memory_word_restoration(c: &mut Criterion) {
                     ime_free(result);
                 }
             }
-            
+
             // Delete space to restore word
             let result = ime_key(KEY_BACKSPACE, false, false);
             unsafe {
@@ -307,14 +306,14 @@ fn bench_memory_word_restoration(c: &mut Criterion) {
                     ime_free(result);
                 }
             }
-            
+
             // Type "chao"
             black_box(type_string("chao"));
-            
+
             ime_clear();
         });
     });
-    
+
     group.finish();
 }
 
@@ -324,13 +323,13 @@ fn bench_memory_word_restoration(c: &mut Criterion) {
 /// RawInputBuffer should handle pop operations efficiently.
 fn bench_memory_rapid_backspace(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_rapid_backspace");
-    
+
     group.bench_function("type_and_delete_50_chars", |b| {
         b.iter(|| {
             ime_init();
             ime_enabled(true);
             ime_method(0); // Telex
-            
+
             // Type 50 characters
             for i in 0..50 {
                 let key = KEY_A + (i % 26) as u16;
@@ -341,7 +340,7 @@ fn bench_memory_rapid_backspace(c: &mut Criterion) {
                     }
                 }
             }
-            
+
             // Delete all 50 characters rapidly
             for _ in 0..50 {
                 let result = ime_key(KEY_BACKSPACE, false, false);
@@ -352,11 +351,11 @@ fn bench_memory_rapid_backspace(c: &mut Criterion) {
                     }
                 }
             }
-            
+
             ime_clear();
         });
     });
-    
+
     group.finish();
 }
 
