@@ -11,10 +11,23 @@ enum Log {
     static let logPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/GoxViet/keyboard.log")
     
+    #if DEBUG
+    static var isEnabled: Bool = true
+    #else
     static var isEnabled: Bool = false
+    #endif
+    
+    static let maxLogSize: Int = 5 * 1024 * 1024  // 5MB limit
     
     static func write(_ msg: String) {
         guard isEnabled else { return }
+        
+        // Check log size and rotate if needed
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: logPath.path),
+           let fileSize = attrs[.size] as? Int,
+           fileSize > maxLogSize {
+            rotateLog()
+        }
         
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] \(msg)\n"
@@ -35,6 +48,12 @@ enum Log {
                 try? data.write(to: logPath)
             }
         }
+    }
+    
+    private static func rotateLog() {
+        let backupPath = logPath.deletingPathExtension().appendingPathExtension("old.log")
+        try? FileManager.default.removeItem(at: backupPath)
+        try? FileManager.default.moveItem(at: logPath, to: backupPath)
     }
     
     static func key(_ code: UInt16, _ result: String) {

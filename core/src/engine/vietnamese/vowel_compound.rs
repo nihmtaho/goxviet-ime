@@ -17,6 +17,10 @@ pub fn find_uo_compound_positions(buf: &Buffer) -> Option<(usize, usize)> {
     for i in 0..buf.len().saturating_sub(1) {
         if let (Some(c1), Some(c2)) = (buf.get(i), buf.get(i + 1)) {
             let is_uo = c1.key == keys::U && c2.key == keys::O;
+
+            // (Previously ignored Q and TH here, but now allowed so try_tone can protect them)
+            // if is_uo && i > 0 { ... } checks removed to allow detection
+
             let is_ou = c1.key == keys::O && c2.key == keys::U;
             if is_uo || is_ou {
                 return Some((i, i + 1));
@@ -68,14 +72,21 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
         }
 
         // Check: U plain + O with horn → normalize to ươ (except after Q for "quơ")
+        // DISABLE normalization to allow "uow" -> "uơ" globally as requested.
+        /*
         if k1 == keys::U && t1 == tone::NONE && k2 == keys::O && t2 == tone::HORN {
             let mut is_special_initial = false;
             if i > 0 {
                 if let Some(prev) = buf.get(i - 1) {
                     if prev.key == keys::Q {
+                        println!("DEBUG: ignored uo normalization for Q at pos {}", i);
                         is_special_initial = true;
+                    } else {
+                         // println!("DEBUG: prev key was {:?}, not Q", prev.key);
                     }
                 }
+            } else {
+                 // println!("DEBUG: i is 0, no prev char");
             }
 
             if !is_special_initial {
@@ -85,6 +96,7 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
                 }
             }
         }
+        */
     }
     None
 }

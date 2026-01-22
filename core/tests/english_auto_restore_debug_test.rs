@@ -195,61 +195,61 @@ fn test_phonotactic_merge() {
 fn test_language_decision_syntax() {
     // Test unified language decision for "syntax"
     let keys = make_key_tuple_from_str("syntax");
-    let vietnamese_validation = VietnameseSyllableValidator::validate(
-        &keys
-            .iter()
-            .map(|(k, _)| *k)
-            .collect::<Vec<_>>(),
-    );
+    let vietnamese_validation =
+        VietnameseSyllableValidator::validate(&keys.iter().map(|(k, _)| *k).collect::<Vec<_>>());
     let is_valid = vietnamese_validation.is_valid;
     let viet_confidence = vietnamese_validation.confidence;
 
-    let decision = LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
+    let decision =
+        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
     println!(
         "Language decision 'syntax': is_english={}, confidence={}",
         decision.is_english, decision.confidence
     );
-    println!("  Vietnamese validation: valid={}, confidence={}", is_valid, viet_confidence);
+    println!(
+        "  Vietnamese validation: valid={}, confidence={}",
+        is_valid, viet_confidence
+    );
 }
 
 #[test]
 fn test_language_decision_parse() {
     // Test unified language decision for "parse"
     let keys = make_key_tuple_from_str("parse");
-    let vietnamese_validation = VietnameseSyllableValidator::validate(
-        &keys
-            .iter()
-            .map(|(k, _)| *k)
-            .collect::<Vec<_>>(),
-    );
+    let vietnamese_validation =
+        VietnameseSyllableValidator::validate(&keys.iter().map(|(k, _)| *k).collect::<Vec<_>>());
     let is_valid = vietnamese_validation.is_valid;
     let viet_confidence = vietnamese_validation.confidence;
 
-    let decision = LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
+    let decision =
+        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
     println!(
         "Language decision 'parse': is_english={}, confidence={}",
         decision.is_english, decision.confidence
     );
-    println!("  Vietnamese validation: valid={}, confidence={}", is_valid, viet_confidence);
+    println!(
+        "  Vietnamese validation: valid={}, confidence={}",
+        is_valid, viet_confidence
+    );
 }
 
 #[test]
 fn test_language_decision_merge() {
     // Test unified language decision for "merge"
     let keys = make_key_tuple_from_str("merge");
-    let vietnamese_validation = VietnameseSyllableValidator::validate(
-        &keys
-            .iter()
-            .map(|(k, _)| *k)
-            .collect::<Vec<_>>(),
-    );
+    let vietnamese_validation =
+        VietnameseSyllableValidator::validate(&keys.iter().map(|(k, _)| *k).collect::<Vec<_>>());
     let is_valid = vietnamese_validation.is_valid;
     let viet_confidence = vietnamese_validation.confidence;
 
-    let decision = LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
+    let decision =
+        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
     println!(
         "Language decision 'merge': is_english={}, confidence={}",
         decision.is_english, decision.confidence
     );
-    println!("  Vietnamese validation: valid={}, confidence={}", is_valid, viet_confidence);
+    println!(
+        "  Vietnamese validation: valid={}, confidence={}",
+        is_valid, viet_confidence
+    );
 }

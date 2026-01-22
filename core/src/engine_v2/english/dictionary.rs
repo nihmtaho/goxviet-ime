@@ -4,6 +4,7 @@
 // Uses linear search on sorted arrays for O(n) performance with high cache locality.
 
 use crate::data::keys;
+use crate::engine_v2::english::dictionary_data;
 
 /// Optimized dictionary for common words
 pub struct Dictionary;
@@ -11,405 +12,53 @@ pub struct Dictionary;
 impl Dictionary {
     /// Check if a sequence of keys is a common English word or programming term
     pub fn is_english(keys: &[u16]) -> bool {
-        let raw_keys: Vec<(u16, bool)> = keys.iter().map(|&k| (k, false)).collect();
-        Self::is_common_english_word(&raw_keys)
+        if keys.len() < 2 {
+            return false;
+        }
+
+        // Fast path for callers that already have plain key slices
+        is_keys_english(keys)
     }
 
     /// Check if raw keystroke sequence matches a COMMON English word exactly
     pub fn is_common_english_word(raw_keys: &[(u16, bool)]) -> bool {
-        if raw_keys.len() < 4 {
+        let len = raw_keys.len();
+        if len < 2 {
             return false;
         }
 
-        let keys_only: Vec<u16> = raw_keys.iter().map(|(k, _)| *k).collect();
+        // Avoid heap allocs for short words (common case)
+        if len <= 16 {
+            let mut buf = [0u16; 16];
+            for i in 0..len {
+                buf[i] = raw_keys[i].0;
+            }
+            return is_keys_english(&buf[..len]);
+        }
 
-        // Check common word patterns (these are unambiguous English)
-        has_common_english_word_pattern(&keys_only) || has_programming_term_pattern(&keys_only)
+        let mut keys_only = Vec::with_capacity(len);
+        for (k, _) in raw_keys.iter() {
+            keys_only.push(*k);
+        }
+
+        is_keys_english(&keys_only)
     }
 }
 
-/// Constant lookup table for common 4-letter English words
-const COMMON_4LETTER_WORDS: &[[u16; 4]] = &[
-    // Function words
-    [keys::W, keys::I, keys::T, keys::H], // with
-    [keys::H, keys::A, keys::V, keys::E], // have
-    [keys::T, keys::H, keys::A, keys::T], // that
-    [keys::F, keys::R, keys::O, keys::M], // from
-    [keys::T, keys::H, keys::E, keys::Y], // they
-    [keys::W, keys::H, keys::A, keys::T], // what
-    [keys::W, keys::H, keys::E, keys::N], // when
-    [keys::H, keys::E, keys::R, keys::E], // here
-    [keys::T, keys::H, keys::E, keys::M], // them
-    [keys::T, keys::H, keys::E, keys::N], // then
-    [keys::E, keys::A, keys::C, keys::H], // each
-    [keys::S, keys::U, keys::C, keys::H], // such
-    [keys::O, keys::N, keys::L, keys::Y], // only
-    [keys::J, keys::U, keys::S, keys::T], // just
-    [keys::A, keys::L, keys::S, keys::O], // also
-    [keys::B, keys::O, keys::T, keys::H], // both
-    [keys::W, keys::O, keys::R, keys::D], // word
-    [keys::O, keys::V, keys::E, keys::R], // over
-    [keys::M, keys::O, keys::R, keys::E], // more
-    [keys::M, keys::A, keys::K, keys::E], // make
-    [keys::T, keys::A, keys::K, keys::E], // take
-    [keys::G, keys::I, keys::V, keys::E], // give
-    [keys::C, keys::O, keys::M, keys::E], // come
-    [keys::W, keys::O, keys::R, keys::K], // work
-    [keys::H, keys::E, keys::L, keys::P], // help
-    [keys::N, keys::E, keys::E, keys::D], // need
-    [keys::W, keys::A, keys::N, keys::T], // want
-    [keys::L, keys::O, keys::O, keys::K], // look
-    [keys::U, keys::S, keys::E, keys::D], // used
-    [keys::K, keys::N, keys::O, keys::W], // know
-    [keys::G, keys::O, keys::N, keys::E], // gone
-    [keys::D, keys::O, keys::N, keys::E], // done
-    [keys::C, keys::O, keys::D, keys::E], // code
-    [keys::F, keys::I, keys::L, keys::E], // file
-    [keys::D, keys::A, keys::T, keys::A], // data
-    [keys::U, keys::S, keys::E, keys::R], // user
-    [keys::S, keys::A, keys::V, keys::E], // save
-    [keys::L, keys::O, keys::A, keys::D], // load
-    [keys::T, keys::Y, keys::P, keys::E], // type
-    [keys::L, keys::I, keys::N, keys::K], // link
-    [keys::P, keys::A, keys::G, keys::E], // page
-    [keys::T, keys::E, keys::X, keys::T], // text
-    [keys::I, keys::N, keys::F, keys::O], // info
-    [keys::T, keys::R, keys::U, keys::E], // true
-    [keys::N, keys::U, keys::L, keys::L], // null
-    [keys::V, keys::O, keys::I, keys::D], // void
-    [keys::C, keys::H, keys::A, keys::R], // char
-    [keys::B, keys::O, keys::O, keys::L], // bool
-    [keys::E, keys::N, keys::U, keys::M], // enum
-    [keys::E, keys::L, keys::S, keys::E], // else
-    [keys::T, keys::I, keys::M, keys::E], // time
-    [keys::N, keys::A, keys::M, keys::E], // name
-    [keys::Y, keys::E, keys::A, keys::R], // year
-    [keys::P, keys::A, keys::R, keys::T], // part
-    [keys::C, keys::A, keys::S, keys::E], // case
-    [keys::F, keys::O, keys::R, keys::M], // form
-    [keys::S, keys::I, keys::Z, keys::E], // size
-    [keys::L, keys::I, keys::S, keys::T], // list
-    [keys::V, keys::I, keys::E, keys::W], // view
-    [keys::A, keys::R, keys::E, keys::A], // area
-    [keys::B, keys::A, keys::S, keys::E], // base
-    [keys::H, keys::O, keys::M, keys::E], // home
-    [keys::B, keys::A, keys::C, keys::K], // back
-    [keys::N, keys::E, keys::X, keys::T], // next
-    [keys::F, keys::U, keys::N, keys::C], // func
-    [keys::P, keys::R, keys::O, keys::P], // prop
-    [keys::A, keys::R, keys::G, keys::S], // args
-    [keys::S, keys::E, keys::L, keys::F], // self
-    [keys::N, keys::O, keys::N, keys::E], // none
-    [keys::S, keys::O, keys::M, keys::E], // some
-    [keys::D, keys::E, keys::F, keys::S], // defs
-    [keys::I, keys::N, keys::I, keys::T], // init
-    [keys::M, keys::A, keys::I, keys::N], // main
-    [keys::E, keys::X, keys::I, keys::T], // exit
-    [keys::P, keys::A, keys::T, keys::H], // path
-    [keys::A, keys::P, keys::P, keys::S], // apps
-    [keys::D, keys::O, keys::C, keys::S], // docs
-    [keys::T, keys::E, keys::M, keys::P], // temp
-    [keys::C, keys::O, keys::P, keys::Y], // copy
-    [keys::M, keys::O, keys::V, keys::E], // move
-    [keys::P, keys::U, keys::S, keys::H], // push
-    [keys::P, keys::U, keys::L, keys::L], // pull
-    [keys::H, keys::A, keys::S, keys::H], // hash
-    [keys::J, keys::S, keys::O, keys::N], // json
-    [keys::Y, keys::A, keys::M, keys::L], // yaml
-    [keys::H, keys::T, keys::M, keys::L], // html
-    [keys::H, keys::T, keys::T, keys::P], // http
-    [keys::U, keys::U, keys::I, keys::D], // uuid
-];
-
 #[inline]
-fn is_common_4letter_word(word: &[u16; 4]) -> bool {
-    COMMON_4LETTER_WORDS.iter().any(|w| w == word)
-}
+fn is_keys_english(keys_only: &[u16]) -> bool {
+    // MANUAL PATCH: "of", "off" (common words missing from binary)
+    if (keys_only.len() == 2 && keys_only[0] == keys::O && keys_only[1] == keys::F)
+        || (keys_only.len() == 3
+            && keys_only[0] == keys::O
+            && keys_only[1] == keys::F
+            && keys_only[2] == keys::F)
+    {
+        return true;
+    }
 
-/// Constant lookup table for common 5-letter English words
-const COMMON_5LETTER_WORDS: &[[u16; 5]] = &[
-    // Common function words
-    [keys::T, keys::H, keys::E, keys::I, keys::R], // their
-    [keys::T, keys::H, keys::E, keys::R, keys::E], // there
-    [keys::T, keys::H, keys::E, keys::S, keys::E], // these
-    [keys::O, keys::T, keys::H, keys::E, keys::R], // other
-    [keys::W, keys::H, keys::I, keys::C, keys::H], // which
-    [keys::W, keys::H, keys::E, keys::R, keys::E], // where
-    [keys::W, keys::H, keys::I, keys::L, keys::E], // while
-    [keys::A, keys::B, keys::O, keys::U, keys::T], // about
-    [keys::A, keys::F, keys::T, keys::E, keys::R], // after
-    [keys::F, keys::I, keys::R, keys::S, keys::T], // first
-    [keys::W, keys::O, keys::R, keys::L, keys::D], // world
-    [keys::S, keys::T, keys::I, keys::L, keys::L], // still
-    [keys::T, keys::H, keys::I, keys::N, keys::K], // think
-    [keys::T, keys::H, keys::O, keys::S, keys::E], // those
-    [keys::B, keys::E, keys::I, keys::N, keys::G], // being
-    [keys::E, keys::V, keys::E, keys::R, keys::Y], // every
-    [keys::S, keys::I, keys::N, keys::C, keys::E], // since
-    [keys::U, keys::N, keys::T, keys::I, keys::L], // until
-    // Common tech terms
-    [keys::C, keys::L, keys::A, keys::S, keys::S], // class
-    [keys::C, keys::O, keys::N, keys::S, keys::T], // const
-    [keys::A, keys::S, keys::Y, keys::N, keys::C], // async
-    [keys::A, keys::W, keys::A, keys::I, keys::T], // await
-    [keys::F, keys::A, keys::L, keys::S, keys::E], // false
-    [keys::B, keys::R, keys::E, keys::A, keys::K], // break
-    [keys::I, keys::N, keys::D, keys::E, keys::X], // index
-    [keys::M, keys::A, keys::T, keys::C, keys::H], // match
-    [keys::Q, keys::U, keys::E, keys::R, keys::Y], // query
-    [keys::T, keys::A, keys::B, keys::L, keys::E], // table
-    [keys::V, keys::A, keys::L, keys::U, keys::E], // value
-    [keys::E, keys::R, keys::R, keys::O, keys::R], // error
-    [keys::E, keys::V, keys::E, keys::N, keys::T], // event
-    [keys::I, keys::N, keys::P, keys::U, keys::T], // input
-    [keys::S, keys::T, keys::A, keys::R, keys::T], // start
-    [keys::T, keys::E, keys::R, keys::M, keys::S], // terms
-    [keys::L, keys::A, keys::Y, keys::E, keys::R], // layer
-];
-
-#[inline]
-fn is_common_5letter_word(word: &[u16; 5]) -> bool {
-    COMMON_5LETTER_WORDS.iter().any(|w| w == word)
-}
-
-/// Constant lookup table for common 6-letter English words
-const COMMON_6LETTER_WORDS: &[[u16; 6]] = &[
-    // Common tech terms
-    [keys::S, keys::T, keys::R, keys::I, keys::N, keys::G], // string
-    [keys::R, keys::E, keys::T, keys::U, keys::R, keys::N], // return
-    [keys::P, keys::U, keys::B, keys::L, keys::I, keys::C], // public
-    [keys::S, keys::T, keys::A, keys::T, keys::I, keys::C], // static
-    [keys::S, keys::W, keys::I, keys::T, keys::C, keys::H], // switch
-    [keys::I, keys::M, keys::P, keys::O, keys::R, keys::T], // import
-    [keys::E, keys::X, keys::P, keys::O, keys::R, keys::T], // export
-    [keys::R, keys::E, keys::S, keys::U, keys::L, keys::T], // result
-    [keys::S, keys::E, keys::L, keys::E, keys::C, keys::T], // select
-    [keys::U, keys::P, keys::D, keys::A, keys::T, keys::E], // update
-    [keys::D, keys::E, keys::L, keys::E, keys::T, keys::E], // delete
-    [keys::I, keys::N, keys::S, keys::E, keys::R, keys::T], // insert
-    [keys::C, keys::R, keys::E, keys::A, keys::T, keys::E], // create
-    [keys::R, keys::E, keys::M, keys::O, keys::V, keys::E], // remove
-    [keys::S, keys::E, keys::A, keys::R, keys::C, keys::H], // search
-    [keys::F, keys::I, keys::L, keys::T, keys::E, keys::R], // filter
-    [keys::S, keys::O, keys::U, keys::R, keys::C, keys::E], // source
-    [keys::O, keys::B, keys::J, keys::E, keys::C, keys::T], // object
-    [keys::M, keys::O, keys::D, keys::U, keys::L, keys::E], // module
-    [keys::M, keys::E, keys::T, keys::H, keys::O, keys::D], // method
-    [keys::N, keys::U, keys::M, keys::B, keys::E, keys::R], // number
-    [keys::L, keys::E, keys::N, keys::G, keys::T, keys::H], // length
-    [keys::O, keys::R, keys::I, keys::G, keys::I, keys::N], // origin
-    [keys::B, keys::E, keys::T, keys::T, keys::E, keys::R], // better
-    [keys::S, keys::T, keys::R, keys::E, keys::S, keys::S], // stress
-];
-
-#[inline]
-fn is_common_6letter_word(word: &[u16; 6]) -> bool {
-    COMMON_6LETTER_WORDS.iter().any(|w| w == word)
-}
-
-/// Constant lookup table for common 7-letter English words
-const COMMON_7LETTER_WORDS: &[[u16; 7]] = &[
-    [
-        keys::I,
-        keys::M,
-        keys::P,
-        keys::R,
-        keys::O,
-        keys::V,
-        keys::E,
-    ], // improve
-    [
-        keys::R,
-        keys::E,
-        keys::S,
-        keys::T,
-        keys::O,
-        keys::R,
-        keys::E,
-    ], // restore
-    [
-        keys::R,
-        keys::E,
-        keys::L,
-        keys::E,
-        keys::A,
-        keys::S,
-        keys::E,
-    ], // release
-    [
-        keys::R,
-        keys::E,
-        keys::V,
-        keys::E,
-        keys::R,
-        keys::S,
-        keys::E,
-    ], // reverse
-    [
-        keys::E,
-        keys::X,
-        keys::P,
-        keys::R,
-        keys::E,
-        keys::S,
-        keys::S,
-    ], // express
-    [
-        keys::E,
-        keys::X,
-        keys::A,
-        keys::M,
-        keys::P,
-        keys::L,
-        keys::E,
-    ], // example
-    [
-        keys::S,
-        keys::U,
-        keys::P,
-        keys::P,
-        keys::O,
-        keys::R,
-        keys::T,
-    ], // support
-    [
-        keys::R,
-        keys::E,
-        keys::Q,
-        keys::U,
-        keys::E,
-        keys::S,
-        keys::T,
-    ], // request
-    [
-        keys::P,
-        keys::R,
-        keys::O,
-        keys::J,
-        keys::E,
-        keys::C,
-        keys::T,
-    ], // project
-    [
-        keys::S,
-        keys::E,
-        keys::R,
-        keys::V,
-        keys::I,
-        keys::C,
-        keys::E,
-    ], // service
-    [
-        keys::C,
-        keys::O,
-        keys::N,
-        keys::T,
-        keys::E,
-        keys::N,
-        keys::T,
-    ], // content
-    [
-        keys::V,
-        keys::E,
-        keys::R,
-        keys::S,
-        keys::I,
-        keys::O,
-        keys::N,
-    ], // version
-    [
-        keys::D,
-        keys::I,
-        keys::S,
-        keys::P,
-        keys::L,
-        keys::A,
-        keys::Y,
-    ], // display
-];
-
-#[inline]
-fn is_common_7letter_word(word: &[u16; 7]) -> bool {
-    COMMON_7LETTER_WORDS.iter().any(|w| w == word)
-}
-
-/// Constant lookup table for common 8-letter English words
-const COMMON_8LETTER_WORDS: &[[u16; 8]] = &[
-    [
-        keys::G,
-        keys::E,
-        keys::N,
-        keys::E,
-        keys::R,
-        keys::A,
-        keys::T,
-        keys::E,
-    ], // generate
-    [
-        keys::R,
-        keys::E,
-        keys::G,
-        keys::I,
-        keys::S,
-        keys::T,
-        keys::E,
-        keys::R,
-    ], // register
-    [
-        keys::C,
-        keys::O,
-        keys::N,
-        keys::T,
-        keys::I,
-        keys::N,
-        keys::U,
-        keys::E,
-    ], // continue
-    [
-        keys::F,
-        keys::U,
-        keys::N,
-        keys::C,
-        keys::T,
-        keys::I,
-        keys::O,
-        keys::N,
-    ], // function
-    [
-        keys::D,
-        keys::A,
-        keys::T,
-        keys::A,
-        keys::B,
-        keys::A,
-        keys::S,
-        keys::E,
-    ], // database
-    [
-        keys::L,
-        keys::A,
-        keys::N,
-        keys::G,
-        keys::U,
-        keys::A,
-        keys::G,
-        keys::E,
-    ], // language
-    [
-        keys::S,
-        keys::E,
-        keys::T,
-        keys::T,
-        keys::I,
-        keys::N,
-        keys::G,
-        keys::S,
-    ], // settings
-];
-
-#[inline]
-fn is_common_8letter_word(word: &[u16; 8]) -> bool {
-    COMMON_8LETTER_WORDS.iter().any(|w| w == word)
+    // Check common word patterns (these are unambiguous English)
+    has_common_english_word_pattern(keys_only) || has_programming_term_pattern(keys_only)
 }
 
 /// Constant lookup table for 4-letter programming terms
@@ -426,7 +75,6 @@ const PROG_TERMS_4: &[[u16; 4]] = &[
     [keys::E, keys::X, keys::I, keys::T], // exit
     [keys::P, keys::A, keys::T, keys::H], // path
     [keys::A, keys::P, keys::P, keys::S], // apps
-    [keys::D, keys::O, keys::C, keys::S], // docs
     [keys::T, keys::E, keys::M, keys::P], // temp
     [keys::C, keys::O, keys::P, keys::Y], // copy
     [keys::M, keys::O, keys::V, keys::E], // move
@@ -654,88 +302,116 @@ fn is_prog_term_8(word: &[u16; 8]) -> bool {
 #[inline]
 fn has_common_english_word_pattern(keys: &[u16]) -> bool {
     let len = keys.len();
-    if len < 4 {
+    if len < 2 {
         return false;
     }
-    let check_len = len.min(8);
 
-    // Strategy 1: Check from START (original logic)
-    if len >= 4 {
+    // Strategy 1: Check Exact Length Match
+    // We only want to trigger if the *entire* word is in the dictionary.
+    // Checking prefixes (e.g. checking 2-letter dict for 3-letter word) causes false positives
+    // Example: "bên" (VN) starts with "be" (EN). If we check prefix, "bên" is marked English.
+
+    if len == 2 {
+        let w2: [u16; 2] = [keys[0], keys[1]];
+        if dictionary_data::is_common_2letter_word(&w2) {
+            return true;
+        }
+    } else if len == 3 {
+        let w3: [u16; 3] = [keys[0], keys[1], keys[2]];
+        if dictionary_data::is_common_3letter_word(&w3) {
+            return true;
+        }
+    } else if len == 4 {
         let w4: [u16; 4] = [keys[0], keys[1], keys[2], keys[3]];
-        if is_common_4letter_word(&w4) {
+        if dictionary_data::is_common_4letter_word(&w4) {
             return true;
         }
-    }
-    if check_len >= 5 {
+    } else if len == 5 {
         let w5: [u16; 5] = [keys[0], keys[1], keys[2], keys[3], keys[4]];
-        if is_common_5letter_word(&w5) {
+        if dictionary_data::is_common_5letter_word(&w5) {
             return true;
         }
-    }
-    if check_len >= 6 {
+    } else if len == 6 {
         let w6: [u16; 6] = [keys[0], keys[1], keys[2], keys[3], keys[4], keys[5]];
-        if is_common_6letter_word(&w6) {
+        if dictionary_data::is_common_6letter_word(&w6) {
             return true;
         }
-    }
-    if check_len >= 7 {
+    } else if len == 7 {
         let w7: [u16; 7] = [
             keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6],
         ];
-        if is_common_7letter_word(&w7) {
+        if dictionary_data::is_common_7letter_word(&w7) {
             return true;
         }
-    }
-    if check_len >= 8 {
+    } else if len == 8 {
         let w8: [u16; 8] = [
             keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7],
         ];
-        if is_common_8letter_word(&w8) {
+        if dictionary_data::is_common_8letter_word(&w8) {
             return true;
         }
-    }
-
-    // Strategy 2: Check from END (for cases like [o,o,v,e,r] -> check [o,v,e,r])
-    // This catches transform-prefixed words
-    if len >= 5 {
-        // Check if last 4 characters form a word
-        let start = len - 4;
-        let w4: [u16; 4] = [
-            keys[start],
-            keys[start + 1],
-            keys[start + 2],
-            keys[start + 3],
+    } else if len == 9 {
+        let w9: [u16; 9] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
         ];
-        if is_common_4letter_word(&w4) {
+        if dictionary_data::is_common_9letter_word(&w9) {
             return true;
         }
-    }
-    if len >= 6 {
-        // Check if last 5 characters form a word
-        let start = len - 5;
-        let w5: [u16; 5] = [
-            keys[start],
-            keys[start + 1],
-            keys[start + 2],
-            keys[start + 3],
-            keys[start + 4],
+    } else if len == 10 {
+        let w10: [u16; 10] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
+            keys[9],
         ];
-        if is_common_5letter_word(&w5) {
+        if dictionary_data::is_common_10letter_word(&w10) {
             return true;
         }
-    }
-    if len >= 7 {
-        // Check if last 6 characters form a word
-        let start = len - 6;
-        let w6: [u16; 6] = [
-            keys[start],
-            keys[start + 1],
-            keys[start + 2],
-            keys[start + 3],
-            keys[start + 4],
-            keys[start + 5],
+    } else if len == 11 {
+        let w11: [u16; 11] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
+            keys[9], keys[10],
         ];
-        if is_common_6letter_word(&w6) {
+        if dictionary_data::is_common_11letter_word(&w11) {
+            return true;
+        }
+    } else if len == 12 {
+        let w12: [u16; 12] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
+            keys[9], keys[10], keys[11],
+        ];
+        if dictionary_data::is_common_12letter_word(&w12) {
+            return true;
+        }
+    } else if len == 13 {
+        let w13: [u16; 13] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
+            keys[9], keys[10], keys[11], keys[12],
+        ];
+        if dictionary_data::is_common_13letter_word(&w13) {
+            return true;
+        }
+    } else if len == 14 {
+        let w14: [u16; 14] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
+            keys[9], keys[10], keys[11], keys[12], keys[13],
+        ];
+        if dictionary_data::is_common_14letter_word(&w14) {
+            return true;
+        }
+    } else if len == 15 {
+        let w15: [u16; 15] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
+            keys[9], keys[10], keys[11], keys[12], keys[13], keys[14],
+        ];
+        if dictionary_data::is_common_15letter_word(&w15) {
+            return true;
+        }
+    } else if len >= 16 {
+        // For very long words, check the first 16 chars
+        let w16: [u16; 16] = [
+            keys[0], keys[1], keys[2], keys[3], keys[4], keys[5], keys[6], keys[7], keys[8],
+            keys[9], keys[10], keys[11], keys[12], keys[13], keys[14], keys[15],
+        ];
+        if dictionary_data::is_common_16letter_word(&w16) {
             return true;
         }
     }
@@ -751,7 +427,7 @@ fn has_programming_term_pattern(keys: &[u16]) -> bool {
     }
     let check_len = len.min(8);
 
-    if len >= 4 {
+    if check_len >= 4 {
         let w4: [u16; 4] = [keys[0], keys[1], keys[2], keys[3]];
         if is_prog_term_4(&w4) {
             return true;
@@ -786,4 +462,22 @@ fn has_programming_term_pattern(keys: &[u16]) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_english_are() {
+        let keys = [keys::A, keys::R, keys::E];
+        assert!(Dictionary::is_english(&keys));
+    }
+}
+
+#[test]
+fn test_is_english_off() {
+    let keys = [keys::O, keys::F, keys::F];
+    println!("Keys: {:?}", keys);
+    assert!(Dictionary::is_english(&keys));
 }

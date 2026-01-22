@@ -106,11 +106,14 @@ impl WordHistory {
     /// * `raw` - The raw keystroke history to save
     ///
     /// # Performance
-    /// O(1) - simple array write and counter update
+    /// O(1) - uses `clone_from` to reuse existing memory capacity, preventing new heap allocations.
     #[inline]
-    pub fn push(&mut self, buf: Buffer, raw: RawInputBuffer) {
-        self.buffers[self.head] = buf;
-        self.raw_inputs[self.head] = raw;
+    pub fn push(&mut self, buf: &Buffer, raw: &RawInputBuffer) {
+        // Optimization: Use clone_from to reuse existing Vec capacity
+        // This avoids syscalls for allocation/deallocation
+        self.buffers[self.head].clone_from(buf);
+        self.raw_inputs[self.head].clone_from(raw);
+
         self.head = (self.head + 1) % HISTORY_CAPACITY;
         if self.len < HISTORY_CAPACITY {
             self.len += 1;
@@ -135,8 +138,8 @@ impl WordHistory {
         self.head = (self.head + HISTORY_CAPACITY - 1) % HISTORY_CAPACITY;
         self.len -= 1;
         Some((
-            self.buffers[self.head].clone(),
-            self.raw_inputs[self.head].clone(),
+            std::mem::take(&mut self.buffers[self.head]),
+            std::mem::take(&mut self.raw_inputs[self.head]),
         ))
     }
 
@@ -257,7 +260,7 @@ mod tests {
 
         let buf1 = make_buffer("viet");
         let raw1 = make_raw_input("viet");
-        history.push(buf1.clone(), raw1.clone());
+        history.push(&buf1, &raw1);
 
         assert_eq!(history.len(), 1);
         assert!(!history.is_empty());
@@ -281,7 +284,7 @@ mod tests {
 
         let buf = make_buffer("test");
         let raw = make_raw_input("test");
-        history.push(buf.clone(), raw.clone());
+        history.push(&buf, &raw);
 
         // Peek should return reference without removing
         let (peeked_buf, peeked_raw) = history.peek().unwrap();
@@ -306,9 +309,9 @@ mod tests {
     fn test_clear() {
         let mut history = WordHistory::new();
 
-        history.push(make_buffer("a"), make_raw_input("a"));
-        history.push(make_buffer("b"), make_raw_input("b"));
-        history.push(make_buffer("c"), make_raw_input("c"));
+        history.push(&make_buffer("a"), &make_raw_input("a"));
+        history.push(&make_buffer("b"), &make_raw_input("b"));
+        history.push(&make_buffer("c"), &make_raw_input("c"));
 
         assert_eq!(history.len(), 3);
 
@@ -322,9 +325,9 @@ mod tests {
         let mut history = WordHistory::new();
 
         // Push in order: a, b, c
-        history.push(make_buffer("a"), make_raw_input("a"));
-        history.push(make_buffer("bb"), make_raw_input("bb"));
-        history.push(make_buffer("ccc"), make_raw_input("ccc"));
+        history.push(&make_buffer("a"), &make_raw_input("a"));
+        history.push(&make_buffer("bb"), &make_raw_input("bb"));
+        history.push(&make_buffer("ccc"), &make_raw_input("ccc"));
 
         // Pop should return in reverse order: c, b, a
         let (buf, _) = history.pop().unwrap();
@@ -346,7 +349,7 @@ mod tests {
         // Push more than capacity (15 entries, but capacity is 3)
         for i in 0..15 {
             let s: String = std::iter::repeat('a').take(i + 1).collect();
-            history.push(make_buffer(&s), make_raw_input(&s));
+            history.push(&make_buffer(&s), &make_raw_input(&s));
         }
 
         // Should still have exactly CAPACITY elements
@@ -379,7 +382,7 @@ mod tests {
 
         for i in 0..HISTORY_CAPACITY {
             assert!(!history.is_full());
-            history.push(make_buffer("a"), make_raw_input("a"));
+            history.push(&make_buffer("a"), &make_raw_input("a"));
             if i < HISTORY_CAPACITY - 1 {
                 assert!(!history.is_full());
             }

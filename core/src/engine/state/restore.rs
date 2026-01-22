@@ -29,10 +29,19 @@ use crate::utils;
 /// # Returns
 /// Vector of ASCII characters, empty if no valid characters
 pub fn build_raw_output(raw_input: &RawInputBuffer) -> Vec<char> {
-    raw_input
-        .iter()
-        .filter_map(|(key, caps)| utils::key_to_char(key, caps))
-        .collect()
+    let len = raw_input.len();
+    if len == 0 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::with_capacity(len);
+    for (key, caps) in raw_input.iter() {
+        if let Some(ch) = utils::key_to_char(key, caps) {
+            out.push(ch);
+        }
+    }
+
+    out
 }
 
 /// Build raw ASCII output from a specific position in raw input history
@@ -46,11 +55,22 @@ pub fn build_raw_output(raw_input: &RawInputBuffer) -> Vec<char> {
 /// # Returns
 /// Vector of ASCII characters from position to end
 pub fn build_raw_output_from(raw_input: &RawInputBuffer, from_pos: usize) -> Vec<char> {
-    raw_input
-        .iter()
-        .skip(from_pos)
-        .filter_map(|(key, caps)| utils::key_to_char(key, caps))
-        .collect()
+    let len = raw_input.len();
+    if from_pos >= len {
+        return Vec::new();
+    }
+
+    let mut out = Vec::with_capacity(len - from_pos);
+    for (idx, (key, caps)) in raw_input.iter().enumerate() {
+        if idx < from_pos {
+            continue;
+        }
+        if let Some(ch) = utils::key_to_char(key, caps) {
+            out.push(ch);
+        }
+    }
+
+    out
 }
 
 /// Find the position of the first character with Vietnamese transforms
@@ -132,31 +152,51 @@ pub fn auto_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result 
 /// // Old: backspace 3, type "use" (6 operations)
 /// // New: backspace 1, type "e" (2 operations) - 3x faster!
 /// ```
+/// Restore buffer to raw ASCII for English words (instant - no space)
+///
+/// Used for immediate restoration during typing when English is detected.
+///
+/// # Algorithm
+/// When English is detected mid-typing, we need to restore the ENTIRE sequence to raw,
+/// not just from the first transform. This is because earlier untransformed characters
+/// are still part of the English word.
+///
+/// Example: typing "r-e-s-t-o" (English "resto")
+/// - Key 0-1: "r-e" (no transforms)
+/// - Key 2: "s" → triggers tone → buffer becomes "ré" (mark on 'e')
+/// - Key 3: "t" → buffer becomes "rét"
+/// - Key 4: "o" → English detection triggers
+///   - Must restore ENTIRE buffer "rét" → "reto"
+///   - Must backspace 3 chars ("rét"), type 4 chars ("resto")
+///
+/// The optimization of "only rebuild from first transform" breaks in this case
+/// because it skips the initial "r-e" keystrokes.
 pub fn instant_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result {
     if raw_input.is_empty() || buf.is_empty() {
         return Result::none();
     }
 
-    // OPTIMIZATION: Find first transform position for incremental restore
-    let first_transform_pos = find_first_transform_position(buf);
-
-    // If no transforms found, nothing to restore
-    if first_transform_pos >= buf.len() {
+    // Check if any transforms were actually applied
+    let has_transforms = buf.iter().any(|c| c.tone > 0 || c.mark > 0 || c.stroke);
+    if !has_transforms {
         return Result::none();
     }
 
-    // Build raw output only from the transform position onwards
-    let raw_chars_from = build_raw_output_from(raw_input, first_transform_pos);
+    // Build RAW output from ALL keystrokes (position 0 onwards)
+    let raw_chars_all = build_raw_output(raw_input);
 
-    if raw_chars_from.is_empty() {
+    if raw_chars_all.is_empty() {
         return Result::none();
     }
 
-    // Count screen characters from transform position to end
-    // This is how many backspaces we need
-    let backspace = (buf.len() - first_transform_pos) as u8;
+    // Backspace count = current buffer length (all displayed chars)
+    // CRITICAL FIX: Clamp backspace to raw_input.len() to prevent deleting preceding space
+    // This handles edge cases where buf.len() might be erroneously larger than the word
+    // (e.g. due to lingering state or compound transforms)
+    // English words generally shouldn't expand (like shortcuts), so this is safe.
+    let backspace = (buf.len()).min(raw_input.len()) as u8;
 
-    Result::send(backspace, &raw_chars_from)
+    Result::send(backspace, &raw_chars_all)
 }
 
 /// Restore buffer to raw ASCII (ESC key handler)
@@ -448,10 +488,11 @@ mod tests {
         let result = instant_restore_english(&buf, &raw);
 
         assert_eq!(result.action, 1); // Action::Send
-        // OPTIMIZATION: Only backspace from position 2 (2 chars: "ẽr")
-        assert_eq!(result.backspace, 2);
-        // OPTIMIZATION: Only send "er" (2 chars)
-        assert_eq!(result.count, 2);
+                                      // FIX: Must restore ENTIRE buffer to raw (not just from first transform)
+                                      // This ensures we don't lose initial characters like in "reto" → "esto" bug
+        assert_eq!(result.backspace, 4); // Backspace all 4 chars: "usẽr"
+                                         // FIX: Send all 4 raw chars "user"
+        assert_eq!(result.count, 4);
     }
 
     #[test]
@@ -485,7 +526,7 @@ mod tests {
         let result = instant_restore_english(&buf, &raw);
 
         assert_eq!(result.action, 1); // Action::Send
-        // Backspace entire buffer (transform at start)
+                                      // Backspace entire buffer (transform at start)
         assert_eq!(result.backspace, 2);
         // Send all raw chars
         assert_eq!(result.count, 3); // "dda"

@@ -6,8 +6,9 @@
 //! - Stroke: d
 //! - Remove: z
 
-use super::{Method, ToneType, HORN_TARGETS_TELEX};
+use super::Method;
 use crate::data::keys;
+use crate::input::ToneType;
 
 pub struct Telex;
 
@@ -36,7 +37,7 @@ impl Method for Telex {
             keys::A => &[keys::A],
             keys::E => &[keys::E],
             keys::O => &[keys::O],
-            keys::W => HORN_TARGETS_TELEX,
+            keys::W => &[keys::A, keys::O, keys::U], // Explicitly include A for Breve (ă) support
             _ => &[],
         }
     }
@@ -53,6 +54,7 @@ impl Method for Telex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::HORN_TARGETS_TELEX;
 
     #[test]
     fn test_marks() {

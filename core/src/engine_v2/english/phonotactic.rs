@@ -433,191 +433,10 @@ impl PhonotacticEngine {
     }
 }
 
-/// Vietnamese Syllable Validator (6 validation rules)
-pub struct VietnameseSyllableValidator;
-
-impl VietnameseSyllableValidator {
-    /// Validate Vietnamese syllable structure (6 rules)
-    pub fn validate(keys: &[u16]) -> ValidationResult {
-        let mut result = ValidationResult {
-            is_valid: true,
-            rules_passed: [true; 6],
-        };
-
-        if keys.is_empty() {
-            return result;
-        }
-
-        // Rule 1: No invalid initials (F, J, W, Z except in compounds)
-        result.rules_passed[0] = Self::rule1_valid_initials(keys);
-
-        // Rule 2: No impossible onset clusters
-        result.rules_passed[1] = Self::rule2_valid_onset(keys);
-
-        // Rule 3: No doubled consonants in same position
-        result.rules_passed[2] = Self::rule3_no_doubled_consonants(keys);
-
-        // Rule 4: Vowel patterns must be valid Vietnamese
-        result.rules_passed[3] = Self::rule4_valid_vowel_patterns(keys);
-
-        // Rule 5: Coda must follow Vietnamese rules (not English clusters)
-        result.rules_passed[4] = Self::rule5_valid_coda(keys);
-
-        // Rule 6: No impossible bigrams
-        result.rules_passed[5] = Self::rule6_no_impossible_bigrams(keys);
-
-        result.is_valid = result.rules_passed.iter().all(|&r| r);
-        result
-    }
-
-    fn rule1_valid_initials(keys: &[u16]) -> bool {
-        if keys.is_empty() {
-            return true;
-        }
-        // F, J, Z are never valid in Vietnamese native words
-        !matches!(keys[0], keys::F | keys::J | keys::Z)
-    }
-
-    fn rule2_valid_onset(keys: &[u16]) -> bool {
-        if keys.len() < 2 {
-            return true;
-        }
-
-        // Vietnamese allows: qu, kh, gh, gi, ch, tr, th, ph, etc.
-        // Invalid: bl, br, cl, cr, dr, fl, etc.
-        let forbidden = vec![
-            (keys::B, keys::L),
-            (keys::B, keys::R),
-            (keys::C, keys::L),
-            (keys::C, keys::R),
-            (keys::D, keys::R),
-            (keys::F, keys::L),
-            (keys::F, keys::R),
-            (keys::G, keys::L),
-            (keys::P, keys::L),
-            (keys::P, keys::R),
-            (keys::S, keys::C),
-            (keys::S, keys::K),
-            (keys::S, keys::L),
-            (keys::S, keys::P),
-            (keys::S, keys::T),
-            // REMOVED: (keys::T, keys::R) - TR is VALID Vietnamese (truyền, triển, trăm, trung)
-            (keys::V, keys::R),
-            (keys::W, keys::R),
-        ];
-
-        let first = keys[0];
-        let second = keys[1];
-
-        !forbidden.iter().any(|&(f, s)| first == f && second == s)
-    }
-
-    fn rule3_no_doubled_consonants(keys: &[u16]) -> bool {
-        for i in 0..keys.len().saturating_sub(1) {
-            if keys[i] == keys[i + 1] {
-                // Double consonants are not valid in Vietnamese
-                match keys[i] {
-                    // Except ll, ss might appear in borrowed words
-                    keys::L | keys::S => {}
-                    _ => return false,
-                }
-            }
-        }
-        true
-    }
-
-    fn rule4_valid_vowel_patterns(keys: &[u16]) -> bool {
-        // Vietnamese vowel patterns are different from English
-        // ea, oo, ai are NOT common in Vietnamese
-        let invalid_patterns = vec![
-            (keys::E, keys::A), // ea
-            (keys::O, keys::O), // oo
-            (keys::A, keys::I), // ai
-            (keys::O, keys::I), // oi
-        ];
-
-        for i in 0..keys.len().saturating_sub(1) {
-            for &(a, b) in &invalid_patterns {
-                if keys[i] == a && keys[i + 1] == b {
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    fn rule5_valid_coda(keys: &[u16]) -> bool {
-        if keys.len() < 2 {
-            return true;
-        }
-
-        // Vietnamese codas are limited to: p, t, c, ch, m, n, ng, nh
-        // Not: st, nd, nt, mp, etc. (English clusters)
-        let invalid_codas = vec![
-            (keys::S, keys::T),
-            (keys::N, keys::D),
-            (keys::M, keys::P),
-            (keys::L, keys::D),
-            (keys::R, keys::D),
-        ];
-
-        // Check last two keys
-        if keys.len() >= 2 {
-            let last_two = (keys[keys.len() - 2], keys[keys.len() - 1]);
-            for &(a, b) in &invalid_codas {
-                if last_two.0 == a && last_two.1 == b {
-                    return false;
-                }
-            }
-        }
-
-        true
-    }
-
-    fn rule6_no_impossible_bigrams(keys: &[u16]) -> bool {
-        let impossible = vec![
-            (keys::Q, keys::B),
-            (keys::Q, keys::D),
-            (keys::Q, keys::F),
-            (keys::Z, keys::S),
-            (keys::J, keys::M),
-            (keys::F, keys::N),
-        ];
-
-        for i in 0..keys.len().saturating_sub(1) {
-            let pair = (keys[i], keys[i + 1]);
-            if impossible.iter().any(|&(a, b)| pair.0 == a && pair.1 == b) {
-                return false;
-            }
-        }
-
-        true
-    }
-}
-
-/// Vietnamese syllable validation result
-#[derive(Debug, Clone, Copy)]
-pub struct ValidationResult {
-    /// Overall validation result
-    pub is_valid: bool,
-    /// Each rule result
-    pub rules_passed: [bool; 6],
-}
-
-impl ValidationResult {
-    /// Get count of passed rules
-    pub fn passed_count(&self) -> usize {
-        self.rules_passed.iter().filter(|&&r| r).count()
-    }
-
-    /// Get confidence percentage (6/6 rules = 100%)
-    pub fn confidence(&self) -> u8 {
-        ((self.passed_count() as u32 * 100) / 6) as u8
-    }
-}
-
 /// Auto-restore decision logic
 pub struct AutoRestoreDecider;
+
+pub use crate::engine_v2::vietnamese_validator::{ValidationResult, VietnameseSyllableValidator};
 
 impl AutoRestoreDecider {
     /// Decide whether to restore English word
@@ -644,8 +463,8 @@ impl AutoRestoreDecider {
         // Strong signal: multiple English layers detected
         let english_layers = (phonotactic.matched_layers.count_ones() as u8).max(1);
 
-        // Vietnamese validation: how many rules passed
-        let viet_rules_passed = vietnamese_validation.passed_count();
+        // Vietnamese validation: confidence (0-100)
+        let viet_confidence = vietnamese_validation.confidence;
 
         // Decision matrix:
         // 1. If 3+ English layers AND Vietnamese validates poorly -> RESTORE
@@ -654,13 +473,13 @@ impl AutoRestoreDecider {
 
         let english_confidence = phonotactic.english_confidence;
 
-        // High English confidence (>75%) AND Vietnamese validation fails (≤3 rules)
-        if english_confidence > 75 && viet_rules_passed <= 3 {
+        // High English confidence (>75%) AND Vietnamese validation fails (low confidence)
+        if english_confidence > 75 && viet_confidence < 50 {
             return true;
         }
 
         // Multiple English layers (>2) AND very low Vietnamese confidence
-        if english_layers >= 3 && viet_rules_passed <= 2 {
+        if english_layers >= 3 && viet_confidence < 30 {
             return true;
         }
 
@@ -678,7 +497,7 @@ impl AutoRestoreDecider {
         vietnamese_validation: &ValidationResult,
     ) -> u8 {
         let english = phonotactic.english_confidence as i32;
-        let viet_invalid_score = (100 - vietnamese_validation.confidence() as i32).max(0);
+        let viet_invalid_score = (100 - vietnamese_validation.confidence as i32).max(0);
 
         // Combine signals: English high + Vietnamese low = high restore confidence
         (((english + viet_invalid_score) / 2).min(100)) as u8
@@ -717,10 +536,7 @@ mod tests {
     fn test_vietnamese_invalid_initials() {
         let keys = vec![keys::F, keys::O, keys::R];
         let result = VietnameseSyllableValidator::validate(&keys);
-        assert!(
-            !result.rules_passed[0],
-            "FOR should fail rule 1 (invalid initial)"
-        );
+        assert!(!result.is_valid, "FOR should fail (invalid initial)");
     }
 
     #[test]
@@ -732,7 +548,7 @@ mod tests {
         };
         let viet = ValidationResult {
             is_valid: false,
-            rules_passed: [false, false, true, true, true, false],
+            confidence: 0,
         };
         assert!(
             AutoRestoreDecider::should_restore(&phonotactic, &viet, true),

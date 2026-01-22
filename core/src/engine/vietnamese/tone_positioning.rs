@@ -38,8 +38,11 @@
 //! viê + s    → viết (mark moves to ê, Rule 1 applies)
 //! ```
 
+use crate::data::{
+    keys,
+    vowel::{Modifier, Vowel},
+};
 use crate::engine::buffer::Buffer;
-use crate::data::{keys, vowel::{Modifier, Vowel}};
 
 use crate::utils;
 
@@ -73,26 +76,27 @@ pub fn find_mark_position(vowels: &[Vowel], _has_final_consonant: bool) -> usize
     // If multiple diacritics exist (e.g., ươi), prioritize by position:
     // - For triphthongs: prefer middle diacritic (ơ in ươi)
     // - For diphthongs: prefer last diacritic (ê in iê)
-    
-    let diacritic_positions: Vec<usize> = vowels
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| is_diacritic_vowel(v.key, &v.modifier))
-        .map(|(i, _)| i)
-        .collect();
-    
-    if !diacritic_positions.is_empty() {
-        // For triphthongs with multiple diacritics, prefer middle
-        if vowels.len() == 3 && diacritic_positions.len() > 1 {
-            // Check if middle vowel has diacritic
-            if diacritic_positions.contains(&1) {
-                return vowels[1].pos;
+
+    let mut last_diacritic_idx: Option<usize> = None;
+    let mut middle_diacritic = false;
+
+    for (i, v) in vowels.iter().enumerate() {
+        if is_diacritic_vowel(v.key, &v.modifier) {
+            last_diacritic_idx = Some(i);
+            if vowels.len() == 3 && i == 1 {
+                middle_diacritic = true;
             }
         }
-        
+    }
+
+    if let Some(idx) = last_diacritic_idx {
+        // For triphthongs with multiple diacritics, prefer middle
+        if vowels.len() == 3 && middle_diacritic {
+            return vowels[1].pos;
+        }
+
         // Default: use last diacritic vowel (works for diphthongs and most cases)
-        let last_diacritic_idx = *diacritic_positions.last().unwrap();
-        return vowels[last_diacritic_idx].pos;
+        return vowels[idx].pos;
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -100,13 +104,13 @@ pub fn find_mark_position(vowels: &[Vowel], _has_final_consonant: bool) -> usize
     // ═════════════════════════════════════════════════════════════════════
     // No diacritics present → mark on second vowel
     // Applies to: ai, ao, ay, eo, oa, oe, oi, ui, uy, etc.
-    
+
     if vowels.len() >= 2 {
         // For diphthongs (2 vowels)
         if vowels.len() == 2 {
             return vowels[1].pos;
         }
-        
+
         // For triphthongs (3+ vowels)
         // Middle vowel gets priority in compound structures
         if vowels.len() == 3 {
@@ -114,7 +118,7 @@ pub fn find_mark_position(vowels: &[Vowel], _has_final_consonant: bool) -> usize
             // (e.g., uôi → middle, uyê → last if ê present but already handled by Rule 1)
             return vowels[1].pos;
         }
-        
+
         // 4+ vowels: rare, use middle
         return vowels[vowels.len() / 2].pos;
     }
@@ -136,17 +140,17 @@ fn is_diacritic_vowel(key: u16, modifier: &Modifier) -> bool {
     if *modifier == Modifier::None {
         return false;
     }
-    
+
     // Circumflex (^): â, ê, ô
     if *modifier == Modifier::Circumflex {
         return matches!(key, keys::A | keys::E | keys::O);
     }
-    
+
     // Horn/Breve: ơ, ư, ă
     if *modifier == Modifier::Horn {
         return matches!(key, keys::A | keys::O | keys::U);
     }
-    
+
     false
 }
 
@@ -189,12 +193,12 @@ pub fn reposition_mark(buf: &mut Buffer) -> Option<(usize, usize)> {
         if let Some(c) = buf.get_mut(old_pos) {
             c.mark = 0;
         }
-        
+
         // Set new position
         if let Some(c) = buf.get_mut(new_pos) {
             c.mark = mark_value;
         }
-        
+
         return Some((old_pos, new_pos));
     }
 
@@ -203,9 +207,9 @@ pub fn reposition_mark(buf: &mut Buffer) -> Option<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::buffer::{Buffer, Char};
     use super::*;
     use crate::data::chars::mark;
+    use crate::engine::buffer::{Buffer, Char};
 
     /// Helper: Create buffer from string
     fn setup_buffer(s: &str) -> Buffer {
@@ -259,7 +263,7 @@ mod tests {
             vowel_with_modifier(keys::I, tone::NONE, 1),
             vowel_with_modifier(keys::E, tone::CIRCUMFLEX, 2),
         ];
-        
+
         let pos = find_mark_position(&vowels, false);
         assert_eq!(pos, 2, "Mark should be on ê (Rule 1: diacritic priority)");
     }
@@ -272,7 +276,7 @@ mod tests {
             vowel_with_modifier(keys::U, tone::NONE, 1),
             vowel_with_modifier(keys::O, tone::CIRCUMFLEX, 2),
         ];
-        
+
         let pos = find_mark_position(&vowels, false);
         assert_eq!(pos, 2, "Mark should be on ô (Rule 1: diacritic priority)");
     }
@@ -287,9 +291,12 @@ mod tests {
             vowel_with_modifier(keys::O, tone::HORN, 1), // ơ
             vowel_with_modifier(keys::I, tone::NONE, 2),
         ];
-        
+
         let pos = find_mark_position(&vowels, false);
-        assert_eq!(pos, 1, "Mark should be on ơ (middle diacritic in triphthong)");
+        assert_eq!(
+            pos, 1,
+            "Mark should be on ơ (middle diacritic in triphthong)"
+        );
     }
 
     #[test]
@@ -300,7 +307,7 @@ mod tests {
             vowel_with_modifier(keys::O, tone::NONE, 1),
             vowel_with_modifier(keys::A, tone::NONE, 2),
         ];
-        
+
         let pos = find_mark_position(&vowels, false);
         assert_eq!(pos, 2, "Mark should be on a (Rule 2: second vowel)");
     }
@@ -313,7 +320,7 @@ mod tests {
             vowel_with_modifier(keys::A, tone::NONE, 0),
             vowel_with_modifier(keys::I, tone::NONE, 1),
         ];
-        
+
         let pos = find_mark_position(&vowels, false);
         assert_eq!(pos, 1, "Mark should be on i (Rule 2: second vowel)");
     }
@@ -326,7 +333,7 @@ mod tests {
             vowel_with_modifier(keys::U, tone::NONE, 0),
             vowel_with_modifier(keys::Y, tone::NONE, 1),
         ];
-        
+
         let pos = find_mark_position(&vowels, false);
         assert_eq!(pos, 1, "Mark should be on y (Rule 2: second vowel)");
     }
@@ -336,7 +343,7 @@ mod tests {
         use crate::data::chars::tone;
         // Test: single vowel → mark on it
         let vowels = vec![vowel_with_modifier(keys::A, tone::NONE, 0)];
-        
+
         let pos = find_mark_position(&vowels, false);
         assert_eq!(pos, 0, "Mark should be on single vowel");
     }
@@ -344,19 +351,46 @@ mod tests {
     #[test]
     fn test_is_diacritic_vowel() {
         // Test circumflex diacritics
-        assert!(is_diacritic_vowel(keys::A, &Modifier::Circumflex), "â is diacritic");
-        assert!(is_diacritic_vowel(keys::E, &Modifier::Circumflex), "ê is diacritic");
-        assert!(is_diacritic_vowel(keys::O, &Modifier::Circumflex), "ô is diacritic");
-        
+        assert!(
+            is_diacritic_vowel(keys::A, &Modifier::Circumflex),
+            "â is diacritic"
+        );
+        assert!(
+            is_diacritic_vowel(keys::E, &Modifier::Circumflex),
+            "ê is diacritic"
+        );
+        assert!(
+            is_diacritic_vowel(keys::O, &Modifier::Circumflex),
+            "ô is diacritic"
+        );
+
         // Test horn/breve diacritics
-        assert!(is_diacritic_vowel(keys::A, &Modifier::Horn), "ă is diacritic");
-        assert!(is_diacritic_vowel(keys::O, &Modifier::Horn), "ơ is diacritic");
-        assert!(is_diacritic_vowel(keys::U, &Modifier::Horn), "ư is diacritic");
-        
+        assert!(
+            is_diacritic_vowel(keys::A, &Modifier::Horn),
+            "ă is diacritic"
+        );
+        assert!(
+            is_diacritic_vowel(keys::O, &Modifier::Horn),
+            "ơ is diacritic"
+        );
+        assert!(
+            is_diacritic_vowel(keys::U, &Modifier::Horn),
+            "ư is diacritic"
+        );
+
         // Test non-diacritics
-        assert!(!is_diacritic_vowel(keys::A, &Modifier::None), "a is not diacritic");
-        assert!(!is_diacritic_vowel(keys::I, &Modifier::None), "i is not diacritic");
-        assert!(!is_diacritic_vowel(keys::I, &Modifier::Circumflex), "i with ^ is invalid");
+        assert!(
+            !is_diacritic_vowel(keys::A, &Modifier::None),
+            "a is not diacritic"
+        );
+        assert!(
+            !is_diacritic_vowel(keys::I, &Modifier::None),
+            "i is not diacritic"
+        );
+        assert!(
+            !is_diacritic_vowel(keys::I, &Modifier::Circumflex),
+            "i with ^ is invalid"
+        );
     }
 
     #[test]
@@ -364,25 +398,25 @@ mod tests {
         use crate::data::chars::tone;
         // Simulate: "vie" + s → "vié", then + e → "viê" + s → "viết"
         let mut buf = setup_buffer("vie");
-        
+
         // Add tone to 'e' to make 'ê'
         if let Some(c) = buf.get_mut(2) {
             c.tone = tone::CIRCUMFLEX; // e → ê
         }
-        
+
         // Add mark to first vowel 'i' (simulating wrong position)
         if let Some(c) = buf.get_mut(1) {
             c.mark = mark::SAC;
         }
-        
+
         // Reposition should move mark from 'i' to 'ê'
         let result = reposition_mark(&mut buf);
         assert!(result.is_some(), "Mark should be repositioned");
-        
+
         let (old_pos, new_pos) = result.unwrap();
         assert_eq!(old_pos, 1, "Mark was on i (pos 1)");
         assert_eq!(new_pos, 2, "Mark moved to ê (pos 2)");
-        
+
         // Verify final state
         assert_eq!(buf.get(1).unwrap().mark, 0, "i should have no mark");
         assert_eq!(buf.get(2).unwrap().mark, mark::SAC, "ê should have mark");
@@ -392,13 +426,16 @@ mod tests {
     fn test_reposition_no_change_needed() {
         // Test: mark already in correct position
         let mut buf = setup_buffer("hoa");
-        
+
         // Add mark to 'a' (already correct position by Rule 2)
         if let Some(c) = buf.get_mut(2) {
             c.mark = mark::SAC;
         }
-        
+
         let result = reposition_mark(&mut buf);
-        assert!(result.is_none(), "No repositioning needed when already correct");
+        assert!(
+            result.is_none(),
+            "No repositioning needed when already correct"
+        );
     }
 }

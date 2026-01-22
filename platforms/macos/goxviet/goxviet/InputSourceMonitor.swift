@@ -14,7 +14,7 @@ import Cocoa
 
 /// Monitors keyboard input source changes and automatically disables Vietnamese typing
 /// when non-Latin input methods are active (e.g., Japanese, Korean, Chinese)
-class InputSourceMonitor {
+class InputSourceMonitor: LifecycleManaged {
     static let shared = InputSourceMonitor()
     
     // MARK: - Properties
@@ -30,9 +30,6 @@ class InputSourceMonitor {
     
     /// Current input source ID
     private(set) var currentInputSourceId: String?
-    
-    /// Distributed notification observer
-    private var observer: NSObjectProtocol?
     
     // MARK: - Input Source Categories
     
@@ -144,6 +141,11 @@ class InputSourceMonitor {
     
     private init() {}
     
+    deinit {
+        stop()
+        Log.info("InputSourceMonitor deinitialized")
+    }
+    
     // MARK: - Lifecycle
     
     /// Start monitoring input source changes
@@ -158,13 +160,20 @@ class InputSourceMonitor {
         
         // Register for input source change notifications
         // Using DistributedNotificationCenter to receive system-wide notifications
-        observer = DistributedNotificationCenter.default().addObserver(
+        let observer = DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.handleInputSourceChanged()
         }
+        
+        // Register with ResourceManager for automatic cleanup
+        ResourceManager.shared.register(
+            observer: observer,
+            identifier: "InputSourceMonitor.inputSourceObserver",
+            center: DistributedNotificationCenter.default() as! NotificationCenter
+        )
         
         isRunning = true
         Log.info("InputSourceMonitor started (current: \(currentInputSourceId ?? "unknown"))")
@@ -176,10 +185,11 @@ class InputSourceMonitor {
             return
         }
         
-        if let observer = observer {
-            DistributedNotificationCenter.default().removeObserver(observer)
-            self.observer = nil
-        }
+        // Unregister observer via ResourceManager
+        ResourceManager.shared.unregister(
+            observerIdentifier: "InputSourceMonitor.inputSourceObserver",
+            center: DistributedNotificationCenter.default() as! NotificationCenter
+        )
         
         // Restore state if temporarily disabled
         if isTemporarilyDisabled {
