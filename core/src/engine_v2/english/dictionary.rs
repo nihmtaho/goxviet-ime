@@ -156,6 +156,15 @@ const PROG_TERMS_7: &[[u16; 7]] = &[
         keys::N,
     ], // boolean
     [
+        keys::C,
+        keys::O,
+        keys::N,
+        keys::S,
+        keys::O,
+        keys::L,
+        keys::E,
+    ], // console
+    [
         keys::I,
         keys::N,
         keys::T,
