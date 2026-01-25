@@ -1,15 +1,21 @@
 # Changelog - Gõ Việt (GoxViet)
 
-## [2.0.2] - 2026-01-22
+## [2.0.2] - 2026-01-25
 
 ### Added
-- 
+- **Testing Infrastructure**: Triển khai hệ thống kiểm thử dựa trên từ điển với ~72K từ tiếng Việt và ~100K từ tiếng Anh, giúp tăng độ chính xác của engine và tránh regression (#41).
+- **Per-App Tracking**: Thêm tính năng "opt-in" cho per-app settings. Ứng dụng chỉ được lưu vào danh sách khi người dùng bật bộ gõ tiếng Việt cho ứng dụng đó ít nhất một lần (#43).
+- **Real-time UI**: Danh sách "Saved Applications" trong Settings sẽ cập nhật realtime khi trạng thái app thay đổi (#43).
 
 ### Changed
-- 
+- **Telex Logic**: Cải tiến logic xử lý stroke và mark modifiers, tăng độ chính xác khi gõ các cụm từ phức tạp (#42).
+- **English Detection**: Bổ sung "console" vào từ điển tiếng Anh và tối ưu logic bỏ qua (skip logic) cho một số pattern tiếng Anh (#42).
+- **Documentation**: Cập nhật tài liệu kỹ thuật về per-app settings và tracking trên macOS (#43).
 
 ### Fixed
-- 
+- **Telex Typing Bug**: Sửa lỗi gõ `d`+`i`+`s` ra `dis` thay vì `dí` (#42).
+- **Modifier Transform**: Sửa lỗi transform `aw` → `ă` và đảm bảo đếm đúng số phím backspace khi apply breve transform (#42).
+- **Multi-vowel Tone**: Xử lý lỗi nhận diện phím dấu cho các từ tiếng Anh có nhiều nguyên âm, tránh việc áp dấu nhầm (#42).
 
 
 ## [2.0.1] - 2026-01-16
