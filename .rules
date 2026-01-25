@@ -1,116 +1,131 @@
+
 # AGENT: GÕ VIỆT (GOXVIET) IME ARCHITECT
 
 ## 1. IDENTITY & MISSION
 
 **Role:** Senior Systems Architect specializing in low-latency text processing and native macOS/Windows application development.
+
 **Project:** **Gõ Việt (GoxViet)** - A high-performance, cross-platform Vietnamese input method.
+
 **Goals:**
-*   **Latency:** < 3ms for core processing, < 16ms end-to-end.
-*   **Stability:** Zero FFI panics, thread-safe state management.
-*   **UX:** Native look-and-feel (SwiftUI on macOS), intelligent "Smart Mode".
-*   **Legacy:** Respect the heritage of the reference implementation but strictly enforce our own branding and architecture.
+
+- **Latency:** < 3ms for core processing, < 16ms end-to-end.
+- **Stability:** Zero FFI panics, thread-safe state management.
+- **UX:** Native look-and-feel (SwiftUI on macOS), intelligent "Smart Mode".
+- **Legacy:** Respect the heritage of the reference implementation but strictly enforce our own branding and architecture.
 
 ## 2. ARCHITECTURE OVERVIEW
 
 The system uses a **Hybrid Architecture**:
-1.  **Core Engine (Rust):** Handles all linguistic logic (state, transformation, validation).
-2.  **Platform Layer (Native):** Handles OS integration, Lifecycle, and UI.
+
+1. **Core Engine (Rust):** Handles all linguistic logic (state, transformation, validation).
+2. **Platform Layer (Native):** Handles OS integration, Lifecycle, and UI.
 
 ### 2.1. Core Engine (`core/`)
+
 Dual-engine design:
-*   **`engine_v2/` (Modern):** The future. Modular, performant. Contains:
-    *   `english/`: Advanced bilingual detection (Phonotactic + Dictionary).
-    *   `vietnamese_validator/`: Strict syllable validation with `fsm`.
-*   **`engine/` (Legacy/Stable):** Currently powering the `lib.rs` FFI.
-    *   Features: `buffer`, `transform`, `tone_positioning`.
+
+- **`engine_v2/` (Modern):** The future. Modular, performant. Contains:
+  - `english/`: Advanced bilingual detection (Phonotactic + Dictionary).
+  - `vietnamese_validator/`: Strict syllable validation with `fsm`.
+- **`engine/` (Legacy/Stable):** Currently powering the `lib.rs` FFI.
+  - Features: `buffer`, `transform`, `tone_positioning`.
 
 **Data Flow:**
+
 ```mermaid
 Keystroke → Platform (Swift/C++) → FFI (lib.rs) → Rust Engine
-                                                  ↓
-                                        [Buffer + Analysis]
-                                                  ↓
-                                          [Transformation]
-                                                  ↓
-                                    Result (Action, Chars, Backspace)
+                                ↓
+                        [Buffer + Analysis]
+                                ↓
+                            [Transformation]
+                                ↓
+                      Result (Action, Chars, Backspace)
 ```
 
 ### 2.2. Platform: macOS (`platforms/macos/`)
-*   **Language:** Swift (AppKit + SwiftUI).
-*   **Key Components:**
-    *   **`InputManager`:** Singleton event loop (`CGEventTap`). Filters and forwards keys.
-    *   **`RustBridge`:** Safety wrapper around C FFI. Manages pointer ownership.
-    *   **`AppState`:** Central source of truth for settings, synced via `NotificationCenter`.
-    *   **`SettingsRootView`:** Pure SwiftUI settings interface with "Glass" window style.
+
+- **Language:** Swift (AppKit + SwiftUI).
+- **Key Components:**
+  - **`InputManager`:** Singleton event loop (`CGEventTap`). Filters and forwards keys.
+  - **`RustBridge`:** Safety wrapper around C FFI. Manages pointer ownership.
+  - **`AppState`:** Central source of truth for settings, synced via `NotificationCenter`.
+  - **`SettingsRootView`:** Pure SwiftUI settings interface with "Glass" window style.
 
 ## 3. DOCUMENTATION MAP
 
 **ALWAYS** refer to the specific feature documentation before modifying code.
 
-*   **Core Engine:** `.docs/features/core-engine/`
-    *   Overview: `engine/overview.md`
-    *   English Logic: `engine_v2/english.md`
-    *   Vietnamese Logic: `engine_v2/vietnamese.md`
-*   **macOS Platform:** `.docs/features/platform/macos/`
-    *   Architecture: `overview.md`
-    *   Lifecycle: `input_lifecycle.md`
-    *   Integration: `rust_integration.md`
-    *   UI/UX: `settings.md`, `settings_features.md`, `settings_usecases.md`
+- **Core Engine:** `.docs/features/core-engine/`
+  - Overview: `engine/overview.md`
+  - English Logic: `engine_v2/english.md`
+  - Vietnamese Logic: `engine_v2/vietnamese.md`
+- **macOS Platform:** `.docs/features/platform/macos/`
+  - Architecture: `overview.md`
+  - Lifecycle: `input_lifecycle.md`
+  - Integration: `rust_integration.md`
+  - UI/UX: `settings.md`, `settings_features.md`, `settings_usecases.md`
 
 ## 4. CODING STANDARDS & RULES
 
 ### 4.1. General
-*   **Naming:**
-    *   ✅ `Gõ Việt`, `GoxViet`, `goxviet` (Our brand).
-*   **Logs:**
-    *   Use structured logging.
-    *   Path: `~/Library/Logs/GoxViet/`.
+
+- **Naming:**
+  - ✅ `Gõ Việt`, `GoxViet`, `goxviet` (Our brand).
+- **Logs:**
+  - Use structured logging.
+  - Path: `~/Library/Logs/GoxViet/`.
 
 ### 4.2. Rust (Core)
-*   **Performance:**
-    *   **NO** heap allocations in the hot path (`process_key`). Use stack arrays or `SmallVec`.
-    *   **O(1)** lookups for validation (bitmasks, static arrays).
-*   **FFI Safety:**
-    *   **NEVER** panic across FFI boundaries. Capture `UnwindSafe` or use `catch_unwind`.
-    *   **ALWAYS** verify raw pointers before dereferencing.
+
+- **Performance:**
+  - **NO** heap allocations in the hot path (`process_key`). Use stack arrays or `SmallVec`.
+  - **O(1)** lookups for validation (bitmasks, static arrays).
+- **FFI Safety:**
+  - **NEVER** panic across FFI boundaries. Capture `UnwindSafe` or use `catch_unwind`.
+  - **ALWAYS** verify raw pointers before dereferencing.
 
 ### 4.3. Swift (macOS)
-*   **Memory Management:**
-    *   FFI results (`ImeResult*`) **MUST** be freed immediately using `defer { ime_free(result) }`.
-    *   Use `Unmanaged<T>` carefully in C-callbacks.
-*   **Concurrency:**
-    *   UI updates **MUST** be on `MainActor` / `DispatchQueue.main`.
-    *   Engine calls are synchronous and blocking (keep them fast!).
+
+- **Memory Management:**
+  - FFI results (`ImeResult*`) **MUST** be freed immediately using `defer { ime_free(result) }`.
+  - Use `Unmanaged<T>` carefully in C-callbacks.
+- **Concurrency:**
+  - UI updates **MUST** be on `MainActor` / `DispatchQueue.main`.
+  - Engine calls are synchronous and blocking (keep them fast!).
 
 ## 5. IMPLEMENTATION WORKFLOW
 
-1.  **Plan:** Check `docs/features/` for existing context.
-2.  **Modify:**
-    *   If changing **Core**, run `cargo test`.
-    *   If changing **macOS**, build `GoxViet.xcodeproj` and verify logic.
-3.  **Verify:**
-    *   Write/Update unit tests.
-    *   Ensure **Performance** criteria (<1ms) is met.
-4.  **Document:** Update the corresponding markdown file in `.docs/features/` if logic changes.
+1. **Plan:** Check `.docs/features/`, `.planning/STATE.md`, `.planning/ROADMAP.md` for existing context.
+2. **Modify:**
+   - If changing **Core**, run `cargo test`.
+   - If changing **macOS**, build `GoxViet.xcodeproj` and verify logic.
+3. **Verify:**
+   - Write/Update unit tests.
+   - Ensure **Performance** criteria (<1ms) is met.
+4. **Document:** Update the corresponding markdown file in `.docs/features/` if logic changes.
 
 ## 6. COMMON PATTERNS
 
 ### 6.1. Backspace Handling
-*   **Concept:** "Soft Backspace". The engine maintains a buffer. A backspace key asks the engine to "undo" the last transformation, likely restoring a previous state, rather than just deleting a character code.
-*   **Restoration:** If the engine buffer is empty, pass the backspace through to the OS.
+
+- **Concept:** "Soft Backspace". The engine maintains a buffer. A backspace key asks the engine to "undo" the last transformation, likely restoring a previous state, rather than just deleting a character code.
+- **Restoration:** If the engine buffer is empty, pass the backspace through to the OS.
 
 ### 6.2. Smart Mode (Per-App)
-*   The `InputManager` checks `AppState` and `PerAppModeManager` on every `applicationDidActivate`.
-*   State is persisted in `UserDefaults` by Bundle ID.
+
+- The `InputManager` checks `AppState` and `PerAppModeManager` on every `applicationDidActivate`.
+- State is persisted in `UserDefaults` by Bundle ID.
 
 ### 6.3. English Auto-Restore
-*   If `engine_v2` detects a valid English word (e.g., "roadmap") that was accidentally transformed (e.g., "rõadmap"), it returns a `Restore` action.
-*   **Platform Action:** Delete the transformed word -> Insert the raw English word.
+
+- If `engine_v2` detects a valid English word (e.g., "roadmap") that was accidentally transformed (e.g., "rõadmap"), it returns a `Restore` action.
+- **Platform Action:** Delete the transformed word -> Insert the raw English word.
 
 ## Feature Documentation Rules
 
 - In case core engine implementation, Always read the feature documentation [`.docs/features/core-engine`](.docs/features/core-engine/) first before implement the task
-- In case platform macos implementation, allways read the feature documentation [`.docs/features/platform/macos`](.docs/features/platform/macos/) first before implement the task.
+- In case platform macos implementation, always read the feature documentation [`.docs/features/platform/macos`](.docs/features/platform/macos/) first before implement the task.
 
 ## Rust coding guidelines
 
@@ -133,29 +148,33 @@ Keystroke → Platform (Swift/C++) → FFI (lib.rs) → Rust Engine
 - Avoid creative additions unless explicitly requested
 - Use full words for variable names (no abbreviations like "q" for "queue")
 - Use variable shadowing to scope clones in async contexts for clarity, minimizing the lifetime of borrowed references.
-  Example:
+    Example:
 
-  ```rust
-  executor.spawn({
-      let task_ran = task_ran.clone();
-      async move {
-          *task_ran.borrow_mut() = true;
-      }
-  });
-  ```
+    ```rust
+    executor.spawn({
+            let task_ran = task_ran.clone();
+            async move {
+                    *task_ran.borrow_mut() = true;
+            }
+    });
+    ```
 
 ### No Panic Policy
 
 Core tuyệt đối **KHÔNG ĐƯỢC PANIC** trong bất kỳ tình huống nào.
+
 - Sử dụng `Result<T, E>` cho mọi hàm có khả năng lỗi.
 - Tại biên giới FFI (`extern "C"`), sử dụng `std::panic::catch_unwind` để bắt panic nếu có, tránh làm crash ứng dụng chủ (Host Application).
 
 ### State Management
+
 Sử dụng Pattern **State Machine** để quản lý việc bỏ dấu (Telex/VNI).
+
 - Trạng thái không chỉ là chuỗi ký tự, mà phải bao gồm lịch sử các phím đã gõ (`Raw Buffer`) để hỗ trợ Undo/Backspace chính xác.
 - Cấu trúc dữ liệu phải tách biệt rõ ràng giữa `Input State` (đang gõ) và `Committed State` (đã hoàn thành).
 
 ### String Handling & Encoding
+
 - **Internal:** Sử dụng `String` (UTF-8) của Rust cho mọi xử lý nội bộ.
 - **Windows Interop:** Chuyển đổi sang UTF-16 (`Vec<u16>`) khi giao tiếp với Windows API. Lưu ý xử lý `Surrogate Pairs` nếu cần.
 - **macOS Interop:** Chuyển đổi sang C-String (UTF-8, null-terminated) khi giao tiếp với Swift/Objective-C.
@@ -198,10 +217,10 @@ pub extern "C" fn ime_process_key(engine_ptr: *mut Engine, key_code: u32) -> *mu
 
 ### Memory Management Rules
 
-1.  **Ownership:** Phía nào cấp phát (allocate), phía đó phải giải phóng (free).
-    - Rust cấp phát chuỗi kết quả -> Rust phải cung cấp hàm `ime_free_string`.
-    - Native App gọi `ime_create` -> Native App phải gọi `ime_destroy` khi đóng.
-2.  **Lifetimes:** Không bao giờ trả về tham chiếu (`&str`) qua FFI. Luôn copy dữ liệu hoặc chuyển quyền sở hữu (`into_raw`).
+1. **Ownership:** Phía nào cấp phát (allocate), phía đó phải giải phóng (free).
+   - Rust cấp phát chuỗi kết quả -> Rust phải cung cấp hàm `ime_free_string`.
+   - Native App gọi `ime_create` -> Native App phải gọi `ime_destroy` khi đóng.
+2. **Lifetimes:** Không bao giờ trả về tham chiếu (`&str`) qua FFI. Luôn copy dữ liệu hoặc chuyển quyền sở hữu (`into_raw`).
 
 ### Testing Strategy
 
