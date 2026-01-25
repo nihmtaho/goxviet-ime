@@ -328,16 +328,24 @@ class AppState: ObservableObject {
     }
 
     /// Save the mode for a specific app
-    /// Stores both Enabled (Vietnamese) and Disabled (English) states
-    /// Default behavior for unknown apps is Disabled (English), but saving it explicitly
-    /// allows the app to appear in the "Saved Applications" list.
+    /// Opt-in tracking: only create a new entry when `enabled == true` (first time user enables Vietnamese)
+    /// For apps already tracked, updates are allowed for both true/false.
+    /// Default for unknown apps remains Disabled (English) without creating storage.
     /// Enforces MAX_PER_APP_ENTRIES limit to prevent unbounded memory growth
     func setPerAppMode(bundleId: String, enabled: Bool) {
         var dict = UserDefaults.standard.dictionary(forKey: Keys.perAppModes) as? [String: Bool] ?? [:]
 
-        // Check if this is a new entry (to enforce capacity)
-        if dict[bundleId] == nil {
-             // Check capacity limit before adding new entry
+        let isNewApp = (dict[bundleId] == nil)
+
+        // If this is a new app and the user has not enabled Vietnamese yet,
+        // do NOT create a tracking entry. Keep default = disabled without persisting.
+        if isNewApp && enabled == false {
+            Log.info("Per-app skip save (new app, still English): \(bundleId)")
+            return
+        }
+
+        // For a new app with enabled == true, enforce capacity before saving
+        if isNewApp {
             if dict.count >= MAX_PER_APP_ENTRIES {
                 Log.warning("Per-app settings at capacity (\(MAX_PER_APP_ENTRIES)). Not saving new entry for: \(bundleId)")
                 Log.warning("Consider clearing old per-app settings from Preferences.")
@@ -345,15 +353,18 @@ class AppState: ObservableObject {
             }
         }
 
-        // Store the state (true or false)
+        // Store/update the state
         dict[bundleId] = enabled
-        
-        // Auto-record as known app for Saved Applications UI
-        recordKnownApp(bundleId: bundleId)
+
+        // Record as known app only when Vietnamese is enabled at least once
+        if enabled {
+            recordKnownApp(bundleId: bundleId)
+        }
 
         UserDefaults.standard.set(dict, forKey: Keys.perAppModes)
 
         Log.info("Per-app mode saved: \(bundleId) = \(enabled ? "Vietnamese" : "English")")
+        NotificationCenter.default.post(name: .perAppModesChanged, object: nil)
     }
 
     /// Clear per-app settings for a specific app (reset to default)
@@ -366,6 +377,7 @@ class AppState: ObservableObject {
         removeKnownApp(bundleId: bundleId)
 
         Log.info("Per-app mode cleared: \(bundleId)")
+        NotificationCenter.default.post(name: .perAppModesChanged, object: nil)
     }
 
     /// Get all per-app settings
@@ -378,6 +390,7 @@ class AppState: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Keys.perAppModes)
         UserDefaults.standard.removeObject(forKey: Keys.knownApps)
         Log.info("All per-app modes cleared")
+        NotificationCenter.default.post(name: .perAppModesChanged, object: nil)
     }
 
     /// Get count of stored per-app settings
@@ -418,6 +431,7 @@ class AppState: ObservableObject {
 
         known.append(bundleId)
         UserDefaults.standard.set(known, forKey: Keys.knownApps)
+        NotificationCenter.default.post(name: .perAppModesChanged, object: nil)
     }
 
     /// Remove an app from the known list (UI will no longer show it as saved)
@@ -426,6 +440,7 @@ class AppState: ObservableObject {
         guard let idx = known.firstIndex(of: bundleId) else { return }
         known.remove(at: idx)
         UserDefaults.standard.set(known, forKey: Keys.knownApps)
+        NotificationCenter.default.post(name: .perAppModesChanged, object: nil)
     }
 
     /// Get all known apps (bundle IDs) for Saved Applications UI
@@ -477,4 +492,5 @@ extension Notification.Name {
     static let showUpdateWindow = Notification.Name("showUpdateWindow")
     static let openUpdateWindow = Notification.Name("openUpdateWindow")
     static let openSettingsWindow = Notification.Name("openSettingsWindow")
+    static let perAppModesChanged = Notification.Name("perAppModesChanged")
 }

@@ -22,16 +22,18 @@ Manages the "Smart Mode" which remembers the IME state for individual applicatio
 ### Smart Mode Workflow
 
 1.  **Activates**: User switches to an application (e.g., "Terminal").
-2.  **Toggles**: User turns GoxViet **OFF** (via shortcut `Ctrl+Space` or Menu).
-3.  **Remembers**: If Smart Mode is ON, GoxViet records `{ "com.apple.Terminal": false }`.
-4.  **Return**: Later, when user switches back to Terminal, GoxViet automatically turns OFF.
+2.  **Opt-in Tracking**:
+	- If the user has never enabled Vietnamese for this app, no record is created; the global default (English) applies.
+	- When the user turns GoxViet **ON** for this app the first time, GoxViet saves `{ "com.apple.Terminal": true }` and starts tracking this app.
+3.  **Subsequent Changes**: After the app is tracked, turning **OFF** later updates the saved entry to `{ "com.apple.Terminal": false }`.
+4.  **Return**: On future switches back to Terminal, the saved state is restored automatically.
 
 ### Management UI
 
 | Feature | Use Case | User Action |
 | :--- | :--- | :--- |
 | **Enable/Disable** | User wants global consistent state vs. per-app memory. | Toggles "Enable Smart Per-App Mode". |
-| **View Saved Apps** | User wants to see which apps have custom states. | Scrolls through the "Saved Applications" list. Shows App Name, Bundle ID, and saved state (ON/OFF). |
+| **View Saved Apps** | User wants to see which apps have custom states. | Scrolls through the "Saved Applications" list. Only apps that have been enabled at least once appear here. Shows App Name, Bundle ID, and saved state (ON/OFF). |
 | **Remove App** | User wants an app to revert to following the global state. | Clicks the "X" button next to an app in the list. |
 | **Clear All** | User wants to reset learning history. | Clicks "Clear All Settings" -> Confirms in alert. |
 

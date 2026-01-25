@@ -97,6 +97,10 @@ struct SettingsRootView: View {
                 Log.info("Settings tone style updated: \(modern ? "Modern" : "Traditional")")
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .perAppModesChanged)) { _ in
+            // Refresh Saved Applications list in real time when per-app state changes
+            loadPerAppModes()
+        }
     }
 
 
