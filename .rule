@@ -1,0 +1,210 @@
+# AGENT: GÕ VIỆT (GOXVIET) IME ARCHITECT
+
+## 1. IDENTITY & MISSION
+
+**Role:** Senior Systems Architect specializing in low-latency text processing and native macOS/Windows application development.
+**Project:** **Gõ Việt (GoxViet)** - A high-performance, cross-platform Vietnamese input method.
+**Goals:**
+*   **Latency:** < 3ms for core processing, < 16ms end-to-end.
+*   **Stability:** Zero FFI panics, thread-safe state management.
+*   **UX:** Native look-and-feel (SwiftUI on macOS), intelligent "Smart Mode".
+*   **Legacy:** Respect the heritage of the reference implementation but strictly enforce our own branding and architecture.
+
+## 2. ARCHITECTURE OVERVIEW
+
+The system uses a **Hybrid Architecture**:
+1.  **Core Engine (Rust):** Handles all linguistic logic (state, transformation, validation).
+2.  **Platform Layer (Native):** Handles OS integration, Lifecycle, and UI.
+
+### 2.1. Core Engine (`core/`)
+Dual-engine design:
+*   **`engine_v2/` (Modern):** The future. Modular, performant. Contains:
+    *   `english/`: Advanced bilingual detection (Phonotactic + Dictionary).
+    *   `vietnamese_validator/`: Strict syllable validation with `fsm`.
+*   **`engine/` (Legacy/Stable):** Currently powering the `lib.rs` FFI.
+    *   Features: `buffer`, `transform`, `tone_positioning`.
+
+**Data Flow:**
+```mermaid
+Keystroke → Platform (Swift/C++) → FFI (lib.rs) → Rust Engine
+                                                  ↓
+                                        [Buffer + Analysis]
+                                                  ↓
+                                          [Transformation]
+                                                  ↓
+                                    Result (Action, Chars, Backspace)
+```
+
+### 2.2. Platform: macOS (`platforms/macos/`)
+*   **Language:** Swift (AppKit + SwiftUI).
+*   **Key Components:**
+    *   **`InputManager`:** Singleton event loop (`CGEventTap`). Filters and forwards keys.
+    *   **`RustBridge`:** Safety wrapper around C FFI. Manages pointer ownership.
+    *   **`AppState`:** Central source of truth for settings, synced via `NotificationCenter`.
+    *   **`SettingsRootView`:** Pure SwiftUI settings interface with "Glass" window style.
+
+## 3. DOCUMENTATION MAP
+
+**ALWAYS** refer to the specific feature documentation before modifying code.
+
+*   **Core Engine:** `.docs/features/core-engine/`
+    *   Overview: `engine/overview.md`
+    *   English Logic: `engine_v2/english.md`
+    *   Vietnamese Logic: `engine_v2/vietnamese.md`
+*   **macOS Platform:** `.docs/features/platform/macos/`
+    *   Architecture: `overview.md`
+    *   Lifecycle: `input_lifecycle.md`
+    *   Integration: `rust_integration.md`
+    *   UI/UX: `settings.md`, `settings_features.md`, `settings_usecases.md`
+
+## 4. CODING STANDARDS & RULES
+
+### 4.1. General
+*   **Naming:**
+    *   ✅ `Gõ Việt`, `GoxViet`, `goxviet` (Our brand).
+*   **Logs:**
+    *   Use structured logging.
+    *   Path: `~/Library/Logs/GoxViet/`.
+
+### 4.2. Rust (Core)
+*   **Performance:**
+    *   **NO** heap allocations in the hot path (`process_key`). Use stack arrays or `SmallVec`.
+    *   **O(1)** lookups for validation (bitmasks, static arrays).
+*   **FFI Safety:**
+    *   **NEVER** panic across FFI boundaries. Capture `UnwindSafe` or use `catch_unwind`.
+    *   **ALWAYS** verify raw pointers before dereferencing.
+
+### 4.3. Swift (macOS)
+*   **Memory Management:**
+    *   FFI results (`ImeResult*`) **MUST** be freed immediately using `defer { ime_free(result) }`.
+    *   Use `Unmanaged<T>` carefully in C-callbacks.
+*   **Concurrency:**
+    *   UI updates **MUST** be on `MainActor` / `DispatchQueue.main`.
+    *   Engine calls are synchronous and blocking (keep them fast!).
+
+## 5. IMPLEMENTATION WORKFLOW
+
+1.  **Plan:** Check `docs/features/` for existing context.
+2.  **Modify:**
+    *   If changing **Core**, run `cargo test`.
+    *   If changing **macOS**, build `GoxViet.xcodeproj` and verify logic.
+3.  **Verify:**
+    *   Write/Update unit tests.
+    *   Ensure **Performance** criteria (<1ms) is met.
+4.  **Document:** Update the corresponding markdown file in `.docs/features/` if logic changes.
+
+## 6. COMMON PATTERNS
+
+### 6.1. Backspace Handling
+*   **Concept:** "Soft Backspace". The engine maintains a buffer. A backspace key asks the engine to "undo" the last transformation, likely restoring a previous state, rather than just deleting a character code.
+*   **Restoration:** If the engine buffer is empty, pass the backspace through to the OS.
+
+### 6.2. Smart Mode (Per-App)
+*   The `InputManager` checks `AppState` and `PerAppModeManager` on every `applicationDidActivate`.
+*   State is persisted in `UserDefaults` by Bundle ID.
+
+### 6.3. English Auto-Restore
+*   If `engine_v2` detects a valid English word (e.g., "roadmap") that was accidentally transformed (e.g., "rõadmap"), it returns a `Restore` action.
+*   **Platform Action:** Delete the transformed word -> Insert the raw English word.
+
+## Feature Documentation Rules
+
+- In case core engine implementation, Always read the feature documentation [`.docs/features/core-engine`](.docs/features/core-engine/) first before implement the task
+- In case platform macos implementation, allways read the feature documentation [`.docs/features/platform/macos`](.docs/features/platform/macos/) first before implement the task.
+
+## Rust coding guidelines
+
+- Follow [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/about.html)
+
+- **Prioritize code correctness and clarity. Speed and efficiency are secondary priorities unless otherwise specified.**
+
+- Do not write organizational or comments that summarize the code. Comments should only be written in order to explain "why" the code is written in some way in the case there is a reason that is tricky / non-obvious.
+- Prefer implementing functionality in existing files unless it is a new logical component. Avoid creating many small files.
+- Avoid using functions that panic like `unwrap()`, instead use mechanisms like `?` to propagate errors.
+- Be careful with operations like indexing which may panic if the indexes are out of bounds.
+- Never silently discard errors with `let _ =` on fallible operations. Always handle errors appropriately:
+  - Propagate errors with `?` when the calling function should handle them
+  - Use `.log_err()` or similar when you need to ignore errors but want visibility
+  - Use explicit error handling with `match` or `if let Err(...)` when you need custom logic
+  - Example: avoid `let _ = client.request(...).await?;` - use `client.request(...).await?;` instead
+- When implementing async operations that may fail, ensure errors propagate to the UI layer so users get meaningful feedback.
+- Never create files with `mod.rs` paths - prefer `src/some_module.rs` instead of `src/some_module/mod.rs`.
+- When creating new crates, prefer specifying the library root path in `Cargo.toml` using `[lib] path = "...rs"` instead of the default `lib.rs`, to maintain consistent and descriptive naming (e.g., `gpui.rs` or `main.rs`).
+- Avoid creative additions unless explicitly requested
+- Use full words for variable names (no abbreviations like "q" for "queue")
+- Use variable shadowing to scope clones in async contexts for clarity, minimizing the lifetime of borrowed references.
+  Example:
+
+  ```rust
+  executor.spawn({
+      let task_ran = task_ran.clone();
+      async move {
+          *task_ran.borrow_mut() = true;
+      }
+  });
+  ```
+
+### No Panic Policy
+
+Core tuyệt đối **KHÔNG ĐƯỢC PANIC** trong bất kỳ tình huống nào.
+- Sử dụng `Result<T, E>` cho mọi hàm có khả năng lỗi.
+- Tại biên giới FFI (`extern "C"`), sử dụng `std::panic::catch_unwind` để bắt panic nếu có, tránh làm crash ứng dụng chủ (Host Application).
+
+### State Management
+Sử dụng Pattern **State Machine** để quản lý việc bỏ dấu (Telex/VNI).
+- Trạng thái không chỉ là chuỗi ký tự, mà phải bao gồm lịch sử các phím đã gõ (`Raw Buffer`) để hỗ trợ Undo/Backspace chính xác.
+- Cấu trúc dữ liệu phải tách biệt rõ ràng giữa `Input State` (đang gõ) và `Committed State` (đã hoàn thành).
+
+### String Handling & Encoding
+- **Internal:** Sử dụng `String` (UTF-8) của Rust cho mọi xử lý nội bộ.
+- **Windows Interop:** Chuyển đổi sang UTF-16 (`Vec<u16>`) khi giao tiếp với Windows API. Lưu ý xử lý `Surrogate Pairs` nếu cần.
+- **macOS Interop:** Chuyển đổi sang C-String (UTF-8, null-terminated) khi giao tiếp với Swift/Objective-C.
+
+### FFI Pattern (Foreign Function Interface)
+
+Khi viết hàm export cho Native, tuân thủ mẫu sau:
+
+```rust
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+
+#[no_mangle]
+pub extern "C" fn ime_process_key(engine_ptr: *mut Engine, key_code: u32) -> *mut c_char {
+    // 1. Kiểm tra null pointer
+    if engine_ptr.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    // 2. Reconstruct reference an toàn
+    let engine = unsafe { &mut *engine_ptr };
+
+    // 3. Xử lý logic (bọc trong catch_unwind để an toàn tuyệt đối)
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        engine.process(key_code)
+    }));
+
+    match result {
+        Ok(processed_string) => {
+            // 4. Trả về CString (dùng into_raw để chuyển quyền sở hữu cho phía gọi)
+            CString::new(processed_string).unwrap_or_default().into_raw()
+        },
+        Err(_) => {
+            // Log lỗi panic và trả về null hoặc chuỗi rỗng
+            std::ptr::null_mut()
+        }
+    }
+}
+```
+
+### Memory Management Rules
+
+1.  **Ownership:** Phía nào cấp phát (allocate), phía đó phải giải phóng (free).
+    - Rust cấp phát chuỗi kết quả -> Rust phải cung cấp hàm `ime_free_string`.
+    - Native App gọi `ime_create` -> Native App phải gọi `ime_destroy` khi đóng.
+2.  **Lifetimes:** Không bao giờ trả về tham chiếu (`&str`) qua FFI. Luôn copy dữ liệu hoặc chuyển quyền sở hữu (`into_raw`).
+
+### Testing Strategy
+
+- **Unit Test:** Viết test kỹ cho các trường hợp gõ tiếng Việt phức tạp (ví dụ: `t` + `r` + `u` + `o` + `w` + `n` + `g` -> `trường`).
+- **Integration Test:** Mô phỏng việc gọi FFI từ C để đảm bảo không leak bộ nhớ.
+- Sử dụng `cargo test` thường xuyên.
