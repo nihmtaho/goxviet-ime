@@ -26,7 +26,8 @@ GoxViet supports a "Smart Mode" that remembers the toggle state for each applica
 -   **Logic**:
     -   When switching to an app, `PerAppModeManager` checks the dictionary.
     -   If an entry exists, it automatically enables/disables the IME.
-    -   If no entry exists, it uses the global default.
+    -   If no entry exists, it uses the global default and does not create storage.
+    -   Opt-in tracking: an app is only added to storage after the user enables Vietnamese for that app at least once. Disabling (English) alone for a new app does not create a record. Once an app has been saved (after first enable), subsequent on/off updates are persisted.
 -   **UI**:
     -   Displays a list of "Known Apps" (apps where the user has explicitly toggled the IME).
     -   Allows users to clear individual app settings or reset all.

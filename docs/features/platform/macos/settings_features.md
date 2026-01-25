@@ -51,7 +51,8 @@ The "Smart Mode" feature allows for granular control over where GoxViet is activ
 *   **Lifecycle**:
     *   Monitors `NSWorkspace.didActivateApplicationNotification`.
     *   On app switch, looks up the target app in the dictionary.
-    *   If found, applies the saved state. If not found, uses the global default.
+    *   If found, applies the saved state. If not found, uses the global default without persisting.
+    *   Opt-in tracking: an app is only added to the dictionary after the user enables Vietnamese for that app at least once. Turning it off (English) for a new app does not create a saved entry. Once saved via enabling, later OFF/ON changes are persisted.
 
 ## Advanced Tab
 
