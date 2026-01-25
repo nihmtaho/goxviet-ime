@@ -40,3 +40,7 @@ harness = false
 [[bench]]
 name = "english_detection_bench"
 harness = false
+
+[[bench]]
+name = "shortcut_bench"
+harness = false

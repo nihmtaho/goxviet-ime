@@ -414,6 +414,168 @@ pub extern "C" fn ime_shortcuts_is_at_capacity() -> bool {
     }
 }
 
+/// Export all shortcuts to JSON string.
+///
+/// # Returns
+/// Pointer to JSON string (caller must free with `ime_free_string`)
+/// Returns null if engine not initialized.
+///
+/// # Safety
+/// Caller must free the returned string using `ime_free_string`.
+#[no_mangle]
+pub extern "C" fn ime_export_shortcuts_json() -> *mut std::os::raw::c_char {
+    let guard = lock_engine();
+    if let Some(ref e) = *guard {
+        let json = e.shortcuts().to_json();
+        match std::ffi::CString::new(json) {
+            Ok(c_str) => c_str.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        }
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+/// Import shortcuts from JSON string.
+///
+/// # Arguments
+/// * `json` - C string containing JSON data
+///
+/// # Returns
+/// Number of shortcuts imported, or -1 on error
+///
+/// # Safety
+/// Pointer must be a valid null-terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn ime_import_shortcuts_json(json: *const std::os::raw::c_char) -> i32 {
+    if json.is_null() {
+        return -1;
+    }
+
+    let json_str = match std::ffi::CStr::from_ptr(json).to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    let mut guard = lock_engine();
+    if let Some(ref mut e) = *guard {
+        match e.shortcuts_mut().from_json(json_str) {
+            Ok(count) => count as i32,
+            Err(_) => -1,
+        }
+    } else {
+        -1
+    }
+}
+
+/// Free a string allocated by `ime_export_shortcuts_json`.
+///
+/// # Safety
+/// * `s` must be a pointer returned by `ime_export_shortcuts_json`, or null
+/// * Must be called exactly once per non-null pointer
+#[no_mangle]
+pub unsafe extern "C" fn ime_free_string(s: *mut std::os::raw::c_char) {
+    if !s.is_null() {
+        // Reconstruct and drop CString
+        let _ = std::ffi::CString::from_raw(s);
+    }
+}
+
+/// Set whether shortcuts are enabled globally.
+///
+/// When disabled, shortcut expansion is skipped.
+/// No-op if engine not initialized.
+#[no_mangle]
+pub extern "C" fn ime_set_shortcuts_enabled(enabled: bool) {
+    let mut guard = lock_engine();
+    if let Some(ref mut e) = *guard {
+        // Enable/disable all shortcuts in the table
+        for shortcut in e.shortcuts_mut().iter_mut() {
+            shortcut.enabled = enabled;
+        }
+    }
+}
+
+// ============================================================
+// Encoding FFI
+// ============================================================
+
+/// Global encoding converter (thread-safe via Mutex)
+static ENCODING: std::sync::Mutex<crate::engine::features::encoding::EncodingConverter> =
+    std::sync::Mutex::new(crate::engine::features::encoding::EncodingConverter::new_const());
+
+/// Set the output encoding.
+///
+/// # Arguments
+/// * `encoding` - Encoding type: 0=Unicode (default), 1=TCVN3, 2=VNI, 3=CP1258
+///
+/// Unicode is the default and requires no conversion.
+/// TCVN3, VNI, and CP1258 are legacy Vietnamese encodings.
+#[no_mangle]
+pub extern "C" fn ime_set_encoding(encoding: u8) {
+    use crate::engine::features::encoding::OutputEncoding;
+    if let Ok(mut guard) = ENCODING.lock() {
+        guard.set_encoding(OutputEncoding::from_u8(encoding));
+    }
+}
+
+/// Get the current output encoding.
+///
+/// # Returns
+/// Encoding type: 0=Unicode, 1=TCVN3, 2=VNI, 3=CP1258
+#[no_mangle]
+pub extern "C" fn ime_get_encoding() -> u8 {
+    if let Ok(guard) = ENCODING.lock() {
+        guard.encoding().to_u8()
+    } else {
+        0 // Default to Unicode on error
+    }
+}
+
+/// Convert a Unicode string to the current encoding.
+///
+/// # Arguments
+/// * `input` - UTF-8 string to convert
+///
+/// # Returns
+/// Pointer to encoded bytes (caller must free with `ime_free_bytes`)
+/// Returns null on error.
+///
+/// # Safety
+/// Caller must free the returned buffer using `ime_free_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn ime_convert_encoding(input: *const std::os::raw::c_char) -> *mut u8 {
+    if input.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    let input_str = match std::ffi::CStr::from_ptr(input).to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    if let Ok(guard) = ENCODING.lock() {
+        let bytes = guard.convert_string(input_str);
+        let mut boxed = bytes.into_boxed_slice();
+        let ptr = boxed.as_mut_ptr();
+        std::mem::forget(boxed);
+        ptr
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+/// Free bytes allocated by ime_convert_encoding.
+///
+/// # Safety
+/// Must be called with pointer from ime_convert_encoding, or null.
+#[no_mangle]
+pub unsafe extern "C" fn ime_free_bytes(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() && len > 0 {
+        let _ = Vec::from_raw_parts(ptr, len, len);
+    }
+}
+
 // ============================================================
 // Word Restore FFI
 // ============================================================
