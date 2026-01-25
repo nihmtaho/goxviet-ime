@@ -425,6 +425,268 @@ impl ShortcutTable {
 
         hashmap_overhead + vec_overhead + string_data
     }
+
+    // ============================================================
+    // JSON Import/Export
+    // ============================================================
+
+    /// Escape a string for JSON (handles special characters)
+    fn escape_json_string(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        for c in s.chars() {
+            match c {
+                '"' => result.push_str("\\\""),
+                '\\' => result.push_str("\\\\"),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                c if c.is_control() => {
+                    result.push_str(&format!("\\u{:04x}", c as u32));
+                }
+                c => result.push(c),
+            }
+        }
+        result
+    }
+
+    /// Export all shortcuts to JSON string
+    ///
+    /// Format:
+    /// ```json
+    /// {
+    ///   "version": 1,
+    ///   "shortcuts": [
+    ///     {"trigger": "vn", "replacement": "Việt Nam", "enabled": true, "method": "all"},
+    ///     ...
+    ///   ]
+    /// }
+    /// ```
+    pub fn to_json(&self) -> String {
+        let mut json = String::from("{\n  \"version\": 1,\n  \"shortcuts\": [\n");
+        let shortcuts: Vec<_> = self.shortcuts.values().collect();
+
+        for (i, shortcut) in shortcuts.iter().enumerate() {
+            let method_str = match shortcut.input_method {
+                InputMethod::All => "all",
+                InputMethod::Telex => "telex",
+                InputMethod::Vni => "vni",
+            };
+            let condition_str = match shortcut.condition {
+                TriggerCondition::Immediate => "immediate",
+                TriggerCondition::OnWordBoundary => "word_boundary",
+            };
+
+            json.push_str(&format!(
+                "    {{\"trigger\": \"{}\", \"replacement\": \"{}\", \"enabled\": {}, \"method\": \"{}\", \"condition\": \"{}\"}}",
+                Self::escape_json_string(&shortcut.trigger),
+                Self::escape_json_string(&shortcut.replacement),
+                shortcut.enabled,
+                method_str,
+                condition_str
+            ));
+
+            if i < shortcuts.len() - 1 {
+                json.push(',');
+            }
+            json.push('\n');
+        }
+
+        json.push_str("  ]\n}");
+        json
+    }
+
+    /// Import shortcuts from JSON string
+    ///
+    /// Returns Ok(count) with number of shortcuts imported, or Err with message
+    pub fn from_json(&mut self, json: &str) -> Result<usize, &'static str> {
+        // Simple JSON parser for our specific format
+        // Find shortcuts array
+        let shortcuts_start = json
+            .find("\"shortcuts\"")
+            .and_then(|pos| json[pos..].find('[').map(|p| pos + p))
+            .ok_or("Invalid JSON: missing shortcuts array")?;
+
+        let shortcuts_end = json[shortcuts_start..]
+            .find(']')
+            .map(|p| shortcuts_start + p)
+            .ok_or("Invalid JSON: unclosed shortcuts array")?;
+
+        let shortcuts_content = &json[shortcuts_start + 1..shortcuts_end];
+
+        let mut count = 0;
+        let mut pos = 0;
+
+        while pos < shortcuts_content.len() {
+            // Find next object
+            let obj_start = match shortcuts_content[pos..].find('{') {
+                Some(p) => pos + p,
+                None => break,
+            };
+            let obj_end = match shortcuts_content[obj_start..].find('}') {
+                Some(p) => obj_start + p,
+                None => break,
+            };
+
+            let obj = &shortcuts_content[obj_start..=obj_end];
+
+            // Parse fields
+            if let (Some(trigger), Some(replacement)) = (
+                Self::extract_json_string(obj, "trigger"),
+                Self::extract_json_string(obj, "replacement"),
+            ) {
+                let enabled = Self::extract_json_bool(obj, "enabled").unwrap_or(true);
+                let method = match Self::extract_json_string(obj, "method").as_deref() {
+                    Some("telex") => InputMethod::Telex,
+                    Some("vni") => InputMethod::Vni,
+                    _ => InputMethod::All,
+                };
+                let condition = match Self::extract_json_string(obj, "condition").as_deref() {
+                    Some("immediate") => TriggerCondition::Immediate,
+                    _ => TriggerCondition::OnWordBoundary,
+                };
+
+                let mut shortcut = Shortcut::new(&trigger, &replacement);
+                shortcut.enabled = enabled;
+                shortcut.input_method = method;
+                shortcut.condition = condition;
+
+                if self.add(shortcut) {
+                    count += 1;
+                }
+            }
+
+            pos = obj_end + 1;
+        }
+
+        Ok(count)
+    }
+
+    /// Extract a string value from JSON object
+    fn extract_json_string(obj: &str, key: &str) -> Option<String> {
+        let key_pattern = format!("\"{}\"", key);
+        let key_pos = obj.find(&key_pattern)?;
+        let after_key = &obj[key_pos + key_pattern.len()..];
+
+        // Skip whitespace and colon
+        let colon_pos = after_key.find(':')?;
+        let after_colon = &after_key[colon_pos + 1..];
+
+        // Find opening quote
+        let quote_start = after_colon.find('"')?;
+        let value_start = quote_start + 1;
+
+        // Find closing quote (handle escapes)
+        let value_content = &after_colon[value_start..];
+        let mut end_pos = 0;
+        let mut escaped = false;
+
+        for (i, c) in value_content.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            if c == '"' {
+                end_pos = i;
+                break;
+            }
+        }
+
+        let raw_value = &value_content[..end_pos];
+        Some(Self::unescape_json_string(raw_value))
+    }
+
+    /// Unescape a JSON string
+    fn unescape_json_string(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('n') => result.push('\n'),
+                    Some('r') => result.push('\r'),
+                    Some('t') => result.push('\t'),
+                    Some('"') => result.push('"'),
+                    Some('\\') => result.push('\\'),
+                    Some('u') => {
+                        // Unicode escape \uXXXX
+                        let hex: String = chars.by_ref().take(4).collect();
+                        if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                            if let Some(c) = char::from_u32(code) {
+                                result.push(c);
+                            }
+                        }
+                    }
+                    Some(c) => result.push(c),
+                    None => {}
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+
+    /// Extract a boolean value from JSON object
+    fn extract_json_bool(obj: &str, key: &str) -> Option<bool> {
+        let key_pattern = format!("\"{}\"", key);
+        let key_pos = obj.find(&key_pattern)?;
+        let after_key = &obj[key_pos + key_pattern.len()..];
+
+        if after_key.contains("true") {
+            let true_pos = after_key.find("true")?;
+            let comma_pos = after_key.find(',').unwrap_or(after_key.len());
+            let brace_pos = after_key.find('}').unwrap_or(after_key.len());
+            if true_pos < comma_pos && true_pos < brace_pos {
+                return Some(true);
+            }
+        }
+        if after_key.contains("false") {
+            let false_pos = after_key.find("false")?;
+            let comma_pos = after_key.find(',').unwrap_or(after_key.len());
+            let brace_pos = after_key.find('}').unwrap_or(after_key.len());
+            if false_pos < comma_pos && false_pos < brace_pos {
+                return Some(false);
+            }
+        }
+        None
+    }
+
+    /// Export shortcuts to a Vec of (trigger, replacement) tuples
+    /// Useful for simple iteration without full Shortcut details
+    pub fn export_all(&self) -> Vec<(String, String)> {
+        self.shortcuts
+            .values()
+            .filter(|s| s.enabled)
+            .map(|s| (s.trigger.clone(), s.replacement.clone()))
+            .collect()
+    }
+
+    /// Import shortcuts from Vec of (trigger, replacement) tuples
+    /// Returns number of shortcuts imported
+    pub fn import_all(&mut self, shortcuts: Vec<(String, String)>) -> usize {
+        let mut count = 0;
+        for (trigger, replacement) in shortcuts {
+            if self.add(Shortcut::new(&trigger, &replacement)) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Get iterator over all shortcuts
+    pub fn iter(&self) -> impl Iterator<Item = &Shortcut> {
+        self.shortcuts.values()
+    }
+
+    /// Get mutable iterator over all shortcuts
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Shortcut> {
+        self.shortcuts.values_mut()
+    }
 }
 
 #[cfg(test)]
@@ -701,15 +963,19 @@ mod tests {
 
     #[test]
     fn test_replacement_validation_truncation() {
-        // Create a very long replacement (100 characters with Vietnamese)
-        let long_text = "Đây là một đoạn văn bản rất dài để kiểm tra việc cắt ngắn. Nó có nhiều ký tự tiếng Việt có dấu như ồ, ế, ẫ, ơ, ư.";
+        // Create a very long replacement that exceeds MAX_REPLACEMENT_LEN (255 chars)
+        // Text is repeated to ensure it's long enough
+        let base_text = "Đây là một đoạn văn bản tiếng Việt. ";
+        let long_text: String = base_text.repeat(10); // ~360 chars
         let char_count = long_text.chars().count();
         assert!(
             char_count > MAX_REPLACEMENT_LEN,
-            "Test text should exceed limit"
+            "Test text ({} chars) should exceed limit ({})",
+            char_count,
+            MAX_REPLACEMENT_LEN
         );
 
-        let shortcut = Shortcut::new("long", long_text);
+        let shortcut = Shortcut::new("long", &long_text);
         let result_count = shortcut.replacement.chars().count();
         assert_eq!(
             result_count, MAX_REPLACEMENT_LEN,
@@ -826,5 +1092,162 @@ mod tests {
 
         // Should be able to add again
         assert!(table.add(Shortcut::new("new", "test")));
+    }
+
+    // ============================================================
+    // JSON Import/Export Tests
+    // ============================================================
+
+    #[test]
+    fn test_to_json_basic() {
+        let mut table = ShortcutTable::new();
+        table.add(Shortcut::new("vn", "Việt Nam"));
+
+        let json = table.to_json();
+        assert!(json.contains("\"version\": 1"));
+        assert!(json.contains("\"shortcuts\""));
+        assert!(json.contains("\"trigger\": \"vn\""));
+        assert!(json.contains("\"replacement\": \"Việt Nam\""));
+        assert!(json.contains("\"enabled\": true"));
+        assert!(json.contains("\"method\": \"all\""));
+    }
+
+    #[test]
+    fn test_to_json_empty() {
+        let table = ShortcutTable::new();
+        let json = table.to_json();
+        assert!(json.contains("\"version\": 1"));
+        assert!(json.contains("\"shortcuts\": ["));
+        assert!(json.contains("]"));
+    }
+
+    #[test]
+    fn test_from_json_basic() {
+        let json = r#"{
+            "version": 1,
+            "shortcuts": [
+                {"trigger": "vn", "replacement": "Việt Nam", "enabled": true, "method": "all", "condition": "word_boundary"}
+            ]
+        }"#;
+
+        let mut table = ShortcutTable::new();
+        let count = table.from_json(json).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(table.len(), 1);
+
+        let (_, shortcut) = table.lookup("vn").unwrap();
+        assert_eq!(shortcut.replacement, "Việt Nam");
+    }
+
+    #[test]
+    fn test_json_roundtrip() {
+        let mut table = ShortcutTable::new();
+        table.add(Shortcut::new("vn", "Việt Nam"));
+        table.add(Shortcut::telex("hcm", "Hồ Chí Minh"));
+        table.add(Shortcut::immediate("dc", "được"));
+
+        // Export to JSON
+        let json = table.to_json();
+
+        // Import to new table
+        let mut table2 = ShortcutTable::new();
+        let count = table2.from_json(&json).unwrap();
+        assert_eq!(count, 3);
+
+        // Verify all shortcuts exist
+        assert!(table2.lookup("vn").is_some());
+        assert!(table2.lookup("hcm").is_some());
+        assert!(table2.lookup("dc").is_some());
+    }
+
+    #[test]
+    fn test_json_vietnamese_special_chars() {
+        let vietnamese_text = "Thành phố Hồ Chí Minh – TP.HCM (đẹp nhất)";
+        let mut table = ShortcutTable::new();
+        table.add(Shortcut::new("tphcm", vietnamese_text));
+
+        let json = table.to_json();
+        let mut table2 = ShortcutTable::new();
+        table2.from_json(&json).unwrap();
+
+        let (_, shortcut) = table2.lookup("tphcm").unwrap();
+        assert_eq!(shortcut.replacement, vietnamese_text);
+    }
+
+    #[test]
+    fn test_json_escape_special_chars() {
+        let text_with_quotes = "He said \"hello\"";
+        let text_with_newline = "Line1\nLine2";
+
+        let mut table = ShortcutTable::new();
+        table.add(Shortcut::new("q", text_with_quotes));
+        table.add(Shortcut::new("nl", text_with_newline));
+
+        let json = table.to_json();
+        assert!(json.contains("\\\"hello\\\"")); // Escaped quotes
+        assert!(json.contains("\\n")); // Escaped newline
+
+        let mut table2 = ShortcutTable::new();
+        table2.from_json(&json).unwrap();
+
+        let (_, sq) = table2.lookup("q").unwrap();
+        assert_eq!(sq.replacement, text_with_quotes);
+
+        let (_, snl) = table2.lookup("nl").unwrap();
+        assert_eq!(snl.replacement, text_with_newline);
+    }
+
+    #[test]
+    fn test_from_json_invalid() {
+        let mut table = ShortcutTable::new();
+
+        // Missing shortcuts array
+        let result = table.from_json("{}");
+        assert!(result.is_err());
+
+        // Invalid JSON
+        let result = table.from_json("not json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_all() {
+        let mut table = ShortcutTable::new();
+        table.add(Shortcut::new("vn", "Việt Nam"));
+        table.add(Shortcut::new("hcm", "Hồ Chí Minh"));
+
+        // Disable one
+        if let Some(s) = table.shortcuts.get_mut("hcm") {
+            s.enabled = false;
+        }
+
+        let exported = table.export_all();
+        assert_eq!(exported.len(), 1); // Only enabled shortcuts
+        assert_eq!(exported[0], ("vn".to_string(), "Việt Nam".to_string()));
+    }
+
+    #[test]
+    fn test_import_all() {
+        let mut table = ShortcutTable::new();
+        let shortcuts = vec![
+            ("vn".to_string(), "Việt Nam".to_string()),
+            ("hcm".to_string(), "Hồ Chí Minh".to_string()),
+        ];
+
+        let count = table.import_all(shortcuts);
+        assert_eq!(count, 2);
+        assert_eq!(table.len(), 2);
+        assert!(table.lookup("vn").is_some());
+        assert!(table.lookup("hcm").is_some());
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut table = ShortcutTable::new();
+        table.add(Shortcut::new("a", "A"));
+        table.add(Shortcut::new("b", "B"));
+
+        let shortcuts: Vec<_> = table.iter().collect();
+        assert_eq!(shortcuts.len(), 2);
     }
 }

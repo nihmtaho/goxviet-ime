@@ -242,6 +242,65 @@ impl Engine {
         Result::none()
     }
 
+    /// Handle Shift+Backspace - delete entire word
+    ///
+    /// Returns Result with backspace count equal to the current displayed word length.
+    /// After this, the buffer is completely cleared.
+    ///
+    /// # Returns
+    /// * `Result::send(backspace_count, &[])` if buffer has content
+    /// * `Result::none()` if buffer is empty
+    pub fn handle_shift_backspace(&mut self) -> Result {
+        // If buffer is empty, nothing to delete
+        if self.buf.is_empty() {
+            // If we have spaces after commit, delete them all and restore previous word
+            if self.spaces_after_commit > 0 {
+                let spaces_to_delete = self.spaces_after_commit as u8;
+                self.spaces_after_commit = 0;
+
+                // Restore previous word from history
+                if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
+                    // Calculate the full word length to delete
+                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    // Don't restore - just return total delete count (spaces + word)
+                    return Result::send(spaces_to_delete + word_len, &[]);
+                }
+
+                return Result::send(spaces_to_delete, &[]);
+            }
+
+            // Check break_after_commit similarly
+            if self.break_after_commit > 0 {
+                let breaks_to_delete = self.break_after_commit;
+                self.break_after_commit = 0;
+
+                if let Some((restored_buf, _)) = self.word_history.pop() {
+                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    return Result::send(breaks_to_delete + word_len, &[]);
+                }
+
+                return Result::send(breaks_to_delete, &[]);
+            }
+
+            return Result::none();
+        }
+
+        // Calculate the displayed word length (full Vietnamese string with diacritics)
+        let displayed_word = self.buf.to_full_string();
+        let char_count = displayed_word.chars().count() as u8;
+
+        // Clear everything
+        self.buf.clear();
+        self.raw_input.clear();
+        self.last_transform = None;
+        self.cached_syllable_boundary = None;
+        self.is_english_word = false;
+        self.has_non_letter_prefix = false;
+
+        // Return backspace count to delete displayed characters
+        Result::send(char_count, &[])
+    }
+
     /// Handle key event - main entry point
     ///
     /// # Arguments
@@ -345,6 +404,11 @@ impl Engine {
         }
 
         if key == keys::DELETE {
+            // SHIFT+BACKSPACE: Delete entire word (clear buffer completely)
+            if shift {
+                return self.handle_shift_backspace();
+            }
+
             // BUGFIX: Simplified DELETE handling to fix Spotlight autocomplete bug
             // Old approach: Complex syllable boundary rebuild → miscalculates backspace with autocomplete
             // New approach: Simple buf.pop() + return none() → let OS handle deletion
