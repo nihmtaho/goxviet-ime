@@ -43,4 +43,8 @@ The central decision-maker that combines signals from:
 3.  **Phonotactic Analysis**: Adds to the English confidence score.
 4.  **Diacritics**: Presence of explicit Vietnamese marks (ê, ư, tone marks) heavily penalizes the English score.
 
-It outputs a `DecisionResult` with a final boolean `is_english` and a confidence score.
+#### Auto-Restore Thresholds
+To prevent false-positive restorations for Vietnamese words (especially those using intermediate tone placement like `phast` → `phát`):
+-   **Valid Vietnamese Syllables**: Require a very high English confidence (**≥ 95%**) or an explicit dictionary match to trigger auto-restore.
+-   **Invalid Vietnamese Syllables**: Use more aggressive thresholds (**75-95%**) depending on the strength of the English pattern (e.g., words with `bl`, `str` clusters).
+-   **Intermediate Tone Placement**: The engine explicitly handles tone keys placed immediately after vowels (common in rapid typing). High thresholds protect these sequences from being misidentified as English coda clusters (e.g., `st`, `nd`).
