@@ -1,1 +1,1 @@
-.rule
+.rules
