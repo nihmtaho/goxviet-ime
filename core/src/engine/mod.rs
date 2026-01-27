@@ -242,6 +242,65 @@ impl Engine {
         Result::none()
     }
 
+    /// Handle Shift+Backspace - delete entire word
+    ///
+    /// Returns Result with backspace count equal to the current displayed word length.
+    /// After this, the buffer is completely cleared.
+    ///
+    /// # Returns
+    /// * `Result::send(backspace_count, &[])` if buffer has content
+    /// * `Result::none()` if buffer is empty
+    pub fn handle_shift_backspace(&mut self) -> Result {
+        // If buffer is empty, nothing to delete
+        if self.buf.is_empty() {
+            // If we have spaces after commit, delete them all and restore previous word
+            if self.spaces_after_commit > 0 {
+                let spaces_to_delete = self.spaces_after_commit as u8;
+                self.spaces_after_commit = 0;
+
+                // Restore previous word from history
+                if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
+                    // Calculate the full word length to delete
+                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    // Don't restore - just return total delete count (spaces + word)
+                    return Result::send(spaces_to_delete + word_len, &[]);
+                }
+
+                return Result::send(spaces_to_delete, &[]);
+            }
+
+            // Check break_after_commit similarly
+            if self.break_after_commit > 0 {
+                let breaks_to_delete = self.break_after_commit;
+                self.break_after_commit = 0;
+
+                if let Some((restored_buf, _)) = self.word_history.pop() {
+                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    return Result::send(breaks_to_delete + word_len, &[]);
+                }
+
+                return Result::send(breaks_to_delete, &[]);
+            }
+
+            return Result::none();
+        }
+
+        // Calculate the displayed word length (full Vietnamese string with diacritics)
+        let displayed_word = self.buf.to_full_string();
+        let char_count = displayed_word.chars().count() as u8;
+
+        // Clear everything
+        self.buf.clear();
+        self.raw_input.clear();
+        self.last_transform = None;
+        self.cached_syllable_boundary = None;
+        self.is_english_word = false;
+        self.has_non_letter_prefix = false;
+
+        // Return backspace count to delete displayed characters
+        Result::send(char_count, &[])
+    }
+
     /// Handle key event - main entry point
     ///
     /// # Arguments
@@ -345,6 +404,11 @@ impl Engine {
         }
 
         if key == keys::DELETE {
+            // SHIFT+BACKSPACE: Delete entire word (clear buffer completely)
+            if shift {
+                return self.handle_shift_backspace();
+            }
+
             // BUGFIX: Simplified DELETE handling to fix Spotlight autocomplete bug
             // Old approach: Complex syllable boundary rebuild → miscalculates backspace with autocomplete
             // New approach: Simple buf.pop() + return none() → let OS handle deletion
@@ -408,37 +472,37 @@ impl Engine {
         }
 
         // Record raw keystroke for ESC restore (letters and numbers only)
-        // BUT: Skip modifier keys ONLY when they can actually modify the current buffer  
+        // BUT: Skip modifier keys ONLY when they can actually modify the current buffer
         // In Telex, s/f/r/x/j/z are marks/remove, but only if buffer has vowels
         // AND if applying the mark would result in valid Vietnamese
         // If buffer is empty, these are just regular letters
         let _m_method = input::get(self.method);
-        
+
         // CRITICAL FIX for English word detection:
         // We MUST always add all keys to raw_input, even if they're treated as modifiers.
         // The dictionary check needs complete keystroke history to work correctly.
         // Example: "console" types as [c,o,n,s,o,l,e] but 's' acts as tone modifier for 'o'.
         // If we skip 's' from raw_input, dictionary lookup gets [c,o,n,o,l,e] which won't match.
         // Solution: ALWAYS add to raw_input, let auto-restore handle it later.
-        let should_skip = false;  // Temporarily disable to fix English detection
-        
-        /* DISABLED TEMPORARILY - Causes dictionary lookup failures  
+        let should_skip = false; // Temporarily disable to fix English detection
+
+        /* DISABLED TEMPORARILY - Causes dictionary lookup failures
         let should_skip = if self.method == 0 {  // Telex mode
             // PRIORITY CHECK: If current raw_input + new key would form an English dictionary word,
             // NEVER skip the key. We need all keys in raw_input for dictionary lookup.
             // Example: "cons" + "o" should keep 's' in raw_input, not treat it as tone modifier
-            
+
             // Build temporary key list to check
             let mut temp_keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
             temp_keys.push(key);
-            
+
             let is_dict_word = crate::engine_v2::english::dictionary::Dictionary::is_english(&temp_keys);
-            
+
             // DEBUG
             if temp_keys.len() >= 4 {
                 println!("DEBUG should_skip: checking {:?} (len {}), is_dict={}", temp_keys, temp_keys.len(), is_dict_word);
             }
-            
+
             if is_dict_word {
                 // This will form a dictionary word - don't skip ANY key
                 false
@@ -447,7 +511,7 @@ impl Engine {
                 // CRITICAL: Stroke modifiers (dd→đ) have different logic than mark modifiers
                 // Stroke: only skip if last char in buffer is the SAME char (dd pattern)
                 // Mark: skip based on syllable structure analysis
-                
+
                 if m_method.stroke(key) {
                     // Stroke modifier (e.g., 'd' in Telex for dd→đ)
                     // Only skip if:
@@ -455,7 +519,7 @@ impl Engine {
                     // 2. That char is the SAME as current key
                     // This handles: "d" + "d" → skip, apply stroke → "đ"
                     // But NOT: "ad" + "d" → don't skip, it's "add"
-                    let buffer_has_single_matching_char = self.buf.len() == 1 
+                    let buffer_has_single_matching_char = self.buf.len() == 1
                         && self.buf.last().map(|c| c.key == key).unwrap_or(false);
                     buffer_has_single_matching_char
                 } else {
@@ -463,7 +527,7 @@ impl Engine {
                     let has_vowels = self.buf.iter().any(|c| keys::is_vowel(c.key));
                     let has_existing_tone_or_mark = self.buf.iter().any(|c| c.tone != tone::NONE || c.mark != mark::NONE);
                     let is_mark_or_remove = m_method.mark(key).is_some() || m_method.remove(key);
-                    
+
                     if has_vowels && is_mark_or_remove && has_existing_tone_or_mark {
                         // Buffer has a tone/mark already, so this mark key is probably toggling/changing it
                         true
@@ -477,16 +541,16 @@ impl Engine {
                         // 1. Single vowel: V
                         // 2. Compound vowels: VV (adjacent, no consonants between)
                         // If there are consonants between vowels, it's not a valid compound!
-                        
+
                         // Find the position of the last vowel
                         let last_vowel_pos = self.buf
                             .iter()
                             .rposition(|c| keys::is_vowel(c.key));
-                        
+
                         if let Some(last_vpos) = last_vowel_pos {
                             // Check if there are any consonants AFTER the last vowel
                             let has_final_consonant = last_vpos < self.buf.len() - 1;
-                            
+
                             // Also check if there are multiple vowels with consonants between them
                             // If yes, it's NOT a valid compound
                             let mut vowel_positions = Vec::new();
@@ -495,9 +559,9 @@ impl Engine {
                                     vowel_positions.push(i);
                                 }
                             }
-                            
+
                             let has_non_adjacent_vowels = vowel_positions.windows(2).any(|w| w[1] - w[0] > 1);
-                            
+
                             if has_non_adjacent_vowels {
                                 // Multiple vowels with consonants between = NOT a valid Vietnamese syllable structure
                                 // Mark key is probably a regular letter, not a tone
@@ -573,7 +637,7 @@ impl Engine {
                 // PRIORITY: Check dictionary FIRST, before deciding if key is a modifier
                 // This prevents "console" from becoming "cónole" when 's' is typed
                 let is_dict = self.is_english_dictionary_word();
-                
+
                 if is_dict {
                     self.is_english_word = true;
 
@@ -756,7 +820,8 @@ impl Engine {
             // aa/ee/oo should only be tone modifiers if:
             // The previous key was the same vowel (double-key pattern like "aa", "ee", "oo")
             // This is the ONLY case where a standalone a/e/o should be a tone modifier in Telex
-            let should_check_tone = if self.method == 0 {  // Telex mode
+            let should_check_tone = if self.method == 0 {
+                // Telex mode
                 match key {
                     keys::A | keys::E | keys::O => {
                         // Check if previous key was the same (double-key pattern)
@@ -765,24 +830,33 @@ impl Engine {
                         let prev_key_match = if self.raw_input.len() > 1 {
                             // Get all keystrokes and check second-to-last
                             let all_keys: Vec<_> = self.raw_input.iter().collect();
-                            all_keys.get(all_keys.len() - 2).map(|(k, _)| *k == key).unwrap_or(false)
+                            all_keys
+                                .get(all_keys.len() - 2)
+                                .map(|(k, _)| *k == key)
+                                .unwrap_or(false)
                         } else {
                             false
                         };
-                        prev_key_match  // ONLY allow if double-key pattern
-                    },
-                    _ => true,  // Other keys can be tone modifiers directly
+                        prev_key_match // ONLY allow if double-key pattern
+                    }
+                    _ => true, // Other keys can be tone modifiers directly
                 }
             } else {
-                true  // VNI mode: always allow tone checking
+                true // VNI mode: always allow tone checking
             };
-            eprintln!("DEBUG: should_check_tone={} for key={}", should_check_tone, key);
+            eprintln!(
+                "DEBUG: should_check_tone={} for key={}",
+                should_check_tone, key
+            );
 
             if should_check_tone {
                 let tone_result = m.tone(key);
                 eprintln!("DEBUG: m.tone({}) = {:?}", key, tone_result);
                 if let Some(tone_type) = tone_result {
-                    eprintln!("DEBUG: tone() returned Some for key={}, tone_type={:?}", key, tone_type);
+                    eprintln!(
+                        "DEBUG: tone() returned Some for key={}, tone_type={:?}",
+                        key, tone_type
+                    );
                     let targets = m.tone_targets(key);
                     if let Some(result) = self.try_tone(key, caps, tone_type, targets) {
                         self.is_english_word = false;
@@ -791,7 +865,7 @@ impl Engine {
                         if let Some(restore_result) = self.check_and_restore_english(0, false) {
                             return restore_result;
                         }
-                        return result;  // Return the result from try_tone with correct backspace
+                        return result; // Return the result from try_tone with correct backspace
                     } else {
                         if keys::is_number(key) {
                             // Fallback: VNI tone number (e.g. 1) failed to apply to vowel.
@@ -814,7 +888,7 @@ impl Engine {
                     // If the user explicitly typed a tone mark (s, f, r, x, j in Telex),
                     // we should honor their intent and not auto-restore to English.
                     // The mark was intentionally applied by the user.
-                    return result;  // Return the result from try_mark with correct backspace
+                    return result; // Return the result from try_mark with correct backspace
                 } else if keys::is_number(key) {
                     // Fallback: VNI mark number (e.g. 6) failed to apply.
                     // Act as break key.
@@ -901,7 +975,10 @@ impl Engine {
         if self.buf.len() > 0 {
             // Check if last character is vowel 'a'
             if let Some(last_char) = self.buf.last() {
-                if last_char.key == keys::A && last_char.tone == tone::NONE && last_char.mark == mark::NONE {
+                if last_char.key == keys::A
+                    && last_char.tone == tone::NONE
+                    && last_char.mark == mark::NONE
+                {
                     // Apply breve (horn tone) to the 'a'
                     let pos = self.buf.len() - 1;
                     let orig_caps = last_char.caps;
@@ -1121,7 +1198,10 @@ impl Engine {
         if self.method == 0 && key == keys::W && tone_type == ToneType::Horn {
             // Check if buffer ends with unmodified 'a' (complete consonant-'a' pattern)
             if let Some(last_char) = self.buf.last() {
-                if last_char.key == keys::A && last_char.tone == tone::NONE && last_char.mark == mark::NONE {
+                if last_char.key == keys::A
+                    && last_char.tone == tone::NONE
+                    && last_char.mark == mark::NONE
+                {
                     // This is the 'a+w' -> 'ă' case, don't handle here
                     // Let try_w_as_vowel() take care of it
                     return None;
@@ -1527,10 +1607,10 @@ impl Engine {
             c.mark = mark_val;
             self.last_transform = Some(Transform::Mark(key, mark_val));
         }
-        
+
         // Rebuild from the earlier position if compound was formed
         let rebuild_pos = rebuild_from_compound.map_or(pos, |cp| cp.min(pos));
-        
+
         // VALIDATION CHECK: Verify the mark application resulted in valid Vietnamese
         // (Similar to try_tone validation)
         let simulated_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
@@ -1543,18 +1623,18 @@ impl Engine {
             if let Some(c) = self.buf.get_mut(pos) {
                 c.mark = mark::NONE;
             }
-            
+
             // Check if instant restore is enabled and buffer has transforms
             if self.instant_restore_enabled && self.has_vietnamese_transforms() {
                 let result = self.instant_restore_english();
                 self.sync_buffer_with_raw_input();
                 return Some(result);
             }
-            
+
             // Otherwise, just pass through (don't apply mark)
             return None;
         }
-        
+
         // CRITICAL FIX: Track the modifier key in raw_input
         return Some(self.rebuild_from(rebuild_pos));
     }
@@ -2349,11 +2429,12 @@ impl Engine {
     /// Check if current raw input is in the English dictionary
     fn is_english_dictionary_word(&self) -> bool {
         let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
-        
+
         // FIX: In Telex, if the last key is 'w' (a tone modifier for horn/breve),
         // don't mark as English dictionary word because 'w' will be processed as a tone modifier.
         // Examples: 'naw' -> 'nă' (Telex), 'law' -> 'lă' (Telex), not English words
-        if self.method == 0 {  // Telex mode
+        if self.method == 0 {
+            // Telex mode
             if let Some(&last_key) = keys.last() {
                 if last_key == keys::W {
                     // In Telex, 'w' is a tone modifier. Let it go through tone handling
@@ -2362,7 +2443,7 @@ impl Engine {
                 }
             }
         }
-        
+
         Dictionary::is_english(&keys)
     }
 
