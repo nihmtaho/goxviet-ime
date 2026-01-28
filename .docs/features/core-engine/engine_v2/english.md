@@ -43,8 +43,25 @@ The central decision-maker that combines signals from:
 3.  **Phonotactic Analysis**: Adds to the English confidence score.
 4.  **Diacritics**: Presence of explicit Vietnamese marks (ê, ư, tone marks) heavily penalizes the English score.
 
-#### Auto-Restore Thresholds
-To prevent false-positive restorations for Vietnamese words (especially those using intermediate tone placement like `phast` → `phát`):
--   **Valid Vietnamese Syllables**: Require a very high English confidence (**≥ 95%**) or an explicit dictionary match to trigger auto-restore.
--   **Invalid Vietnamese Syllables**: Use more aggressive thresholds (**75-95%**) depending on the strength of the English pattern (e.g., words with `bl`, `str` clusters).
--   **Intermediate Tone Placement**: The engine explicitly handles tone keys placed immediately after vowels (common in rapid typing). High thresholds protect these sequences from being misidentified as English coda clusters (e.g., `st`, `nd`).
+#### Auto-Restore Thresholds & Protection
+
+To prevent false-positive restorations for Vietnamese words (especially those using intermediate tone placement like `phast` → `phát`), the engine applies strict confidence thresholds:
+
+**English Confidence Required:**
+-   **Valid Vietnamese Syllables** (e.g., `sao`, `khi`, `tôi`): Require a very high English confidence (**≥ 95%**) **OR** an explicit dictionary match.
+    - These syllables parse correctly in Vietnamese, so we are very conservative.
+    - Example: "sao" is a valid Vietnamese word; even with English patterns, we require strong signals to restore "saw".
+-   **Invalid Vietnamese Syllables** (e.g., `bca`, `kx`, `fpr`): Use more aggressive thresholds (**75-95%**) depending on phonotactic strength.
+    - These never form valid Vietnamese words, so English restoration is safer.
+    - Example: "blur" (phonotactic `bl` cluster) at ~85% confidence triggers auto-restore.
+
+**Intermediate Tone Placement Protection:**
+- When users type a tone key (e.g., `s` for sắc) immediately after a vowel (e.g., `phast`), it forms `phás` (Vietnamese with tone).
+- The engine recognizes this pattern and does NOT treat it as an English coda cluster (e.g., `st`).
+- High thresholds (≥ 95%) protect these intermediate sequences from misidentification as English clusters.
+
+**Dictionary Priority:**
+- If a sequence is found in the English dictionary (common words, programming terms), it triggers immediate auto-restore regardless of syllable validity.
+- Dictionary entries are pre-vetted for Vietnamese conflicts (whitelisting safe words like "canxi" and "cara").
+
+These protections ensure that intentional Vietnamese typing (even with intermediate tone placement) is preserved, while unintended transformations of common English words are swiftly corrected.
