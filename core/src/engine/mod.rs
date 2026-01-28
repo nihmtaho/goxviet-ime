@@ -2609,12 +2609,13 @@ impl Engine {
                     // "rer" has 75 confidence. "mos" has ?
                     phonotactic.english_confidence >= 95
                 } else {
-                    phonotactic.english_confidence >= 75
+                    phonotactic.english_confidence >= 95
                 }
             } else {
-                // For documented Vietnamese words or longer words, use conservative threshold: 90
+                // For documented Vietnamese words or longer words, use conservative threshold: 95
                 // "most" has confidence 91 but isn't in simple dictionary.
-                (phonotactic.english_confidence >= 90)
+                // "phast" has confidence 91.
+                (phonotactic.english_confidence >= 95)
                     || (phonotactic.english_confidence >= 80 && is_raw_dict)
             }
         } else {

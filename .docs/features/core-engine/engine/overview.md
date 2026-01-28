@@ -48,5 +48,5 @@ The `process` method is the heart of the engine:
 ## Advanced Features
 
 - **Word History**: The engine remembers the last few committed words. If the user backspaces over a space, it can "resurrect" the previous word into the buffer for editing.
-- **English Auto-Restore**: If the user types what looks like a valid English word (detected via phonotactics or dictionary), the engine can automatically undo any accidental Vietnamese transformations.
+- **English Auto-Restore**: If the user types what looks like a valid English word (detected via phonotactics or dictionary), the engine can automatically undo any accidental Vietnamese transformations. To prevent false positives during rapid typing (intermediate tone placement like `phast`), a high confidence threshold (**95%**) is required for words that form valid Vietnamese syllables.
 - **Speculative Modifiers**: Even if a word looks like English, if a user explicitly types a modifier that creates a valid Vietnamese word, the engine allows it (resolving conflicts like "dis" vs "dí").

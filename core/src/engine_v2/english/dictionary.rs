@@ -47,12 +47,16 @@ impl Dictionary {
 
 #[inline]
 fn is_keys_english(keys_only: &[u16]) -> bool {
-    // MANUAL PATCH: "of", "off" (common words missing from binary)
+    // MANUAL PATCH: "of", "off", "hex" (common words missing from binary)
     if (keys_only.len() == 2 && keys_only[0] == keys::O && keys_only[1] == keys::F)
         || (keys_only.len() == 3
             && keys_only[0] == keys::O
             && keys_only[1] == keys::F
             && keys_only[2] == keys::F)
+        || (keys_only.len() == 3
+            && keys_only[0] == keys::H
+            && keys_only[1] == keys::E
+            && keys_only[2] == keys::X)
     {
         return true;
     }
