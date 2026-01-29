@@ -8,8 +8,7 @@
 !.github/instructions/*.instructions.md
 
 # Documentation & Examples (không track)
-.github/
-.claude/
+# .github/
 docs/
 !docs/release-note/
 example-project/
@@ -194,3 +193,6 @@ release/
 # Code signing
 *.provisionprofile
 *.mobileprovision
+
+.gemini/
+gha-creds-*.json
