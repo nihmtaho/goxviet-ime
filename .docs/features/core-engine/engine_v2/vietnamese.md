@@ -1,6 +1,6 @@
 # Vietnamese Validation (Engine V2)
 
-The validation system ensures that the engine only produces phonologically valid Vietnamese syllables. This is crucial for distinguishing between typing errors, English words, and valid Vietnamese text.
+The validation system ensures that the engine only produces phonologically valid Vietnamese syllables. This is crucial for distinguishing between typing errors, English words, and valid Vietnamese text. By identifying valid Vietnamese syllables, the engine can apply more conservative auto-restore thresholds (e.g., 95%) to protect intended Vietnamese text from accidental restoration during rapid typing.
 
 ## `VietnameseSyllableValidator` (`vietnamese_validator.rs`)
 

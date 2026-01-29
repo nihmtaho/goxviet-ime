@@ -1,0 +1,6 @@
+prompts/**
+commands/**
+instructions/**
+agents/**
+copilot-instructions.md
+workflows/gemini-*.yml

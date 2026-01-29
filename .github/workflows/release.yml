@@ -221,9 +221,10 @@ jobs:
           ln -s /Applications "$STAGING_DIR/Applications"
 
           # Update version in Info.plist
+          BUILD_NUMBER=${{ github.run_number }}
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$STAGING_DIR/${{ env.APP_NAME }}.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$STAGING_DIR/${{ env.APP_NAME }}.app/Contents/Info.plist"
-          echo "📝 Updated Info.plist with version $VERSION"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$STAGING_DIR/${{ env.APP_NAME }}.app/Contents/Info.plist"
+          echo "📝 Updated Info.plist with version $VERSION ($BUILD_NUMBER)"
 
           # Calculate size needed (app size + 50MB buffer)
           APP_SIZE=$(du -sm "$APP_PATH" | cut -f1)

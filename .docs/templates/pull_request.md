@@ -34,7 +34,4 @@
 <!-- Thêm thông tin bổ sung, ảnh, log, benchmark nếu cần -->
 
 ---
-**Lưu ý:**
-- PR không tuân thủ checklist sẽ bị từ chối.
-- Mọi thay đổi phải đảm bảo không làm giảm hiệu năng, độ ổn định, hoặc vi phạm branding Gõ Việt.
-- Xem thêm: `.github/instructions/00_master_rules.instructions.md`, `08_git_workflow.instructions.md`, `13_commit_message.instructions.md`.
+*PR không tuân thủ checklist sẽ bị từ chối. Đảm bảo không vi phạm branding, hiệu năng, kiến trúc.*
