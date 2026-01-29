@@ -253,21 +253,27 @@ struct PerAppSettingsView: View {
     
     private func toggleApp(_ bundleId: String) {
         perAppModes[bundleId]?.toggle()
-        PerAppModeManager.shared.setEnabled(!perAppModes[bundleId]!, forApp: bundleId)
+        // TODO: Migrate to PerAppModeManagerEnhanced
+        // PerAppModeManager.shared.setEnabled(!perAppModes[bundleId]!, forApp: bundleId)
+        AppState.shared.setPerAppMode(bundleId: bundleId, enabled: !perAppModes[bundleId]!)
         reloadAction()
     }
     
     private func bulkAction(enable: Bool) {
         for bundleId in selectedApps {
             perAppModes[bundleId] = enable
-            PerAppModeManager.shared.setEnabled(!enable, forApp: bundleId)
+            // TODO: Migrate to PerAppModeManagerEnhanced
+            // PerAppModeManager.shared.setEnabled(!enable, forApp: bundleId)
+            AppState.shared.setPerAppMode(bundleId: bundleId, enabled: !enable)
         }
         selectedApps.removeAll()
         reloadAction()
     }
     
     private func clearAllSettings() {
-        PerAppModeManager.shared.clearAll()
+        // TODO: Migrate to PerAppModeManagerEnhanced  
+        // PerAppModeManager.shared.clearAll()
+        AppState.shared.clearAllPerAppModes()
         perAppModes.removeAll()
         selectedApps.removeAll()
         reloadAction()

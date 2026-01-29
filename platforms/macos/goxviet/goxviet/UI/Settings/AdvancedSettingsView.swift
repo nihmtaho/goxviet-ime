@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct AdvancedSettingsView: View {
     let metrics: EngineMetrics

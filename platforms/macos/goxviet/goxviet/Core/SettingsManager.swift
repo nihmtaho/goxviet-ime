@@ -19,51 +19,58 @@ final class SettingsManager: ObservableObject {
     
     // MARK: - Published Settings
     
-    @Published private(set) var inputMethod: Int = 0 {
+    @Published var inputMethod: Int = 0 {
         didSet {
             syncToCore()
             postNotification(.inputMethodChanged, value: inputMethod)
         }
     }
     
-    @Published private(set) var modernToneStyle: Bool = false {
+    @Published var modernToneStyle: Bool = false {
         didSet {
             syncToCore()
             postNotification(.toneStyleChanged, value: modernToneStyle)
         }
     }
     
-    @Published private(set) var escRestoreEnabled: Bool = true {
+    @Published var escRestoreEnabled: Bool = true {
         didSet {
             syncToCore()
             postNotification(.escRestoreChanged, value: escRestoreEnabled)
         }
     }
     
-    @Published private(set) var freeToneEnabled: Bool = false {
+    @Published var freeToneEnabled: Bool = false {
         didSet {
             syncToCore()
             postNotification(.freeToneChanged, value: freeToneEnabled)
         }
     }
     
-    @Published private(set) var instantRestoreEnabled: Bool = true {
+    @Published var instantRestoreEnabled: Bool = true {
         didSet {
             syncToCore()
             postNotification(.instantRestoreChanged, value: instantRestoreEnabled)
         }
     }
     
-    @Published private(set) var smartModeEnabled: Bool = true {
+    @Published var smartModeEnabled: Bool = true {
         didSet {
             syncToAppState()
             postNotification(.smartModeChanged, value: smartModeEnabled)
         }
     }
     
-    @Published private(set) var autoDisableForNonLatin: Bool = true {
+    @Published var autoDisableForNonLatin: Bool = true {
         didSet {
             syncToAppState()
+        }
+    }
+    
+    @Published var hideFromDock: Bool = false {
+        didSet {
+            // Use legacy notification for now (hideFromDockChanged not in TypedNotifications yet)
+            NotificationCenter.default.post(name: NSNotification.Name("hideFromDockChanged"), object: hideFromDock)
         }
     }
     
@@ -82,6 +89,7 @@ final class SettingsManager: ObservableObject {
         static let instantRestoreEnabled = "instantRestoreEnabled"
         static let smartModeEnabled = "smartModeEnabled"
         static let autoDisableForNonLatin = "com.goxviet.ime.autoDisableNonLatin"
+        static let hideFromDock = "com.goxviet.ime.hideFromDock"
     }
     
     // MARK: - Initialization
@@ -178,6 +186,18 @@ final class SettingsManager: ObservableObject {
         saveToDefaults(Keys.autoDisableForNonLatin, value: enabled)
     }
     
+    /// Toggle hide from dock
+    func setHideFromDock(_ hide: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        guard hide != hideFromDock else { return }
+        
+        hideFromDock = hide
+        saveToDefaults(Keys.hideFromDock, value: hide)
+        Log.info("Hide from dock: \(hide)")
+    }
+    
     /// Reset all settings to defaults
     func resetToDefaults() {
         lock.lock()
@@ -190,6 +210,7 @@ final class SettingsManager: ObservableObject {
         instantRestoreEnabled = true
         smartModeEnabled = true
         autoDisableForNonLatin = true
+        hideFromDock = false
         
         // Save to defaults
         saveAllToDefaults()
@@ -258,6 +279,7 @@ final class SettingsManager: ObservableObject {
         instantRestoreEnabled = userDefaults.bool(forKey: Keys.instantRestoreEnabled)
         smartModeEnabled = userDefaults.bool(forKey: Keys.smartModeEnabled)
         autoDisableForNonLatin = userDefaults.bool(forKey: Keys.autoDisableForNonLatin)
+        hideFromDock = userDefaults.bool(forKey: Keys.hideFromDock)
         
         // Set defaults if never saved
         if !userDefaults.bool(forKey: "hasLaunchedBefore") {

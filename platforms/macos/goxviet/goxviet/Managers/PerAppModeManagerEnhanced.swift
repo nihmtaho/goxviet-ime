@@ -253,7 +253,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         
         // Create and cache metadata
         let metadata = AppMetadata(bundleId: bundleId, app: app)
-        appMetadataCache.set(bundleId, value: metadata)
+        appMetadataCache.set(bundleId, metadata)
     }
     
     private func addToRecentApps(_ bundleId: String) {

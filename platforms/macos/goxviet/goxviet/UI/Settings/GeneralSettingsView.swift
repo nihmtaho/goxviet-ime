@@ -166,7 +166,7 @@ struct GeneralSettingsView: View {
                             isOn: $autoDisableForNonLatin
                         )
                         .onChange(of: autoDisableForNonLatin) { newValue in
-                            AppState.shared.autoDisableForNonLatin = newValue
+                            AppState.shared.autoDisableForNonLatinEnabled = newValue
                         }
                     }
                     .padding(8)

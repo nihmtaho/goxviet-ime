@@ -47,10 +47,11 @@ struct SmartModeIndicator: View {
             }
             
             // Performance Metrics (Debug)
-            if appState.isDebugMode, let metrics = metrics {
-                metricsSection(metrics)
-                Divider()
-            }
+            // TODO: Add isDebugMode to AppState or SettingsManager
+            // if appState.isDebugMode, let metrics = metrics {
+            //     metricsSection(metrics)
+            //     Divider()
+            // }
             
             // Actions
             actionsSection
@@ -137,7 +138,7 @@ struct SmartModeIndicator: View {
             if let app = currentApp {
                 Button(action: {
                     let newState = !app.isVietnamese
-                    AppState.shared.isEnabled = newState
+                    AppState.shared.setEnabled(newState)
                     PerAppModeManagerEnhanced.shared.setStateForCurrentApp(newState)
                     loadCurrentApp()
                 }) {

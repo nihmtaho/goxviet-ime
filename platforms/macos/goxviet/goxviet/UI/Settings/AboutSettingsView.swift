@@ -181,7 +181,8 @@ struct AboutSettingsView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 
-                // Update Section (if available)
+                // TODO: Update Section (UpdateManager not implemented yet)
+                /*
                 if updateManager.hasUpdate {
                     GroupBox {
                         VStack(spacing: 12) {
@@ -208,6 +209,7 @@ struct AboutSettingsView: View {
                             .font(.system(size: 14, weight: .semibold))
                     }
                 }
+                */
                 
                 Spacer()
             }
