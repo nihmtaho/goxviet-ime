@@ -28,6 +28,20 @@ Implements the complex rules for where to place tone marks in Vietnamese.
 
 The `reposition_mark` function is called whenever the buffer changes (e.g. adding a circumflex to `e` in `vie` -> `viê`) to ensure the mark moves to the correct vowel (e.g. from `i` to `ê` in `viết`).
 
+### Telex Double-Key Tone Placement Fix
+
+In Telex mode, vowels can act as tone modifiers when preceded by the same vowel (double-key pattern):
+
+- **Valid patterns** (`aa`, `ee`, `oo`): The second vowel applies the tone mark to the first.
+  - `aa` + `s` → `ás` (a + sắc tone)
+  - `ee` + `f` → `èe` (e + huyền tone)
+  - `oo` + `r` → `ỏo` (o + hỏi tone)
+- **Single vowel handling**: A lone vowel (`a`, `e`, or `o`) does NOT act as a tone modifier—it is treated as a literal vowel character in English or Vietnamese text.
+  - `s` + `a` + `o` → `sao` (NOT `sá` + `o`)
+  - `c` + `a` + `r` → `car` (NOT `cá` + `r`)
+
+This fix ensures that English words like "console", "care", and "roadmap" are not accidentally transformed with Vietnamese tone marks, while preserving correct Telex double-key behavior for intentional Vietnamese typing.
+
 ## Syllable Parsing (`syllable.rs`)
 
 Parses the buffer into the structural components of a Vietnamese syllable:

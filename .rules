@@ -248,3 +248,19 @@ pub extern "C" fn ime_process_key(engine_ptr: *mut Engine, key_code: u32) -> *mu
     `o` + `w` + `n` + `g` → `trường`).
 - **Integration Test:** Mô phỏng việc gọi FFI từ C để đảm bảo không leak bộ nhớ.
 - Sử dụng `cargo test` thường xuyên.
+
+### Development Tips
+
+- **Testing:** Use `cargo test` extensively for core logic.
+- **Performance:** Profile with `cargo bench` and `cargo flamegraph`.
+- **FFI Safety:** Always validate pointers and avoid panics across FFI boundaries.
+- **Documentation:** Update `.docs/features/core-engine/` for any logic changes.
+- **Versioning:** Follow semantic versioning for the core engine crate.
+- **Building Rust core engine:**
+        - Use script `./scripts/rust_build_lib_universal_for_macos.sh` for optimized builds.
+        - Use scripts in `scripts/` for cross-compilation if needed.
+- **Build DMG for macOS:**
+        - Use script `./scripts/build-dmg-unsigned.sh` to create distributable DMG files.
+- **Code Reviews:** Always have another Rust developer review core logic changes.
+- **Bump Versions:** Use script `./scripts/bump_version.sh <new_version>` to update version numbers
+    consistently across the project. `<new_version>` should follow arguments like `patch`, `minor`, or `major`. More details in the script comments.
