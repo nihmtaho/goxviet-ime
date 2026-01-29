@@ -242,6 +242,65 @@ impl Engine {
         Result::none()
     }
 
+    /// Handle Shift+Backspace - delete entire word
+    ///
+    /// Returns Result with backspace count equal to the current displayed word length.
+    /// After this, the buffer is completely cleared.
+    ///
+    /// # Returns
+    /// * `Result::send(backspace_count, &[])` if buffer has content
+    /// * `Result::none()` if buffer is empty
+    pub fn handle_shift_backspace(&mut self) -> Result {
+        // If buffer is empty, nothing to delete
+        if self.buf.is_empty() {
+            // If we have spaces after commit, delete them all and restore previous word
+            if self.spaces_after_commit > 0 {
+                let spaces_to_delete = self.spaces_after_commit as u8;
+                self.spaces_after_commit = 0;
+
+                // Restore previous word from history
+                if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
+                    // Calculate the full word length to delete
+                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    // Don't restore - just return total delete count (spaces + word)
+                    return Result::send(spaces_to_delete + word_len, &[]);
+                }
+
+                return Result::send(spaces_to_delete, &[]);
+            }
+
+            // Check break_after_commit similarly
+            if self.break_after_commit > 0 {
+                let breaks_to_delete = self.break_after_commit;
+                self.break_after_commit = 0;
+
+                if let Some((restored_buf, _)) = self.word_history.pop() {
+                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    return Result::send(breaks_to_delete + word_len, &[]);
+                }
+
+                return Result::send(breaks_to_delete, &[]);
+            }
+
+            return Result::none();
+        }
+
+        // Calculate the displayed word length (full Vietnamese string with diacritics)
+        let displayed_word = self.buf.to_full_string();
+        let char_count = displayed_word.chars().count() as u8;
+
+        // Clear everything
+        self.buf.clear();
+        self.raw_input.clear();
+        self.last_transform = None;
+        self.cached_syllable_boundary = None;
+        self.is_english_word = false;
+        self.has_non_letter_prefix = false;
+
+        // Return backspace count to delete displayed characters
+        Result::send(char_count, &[])
+    }
+
     /// Handle key event - main entry point
     ///
     /// # Arguments
@@ -345,6 +404,11 @@ impl Engine {
         }
 
         if key == keys::DELETE {
+            // SHIFT+BACKSPACE: Delete entire word (clear buffer completely)
+            if shift {
+                return self.handle_shift_backspace();
+            }
+
             // BUGFIX: Simplified DELETE handling to fix Spotlight autocomplete bug
             // Old approach: Complex syllable boundary rebuild → miscalculates backspace with autocomplete
             // New approach: Simple buf.pop() + return none() → let OS handle deletion
@@ -760,19 +824,9 @@ impl Engine {
                 // Telex mode
                 match key {
                     keys::A | keys::E | keys::O => {
-                        // Check if previous key was the same (double-key pattern)
-                        // NOTE: raw_input was already updated in on_key_ext, so last() is current key
-                        // We need second-to-last for the previous key
-                        let prev_key_match = if self.raw_input.len() > 1 {
-                            // Get all keystrokes and check second-to-last
-                            let all_keys: Vec<_> = self.raw_input.iter().collect();
-                            all_keys
-                                .get(all_keys.len() - 2)
-                                .map(|(k, _)| *k == key)
-                                .unwrap_or(false)
-                        } else {
-                            false
-                        };
+                        // Check if the last character in the buffer has the same base key.
+                        // This correctly handles cases like 'e' + 's' -> 'é', then 'é' + 'e' -> 'ê'.
+                        let prev_key_match = self.buf.last().map_or(false, |c| c.key == key);
                         prev_key_match // ONLY allow if double-key pattern
                     }
                     _ => true, // Other keys can be tone modifiers directly
@@ -884,8 +938,19 @@ impl Engine {
             let output: Vec<char> = m.output.chars().collect();
             return Result::send(m.backspace_count as u8, &output);
         }
+        
+        // If no shortcut matched, check for English auto-restore
+        if self.should_auto_restore() {
+            // Add a space to the raw input before restoring to ensure it's part of the final output
+            self.raw_input.push(keys::SPACE, false);
+            return self.instant_restore_english();
+        }
 
-        Result::none()
+        // Default: commit buffer as-is and add a space
+        let output = self.buf.to_full_string();
+        let final_output = format!("{} ", output);
+        let final_chars: Vec<char> = final_output.chars().collect();
+        Result::send(output.chars().count() as u8, &final_chars)
     }
 
     /// Try "w" as vowel "ư" in Telex mode

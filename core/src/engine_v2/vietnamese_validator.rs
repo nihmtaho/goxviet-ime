@@ -79,17 +79,22 @@ impl VietnameseSyllableValidator {
         if len > 1
             && (CHAR_PROPS[last as usize] & crate::engine_v2::fsm::tables::PROP_CODA_INVALID) != 0
         {
-            // Check for valid compounds like 'ng', 'nh', 'ch'
-            let prev = keys[len - 2];
-            if !matches!(
-                (prev, last),
-                (keys::N, keys::G) | (keys::N, keys::H) | (keys::C, keys::H)
-            ) {
-                println!("DEBUG: Rule 5 Coda failed (invalid coda char)");
-                return ValidationResult {
-                    is_valid: false,
-                    confidence: 0,
-                };
+            // Allow 'k' as a final consonant for names like "Đăk Lăk"
+            if last == keys::K {
+                // This is a special case, proceed.
+            } else {
+                // Check for valid compounds like 'ng', 'nh', 'ch'
+                let prev = keys[len - 2];
+                if !matches!(
+                    (prev, last),
+                    (keys::N, keys::G) | (keys::N, keys::H) | (keys::C, keys::H)
+                ) {
+                    println!("DEBUG: Rule 5 Coda failed (invalid coda char)");
+                    return ValidationResult {
+                        is_valid: false,
+                        confidence: 0,
+                    };
+                }
             }
         }
 
@@ -407,6 +412,9 @@ impl VietnameseSyllableValidator {
                 | (keys::Q, keys::U)
                 | (keys::Y, keys::T) // buýt, huýt, xuýt
                 | (keys::Y, keys::C) // huých, uỵch
+                // Exceptions for ethnic minority names
+                | (keys::A, keys::K) // Đăk Lăk
+                | (keys::O, keys::K) // Kon Tum
         )
     }
 
