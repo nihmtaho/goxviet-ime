@@ -2,18 +2,32 @@
 //  PerAppModeManager.swift
 //  GoxViet
 //
-//  Manages per-app Gõ Việt input mode settings
-//  Default: English input (Vietnamese disabled)
-//  Only tracks apps with Vietnamese ENABLED (max 100 apps)
-//  Includes special panel app detection (Spotlight, Raycast)
+//  ⚠️ DEPRECATED: Migrating to PerAppModeManagerEnhanced (Phase 2)
+//
+//  Legacy per-app mode manager. Being replaced by PerAppModeManagerEnhanced which includes:
+//  - LRU caching (50 apps capacity) for faster lookups
+//  - Recent apps tracking (10 most recent)
+//  - Performance metrics API
+//  - Better memory management
+//  - Integration with SmartModeIndicator
+//
+//  Status: LEGACY MODE - Kept for backward compatibility during Phase 2 migration
+//  Removal: Planned for Phase 3 after PerAppModeManagerEnhanced is fully integrated
+//
+//  Migration Notes:
+//  - All new code should use PerAppModeManagerEnhanced.shared instead
+//  - Storage format is compatible (same UserDefaults keys)
+//  - Once InputManager migrated, this file will be removed
 //
 
 import Foundation
 import Cocoa
 
 /// Manages per-application Vietnamese input mode
+/// @deprecated Use PerAppModeManagerEnhanced.shared instead (Phase 2)
 /// Default: English input (Vietnamese disabled) for all apps
 /// Only stores apps where user explicitly enabled Vietnamese (max 100 apps)
+@available(*, deprecated, message: "Use PerAppModeManagerEnhanced.shared instead. This is the legacy implementation.")
 class PerAppModeManager: LifecycleManaged {
     static let shared = PerAppModeManager()
     

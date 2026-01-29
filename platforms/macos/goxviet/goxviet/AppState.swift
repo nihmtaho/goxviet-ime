@@ -2,9 +2,20 @@
 //  AppState.swift
 //  GoxViet
 //
-//  Manages application state and per-app Vietnamese input mode settings
-//  Default: English input mode (Vietnamese disabled)
-//  Per-app: Only stores apps with Vietnamese ENABLED (max 100 apps)
+//  ⚠️ DEPRECATED: Migrating to SettingsManager (Phase 2)
+//
+//  Legacy application state manager. Being replaced by:
+//  - SettingsManager.swift for settings storage
+//  - PerAppModeManagerEnhanced.swift for per-app logic
+//  - TypedNotifications.swift for type-safe events
+//
+//  Status: LEGACY MODE - Kept for backward compatibility during Phase 2 migration
+//  Removal: Planned for Phase 3 after full migration is complete
+//
+//  Migration Notes:
+//  - All new code should use SettingsManager.shared instead
+//  - SettingsManager currently syncs TO AppState for backward compatibility
+//  - Once all components migrated, this file will be removed
 //
 
 import Foundation
@@ -16,6 +27,8 @@ import Combine
 private let MAX_PER_APP_ENTRIES = 100
 
 /// Global application state manager
+/// @deprecated Use SettingsManager.shared instead (Phase 2)
+@available(*, deprecated, message: "Use SettingsManager.shared instead. AppState is in legacy mode during Phase 2 migration.")
 class AppState: ObservableObject {
     static let shared = AppState()
 
@@ -31,6 +44,7 @@ class AppState: ObservableObject {
     private var memoryPressureObserver: NSObjectProtocol?
 
     /// Whether smart per-app mode is enabled
+    /// @deprecated Use SettingsManager.shared.smartModeEnabled instead
     var isSmartModeEnabled: Bool {
         get {
             return UserDefaults.standard.bool(forKey: Keys.smartModeEnabled)
