@@ -3,13 +3,20 @@
 ## [2.0.3] - 2026-01-29
 
 ### Added
-- 
+- **Architecture Documentation**: Hoàn thiện các tài liệu kiến trúc và quy tắc coding chính thức cho dự án (#45).
+- **GitHub Workflow Templates**: Thêm template cho issue và pull request để chuẩn hóa quy trình contribute.
 
 ### Changed
-- 
+- **English Detection**: Tăng cường logic phát hiện từ tiếng Anh với confidence threshold, giảm false positive khi gõ nhanh.
+- **Telex Tone Logic**: Cải thiện xử lý double-key trong Telex (ví dụ: `ss`, `ff`, `rr`) để tránh biến đổi nhầm.
+- **Dictionary System**: Cập nhật số lượng từ trong các tập từ điển (2-7 ký tự), thêm entries mới vào từ điển 7 ký tự.
+- **GitHub Actions**: Nâng cấp workflow phát hành, cải thiện Info.plist version tracking bằng build number.
 
 ### Fixed
-- 
+- **Key Skipping Logic**: Vô hiệu hóa logic bỏ qua phím để cải thiện phát hiện từ tiếng Anh và xử lý Telex tone chính xác hơn (#46).
+- **English Auto-Restore**: Sửa lỗi auto-restore tiếng Anh với confidence threshold, ngăn chặn restore sai từ trong điều kiện gõ nhanh.
+- **Dictionary Integrity**: Kiểm tra và sửa tính toàn vẹn dữ liệu từ điển trong tất cả tập tin 2-7 ký tự.
+- **Release Workflow**: Cải thiện quy trình phát hành tự động qua GitHub Actions.
 
 
 ## [2.0.2] - 2026-01-25
