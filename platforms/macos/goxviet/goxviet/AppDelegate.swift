@@ -14,6 +14,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var toggleView: MenuToggleView?
     weak var smartModeToggleView: MenuToggleView?
     
+    // Phase 2: Smart Mode Menu Bar Indicator
+    private var smartModeMenuBarItem: SmartModeMenuBarItem?
+    
     // Timer for auto-polling accessibility permission
     private var accessibilityPollTimer: Timer?
     
@@ -38,7 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyActivationPolicyFromPreference() {
-        let hide = UserDefaults.standard.bool(forKey: "com.goxviet.ime.hideFromDock")
+        // Use SettingsManager instead of direct UserDefaults access
+        let hide = SettingsManager.shared.hideFromDock
         let policy: NSApplication.ActivationPolicy = hide ? .accessory : .regular
 
         // Delegate to coordinator to coalesce and apply outside layout passes
@@ -68,6 +72,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         setupMenu()
         setupObservers()
+        
+        // Phase 2: Initialize Smart Mode Menu Bar Item (separate from main status item)
+        // TODO: Uncomment after verifying all dependencies are added to Xcode project
+        // smartModeMenuBarItem = SmartModeMenuBarItem()
+        // Log.info("Smart Mode menu bar indicator initialized")
         
         // Check and request Accessibility Permission
         // InputManager will only start if permission is granted
