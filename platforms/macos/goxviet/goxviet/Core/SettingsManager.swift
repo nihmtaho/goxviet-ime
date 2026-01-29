@@ -292,9 +292,9 @@ final class SettingsManager: ObservableObject {
     }
     
     private func syncToAppState() {
-        // Sync to AppState for app-wide access
-        AppState.shared.smartModeEnabled = smartModeEnabled
-        AppState.shared.autoDisableForNonLatin = autoDisableForNonLatin
+        // Sync to AppState for app-wide access (legacy compatibility)
+        AppState.shared.isSmartModeEnabled = smartModeEnabled
+        AppState.shared.autoDisableForNonLatinEnabled = autoDisableForNonLatin
     }
     
     private func postNotification(_ name: Notification.Name, value: Any) {

@@ -9,13 +9,6 @@
 import SwiftUI
 import AppKit
 
-/// Engine metrics structure for display in Advanced settings
-struct EngineMetrics {
-    let totalKeystrokes: UInt64
-    let backspaceCount: UInt64
-    let avgBufferLength: Double
-}
-
 /// Main settings window root view
 /// Displays TabView with 4 sections: General, Per-App, Advanced, About
 struct SettingsRootView: View {
@@ -30,7 +23,7 @@ struct SettingsRootView: View {
     var body: some View {
         TabView {
             // General Settings - Input method, tone style, smart features
-            UI.Settings.GeneralSettingsView(
+            GeneralSettingsView(
                 inputMethod: $settingsManager.inputMethod,
                 modernToneStyle: $settingsManager.modernToneStyle,
                 escRestoreEnabled: $settingsManager.escRestoreEnabled,
@@ -43,7 +36,7 @@ struct SettingsRootView: View {
             }
 
             // Per-App Settings - Smart mode and app-specific overrides
-            UI.Settings.PerAppSettingsView(
+            PerAppSettingsView(
                 smartModeEnabled: $settingsManager.smartModeEnabled,
                 perAppModes: $perAppModes,
                 showClearConfirmation: $showClearConfirmation,
@@ -54,7 +47,7 @@ struct SettingsRootView: View {
             }
 
             // Advanced Settings - Metrics, logs, diagnostics
-            UI.Settings.AdvancedSettingsView(
+            AdvancedSettingsView(
                 metrics: getEngineMetrics(),
                 resetAction: resetEngineMetrics,
                 openLogAction: openLogFile
@@ -64,7 +57,7 @@ struct SettingsRootView: View {
             }
 
             // About - Version info, updates, credits
-            UI.Settings.AboutSettingsView()
+            AboutSettingsView()
                 .environmentObject(UpdateManager.shared)
             .tabItem {
                 Label("About", systemImage: "info.circle")

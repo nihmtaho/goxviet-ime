@@ -401,17 +401,3 @@ extension Notification.Name {
     static let currentAppChanged = Notification.Name("com.goxviet.currentAppChanged")
     static let perAppModeChanged = Notification.Name("com.goxviet.perAppModeChanged")
 }
-
-// MARK: - LRUCache Extension
-
-extension LRUCache {
-    var count: Int {
-        return cache.count
-    }
-    
-    func clear() {
-        cache.removeAll()
-        head = nil
-        tail = nil
-    }
-}
