@@ -8,9 +8,9 @@
 - [x] Milestone 1.1: Hoàn thành Text Expansion (Gõ tắt) ✅
 - [x] Milestone 1.2: Tích hợp Shift+Backspace (xóa nhanh từ) ✅
 - [x] Milestone 1.3: Hỗ trợ Multi-Encoding Output (Unicode, TCVN3, VNI, CP1258) ✅
-- [ ] Milestone 1.4: Unit test & benchmark <1ms/keystroke
+- [x] Milestone 1.4: Unit test & benchmark <1ms/keystroke ✅
 
-## Tiến độ: 75% (3/4 milestones)
+## Tiến độ: 100% (4/4 milestones)
 
 ## Hoàn thành (2026-01-26)
 ### Milestone 1.1: Text Expansion

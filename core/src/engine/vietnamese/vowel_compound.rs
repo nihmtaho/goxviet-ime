@@ -72,21 +72,15 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
         }
 
         // Check: U plain + O with horn → normalize to ươ (except after Q for "quơ")
-        // DISABLE normalization to allow "uow" -> "uơ" globally as requested.
-        /*
         if k1 == keys::U && t1 == tone::NONE && k2 == keys::O && t2 == tone::HORN {
             let mut is_special_initial = false;
             if i > 0 {
                 if let Some(prev) = buf.get(i - 1) {
                     if prev.key == keys::Q {
-                        println!("DEBUG: ignored uo normalization for Q at pos {}", i);
+                        // Special case: "quơ" is a valid syllable, do not normalize to "qươ"
                         is_special_initial = true;
-                    } else {
-                         // println!("DEBUG: prev key was {:?}, not Q", prev.key);
                     }
                 }
-            } else {
-                 // println!("DEBUG: i is 0, no prev char");
             }
 
             if !is_special_initial {
@@ -96,7 +90,6 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
                 }
             }
         }
-        */
     }
     None
 }

@@ -44,3 +44,7 @@ harness = false
 [[bench]]
 name = "shortcut_bench"
 harness = false
+
+[[bench]]
+name = "encoding_bench"
+harness = false

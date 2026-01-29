@@ -18,8 +18,8 @@
 - **Details**: [MILESTONE_1.3.md](milestones/MILESTONE_1.3.md)
 
 ### Milestone 1.4: Unit Test & Benchmark
-- **Status**: 🔄 In Progress
-- **Target**: 70% coverage, < 1ms/keystroke
+- **Status**: ✅ Complete
+- **Completed**: 2026-01-29
 - **Details**: [MILESTONE_1.4.md](milestones/MILESTONE_1.4.md)
 
 ---

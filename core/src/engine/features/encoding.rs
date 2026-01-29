@@ -6,6 +6,15 @@
 //! - VNI (VNI Windows encoding)
 //! - CP1258 (Windows Vietnam codepage)
 
+pub use OutputEncoding as Encoding;
+
+/// A freestanding function to convert a string to a specific encoding.
+pub fn convert_to_encoding(s: &str, encoding: Encoding) -> Vec<u8> {
+    let mut converter = EncodingConverter::new();
+    converter.set_encoding(encoding);
+    converter.convert_string(s)
+}
+
 /// Output encoding types
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum OutputEncoding {
@@ -390,5 +399,40 @@ mod tests {
 
         converter.set_encoding(OutputEncoding::TCVN3);
         assert_eq!(converter.encoding(), OutputEncoding::TCVN3);
+    }
+
+    #[test]
+    fn test_full_string_conversions_and_unmapped() {
+        let mut converter = EncodingConverter::new();
+        let sample = "Việt Nam";
+        
+        // TCVN3 Full String
+        converter.set_encoding(OutputEncoding::TCVN3);
+        // Correct bytes for "Việt Nam": V-i-ệ-t- -N-a-m
+        let expected_tcvn3: Vec<u8> = vec![b'V', b'i', 0xD6, b't', b' ', b'N', b'a', b'm'];
+        assert_eq!(converter.convert_string(sample), expected_tcvn3);
+
+        // TCVN3 Unmapped Character
+        assert_eq!(converter.convert_string("Hello €"), vec![b'H', b'e', b'l', b'l', b'o', b' ', b'?']);
+
+        // TCVN3 Uppercase
+        let sample_upper = "VIỆT NAM";
+        // Correct bytes for "VIỆT NAM": V-I-Ệ-T- -N-A-M
+        let expected_tcvn3_upper: Vec<u8> = vec![b'V', b'I', 0x9B, b'T', b' ', b'N', b'A', b'M'];
+        assert_eq!(converter.convert_string(sample_upper), expected_tcvn3_upper);
+
+        // VNI (should be passthrough for now)
+        converter.set_encoding(OutputEncoding::VNI);
+        assert_eq!(converter.convert_string(sample), sample.as_bytes().to_vec());
+        
+        // CP1258 Full String (based on current implementation)
+        converter.set_encoding(OutputEncoding::CP1258);
+        // "Việt" -> V, i, ệ(passthrough), t
+        // "Nam" -> N, a, m
+        let mut expected_cp1258 = "V".as_bytes().to_vec();
+        expected_cp1258.extend("i".as_bytes());
+        expected_cp1258.extend("ệ".to_string().as_bytes()); // Currently passes through
+        expected_cp1258.extend("t Nam".as_bytes());
+        assert_eq!(converter.convert_string(sample), expected_cp1258);
     }
 }

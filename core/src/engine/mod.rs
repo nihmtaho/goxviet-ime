@@ -824,19 +824,9 @@ impl Engine {
                 // Telex mode
                 match key {
                     keys::A | keys::E | keys::O => {
-                        // Check if previous key was the same (double-key pattern)
-                        // NOTE: raw_input was already updated in on_key_ext, so last() is current key
-                        // We need second-to-last for the previous key
-                        let prev_key_match = if self.raw_input.len() > 1 {
-                            // Get all keystrokes and check second-to-last
-                            let all_keys: Vec<_> = self.raw_input.iter().collect();
-                            all_keys
-                                .get(all_keys.len() - 2)
-                                .map(|(k, _)| *k == key)
-                                .unwrap_or(false)
-                        } else {
-                            false
-                        };
+                        // Check if the last character in the buffer has the same base key.
+                        // This correctly handles cases like 'e' + 's' -> 'é', then 'é' + 'e' -> 'ê'.
+                        let prev_key_match = self.buf.last().map_or(false, |c| c.key == key);
                         prev_key_match // ONLY allow if double-key pattern
                     }
                     _ => true, // Other keys can be tone modifiers directly
@@ -948,8 +938,19 @@ impl Engine {
             let output: Vec<char> = m.output.chars().collect();
             return Result::send(m.backspace_count as u8, &output);
         }
+        
+        // If no shortcut matched, check for English auto-restore
+        if self.should_auto_restore() {
+            // Add a space to the raw input before restoring to ensure it's part of the final output
+            self.raw_input.push(keys::SPACE, false);
+            return self.instant_restore_english();
+        }
 
-        Result::none()
+        // Default: commit buffer as-is and add a space
+        let output = self.buf.to_full_string();
+        let final_output = format!("{} ", output);
+        let final_chars: Vec<char> = final_output.chars().collect();
+        Result::send(output.chars().count() as u8, &final_chars)
     }
 
     /// Try "w" as vowel "ư" in Telex mode
