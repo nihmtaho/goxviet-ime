@@ -227,6 +227,31 @@ fn bench_worst_case(c: &mut Criterion) {
     });
 }
 
+/// Benchmark 8: Shift+Backspace to delete a whole word
+/// Target: < 3ms
+fn bench_shift_backspace(c: &mut Criterion) {
+    let mut group = c.benchmark_group("backspace_shift_delete_word");
+
+    let scenarios = vec![
+        ("simple", "word"),
+        ("vietnamese", "thuowngj"),
+        ("empty", ""),
+        ("after_space", "word "),
+    ];
+
+    for (name, keys) in scenarios {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                let mut engine = type_sequence(InputMethod::Telex, keys);
+                // Simulate Shift+Backspace
+                black_box(engine.on_key_ext(DELETE_KEY, false, true, false))
+            });
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_simple_char_backspace,
@@ -235,7 +260,8 @@ criterion_group!(
     bench_consecutive_backspaces,
     bench_backspace_after_transform,
     bench_backspace_at_boundary,
-    bench_worst_case
+    bench_worst_case,
+    bench_shift_backspace
 );
 
 criterion_main!(benches);

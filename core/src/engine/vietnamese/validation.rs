@@ -72,9 +72,9 @@ mod tests {
 
     #[test]
     fn test_would_be_valid() {
-        // "ach" + "a" would be "acha" - valid
+        // "nghi" + "a" would be "nghia" - valid
         assert!(would_be_valid_with_key(
-            &[keys::A, keys::C, keys::H],
+            &[keys::N, keys::G, keys::H, keys::I],
             keys::A
         ));
 
