@@ -8,6 +8,29 @@
 import Cocoa
 import ApplicationServices
 
+// MARK: - Break Key Detection
+
+/// Check if key is a break key (space, punctuation, arrows, etc.)
+/// When shift=true, also treat number keys as break (they produce !@#$%^&*())
+private func isBreakKey(_ keyCode: CGKeyCode, shift: Bool) -> Bool {
+    // Standard break keys: space, tab, return, arrows, punctuation
+    let standardBreak: Set<CGKeyCode> = [
+        31, 48, 36, 76, 53,  // space, tab, return, enter, esc
+        123, 124, 125, 126,  // left, right, down, up arrows
+        47, 43, 44, 41, 39, 33, 30, 42, 24, 27, 50  // punctuation: . , / ; ' [ ] \ = - `
+    ]
+    
+    if standardBreak.contains(keyCode) { return true }
+    
+    // Shifted number keys produce symbols: !@#$%^&*()
+    if shift {
+        let numberKeys: Set<CGKeyCode> = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25]
+        return numberKeys.contains(keyCode)
+    }
+    
+    return false
+}
+
 // MARK: - Input Manager
 
 class InputManager: LifecycleManaged {
@@ -29,6 +52,7 @@ class InputManager: LifecycleManaged {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var bridge: RustBridge
+    private var mouseMonitor: Any?  // NSEvent monitor for mouse clicks
     
     // Running state for LifecycleManaged protocol
     private(set) var isRunning: Bool = false
@@ -132,6 +156,9 @@ class InputManager: LifecycleManaged {
         isRunning = true
         Log.info("InputManager started")
         
+        // Start NSEvent global monitor for mouse events
+        startMouseMonitor()
+        
         // Start per-app mode manager
         PerAppModeManager.shared.start()
         
@@ -159,11 +186,31 @@ class InputManager: LifecycleManaged {
         ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
         ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
         
+        // Stop mouse monitor
+        if let monitor = mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitor = nil
+        }
+        
         PerAppModeManager.shared.stop()
         InputSourceMonitor.shared.stop()
         
         isRunning = false
         Log.info("InputManager stopped")
+    }
+    
+    // MARK: - Mouse Monitoring
+    
+    /// Start NSEvent global monitor for mouse events
+    /// This is more reliable than CGEventTap for detecting mouse clicks
+    private func startMouseMonitor() {
+        // Monitor both mouseDown and mouseUp to catch clicks and drag-selects
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] _ in
+            // Clear all buffers on mouse click (user may be selecting/deleting text)
+            ime_clear_all()
+            TextInjector.shared.clearSessionBuffer()
+            Log.info("Mouse click detected - cleared all buffers")
+        }
     }
     
     // MARK: - Configuration

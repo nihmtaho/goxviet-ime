@@ -159,6 +159,58 @@ struct AdvancedSettingsView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 
+                // Memory Profiling Section
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Memory Profiling")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Real-time memory usage monitoring and analysis")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            NavigationLink {
+                                MemoryProfilingView()
+                            } label: {
+                                Label("Open Profiler", systemImage: "arrow.right")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        
+                        Divider()
+                        
+                        // Quick stats
+                        HStack(spacing: 16) {
+                            QuickStatView(
+                                label: "Current Usage",
+                                value: MemoryProfiler.shared.currentStats.formattedUsedMemory,
+                                icon: "memorychip"
+                            )
+                            
+                            QuickStatView(
+                                label: "Peak",
+                                value: MemoryProfiler.shared.currentStats.formattedPeakMemory,
+                                icon: "arrow.up.circle"
+                            )
+                            
+                            QuickStatView(
+                                label: "Available",
+                                value: MemoryProfiler.shared.currentStats.formattedAvailableMemory,
+                                icon: "externaldrive"
+                            )
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Memory Profiling", systemImage: "cpu")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                
                 // Shortcuts Management
                 GroupBox {
                     VStack(spacing: 12) {
@@ -304,6 +356,34 @@ struct AdvancedSettingsView: View {
             return "\(version) (\(build))"
         }
         return "Unknown"
+    }
+}
+
+// Quick Stat Component for Memory Preview
+struct QuickStatView: View {
+    let label: String
+    let value: String
+    let icon: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundColor(.accentColor)
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
     }
 }
 

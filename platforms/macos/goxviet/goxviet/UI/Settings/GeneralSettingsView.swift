@@ -18,6 +18,10 @@ struct GeneralSettingsView: View {
     @State private var showResetConfirmation = false
     @State private var showImportExport = false
     
+    // Shortcut settings
+    @State private var currentShortcut: KeyboardShortcut = KeyboardShortcut.load()
+    @State private var isRecordingShortcut = false
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -175,6 +179,115 @@ struct GeneralSettingsView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 
+                // Keyboard Shortcut Section
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Toggle Vietnamese Input")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Shortcut to switch between Vietnamese and English")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            // Display current shortcut
+                            HStack(spacing: 4) {
+                                ForEach(currentShortcut.displayParts, id: \.self) { part in
+                                    Text(part)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(Color(nsColor: .controlBackgroundColor))
+                                        .cornerRadius(4)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                                        )
+                                }
+                            }
+                            .padding(.trailing, 8)
+                            
+                            Button(isRecordingShortcut ? "Recording..." : "Change") {
+                                isRecordingShortcut = true
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isRecordingShortcut)
+                        }
+                        
+                        // Conflict warning (if any)
+                        if let conflict = currentShortcut.conflictInfo {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                    .font(.system(size: 12))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Warning: Potential Conflict")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                    Text(conflict.message)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                        
+                        Divider()
+                        
+                        // Preset shortcuts
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Quick Presets")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                            
+                            HStack(spacing: 8) {
+                                ForEach(Array(KeyboardShortcut.presets.enumerated()), id: \.offset) { idx, preset in
+                                    Button {
+                                        applyShortcut(preset)
+                                    } label: {
+                                        Text(preset.displayString)
+                                            .font(.system(size: 10))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(preset == currentShortcut ? Color.accentColor.opacity(0.15) : Color(nsColor: .controlBackgroundColor))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(preset == currentShortcut ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: preset == currentShortcut ? 1.5 : 0.5)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Keyboard Shortcut", systemImage: "command.circle")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .sheet(isPresented: $isRecordingShortcut) {
+                    ShortcutRecorderSheet(
+                        isRecording: $isRecordingShortcut,
+                        onComplete: { newShortcut in
+                            applyShortcut(newShortcut)
+                            isRecordingShortcut = false
+                        },
+                        onCancel: {
+                            isRecordingShortcut = false
+                        }
+                    )
+                }
+                
                 // Quick Actions
                 GroupBox {
                     HStack(spacing: 12) {
@@ -227,6 +340,24 @@ struct GeneralSettingsView: View {
         autoDisableForNonLatin = true
         
         Log.info("General settings reset to defaults")
+    }
+    
+    private func applyShortcut(_ shortcut: KeyboardShortcut) {
+        guard shortcut.isValid else {
+            Log.warning("Invalid shortcut attempted: \(shortcut)")
+            return
+        }
+        
+        currentShortcut = shortcut
+        shortcut.save()
+        
+        // Notify InputManager to update shortcut
+        NotificationCenter.default.post(
+            name: .shortcutChanged,
+            object: shortcut
+        )
+        
+        Log.info("Shortcut changed to: \(shortcut.displayString)")
     }
 }
 

@@ -10,6 +10,7 @@ import SwiftUI
 struct AboutSettingsView: View {
     @EnvironmentObject var updateManager: UpdateManager
     @State private var showChangelog = false
+    @State private var showUpdateWindow = false
     
     var body: some View {
         ScrollView {
@@ -181,41 +182,125 @@ struct AboutSettingsView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 
-                // TODO: Update Section (UpdateManager not implemented yet)
-                /*
-                if updateManager.hasUpdate {
-                    GroupBox {
-                        VStack(spacing: 12) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Update Available")
-                                        .font(.system(size: 13, weight: .semibold))
-                                    Text("Version \(updateManager.latestVersion) is ready to install")
+                // Software Update Section
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                if updateManager.isChecking {
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .scaleEffect(0.8)
+                                        Text("Checking for updates...")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    Text("Please wait...")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                } else if updateManager.updateAvailable {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("Update Available")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    if let version = updateManager.latestVersion {
+                                        Text("Version \(version) is ready to install")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                } else {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("You're up to date")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    Text(updateManager.statusMessage)
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                 }
-                                
-                                Spacer()
-                                
-                                Button("Update Now") {
-                                    // Handle update
+                            }
+                            
+                            Spacer()
+                            
+                            if updateManager.updateAvailable {
+                                Button {
+                                    updateManager.downloadUpdate()
+                                    showUpdateWindow = true
+                                } label: {
+                                    Label("Update Now", systemImage: "arrow.down.circle.fill")
                                 }
                                 .buttonStyle(.borderedProminent)
+                            } else {
+                                Button {
+                                    updateManager.checkForUpdates(userInitiated: true)
+                                } label: {
+                                    Label(updateManager.isChecking ? "Checking..." : "Check for Updates", 
+                                          systemImage: "arrow.clockwise")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(updateManager.isChecking)
                             }
                         }
-                        .padding(8)
-                    } label: {
-                        Label("Updates", systemImage: "arrow.down.circle")
-                            .font(.system(size: 14, weight: .semibold))
+                        
+                        // Last checked info
+                        if let lastChecked = updateManager.lastChecked, !updateManager.isChecking {
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                Text("Last checked: \(formatDate(lastChecked))")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                            .padding(.top, 4)
+                        }
+                        
+                        // Download progress (if downloading)
+                        if updateManager.isInstalling {
+                            VStack(spacing: 8) {
+                                ProgressView(value: updateManager.downloadProgress)
+                                    .progressViewStyle(.linear)
+                                HStack {
+                                    Text("\(Int(updateManager.downloadProgress * 100))% downloaded")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Button("Cancel") {
+                                        updateManager.cancelDownload()
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
+                                }
+                            }
+                            .padding(.top, 8)
+                        }
                     }
+                    .padding(8)
+                } label: {
+                    Label("Software Update", systemImage: "arrow.down.circle")
+                        .font(.system(size: 14, weight: .semibold))
                 }
-                */
+                .sheet(isPresented: $showUpdateWindow) {
+                    UpdateWindowView()
+                        .environmentObject(updateManager)
+                }
                 
                 Spacer()
             }
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

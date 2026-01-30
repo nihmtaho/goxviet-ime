@@ -38,6 +38,9 @@ class TextInjector {
     
     private let semaphore = DispatchSemaphore(value: 1)
     
+    /// Session buffer for tracking full text (used for selectAll method in special apps)
+    private var sessionBuffer: String = ""
+    
     private init() {}
     
     // MARK: - Public API
@@ -59,6 +62,12 @@ class TextInjector {
         case .axDirect:
             injectViaAXWithFallback(bs: bs, text: text, proxy: proxy)
         }
+    }
+    
+    private enum AXResult {
+        case success
+        case axFailure
+        case browserOverride
     }
     
     // MARK: - Injection Methods
@@ -143,7 +152,7 @@ class TextInjector {
         // Step 1: Clear suggestion if it exists
         if hasSuggestion {
             postKey(KeyCode.forwardDelete, source: src, proxy: proxy)
-            usleep(2000)
+            usleep(3000)  // CRITICAL: 3ms delay for Spotlight to process suggestion removal
             Log.info("autocomplete: cleared suggestion via Forward Delete")
         }
         
@@ -152,7 +161,7 @@ class TextInjector {
             postKey(KeyCode.backspace, source: src, proxy: proxy)
             usleep(1000)
         }
-        if bs > 0 { usleep(3000) }
+        if bs > 0 { usleep(5000) }  // CRITICAL: 5ms delay after backspaces for stable rendering
         
         // Step 3: Type replacement text
         postText(text, source: src, proxy: proxy)
@@ -164,14 +173,19 @@ class TextInjector {
     /// AX API direct text manipulation for browser address bars
     /// Bypasses autocomplete behavior by directly setting text field value via Accessibility API
     /// Returns true if successful, false if caller should fallback to synthetic events
-    private func injectViaAX(bs: Int, text: String) -> Bool {
+    // MARK: - AX API Direct Injection
+    
+    /// AX API direct text manipulation for browser address bars
+    /// Bypasses autocomplete behavior by directly setting text field value via Accessibility API
+    /// Returns AXResult indicating success, failure, or browser override
+    private func injectViaAX(bs: Int, text: String) -> AXResult {
         // Get focused element
         let systemWide = AXUIElementCreateSystemWide()
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
               let ref = focusedRef else {
             Log.info("AX: no focus")
-            return false
+            return .axFailure
         }
         let axEl = ref as! AXUIElement
         
@@ -179,7 +193,7 @@ class TextInjector {
         var valueRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(axEl, kAXValueAttribute as CFString, &valueRef) == .success else {
             Log.info("AX: no value")
-            return false
+            return .axFailure
         }
         let fullText = (valueRef as? String) ?? ""
         
@@ -188,12 +202,12 @@ class TextInjector {
         guard AXUIElementCopyAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
               let axRange = rangeRef else {
             Log.info("AX: no range")
-            return false
+            return .axFailure
         }
         var range = CFRange()
         guard AXValueGetValue(axRange as! AXValue, .cfRange, &range), range.location >= 0 else {
             Log.info("AX: bad range")
-            return false
+            return .axFailure
         }
         
         // Work in UTF-16 units to align with AX ranges
@@ -226,14 +240,13 @@ class TextInjector {
         
         // Debug logging
         Log.info("AX: cursor=\(cursor), selection=\(selection), hasAutocomplete=\(hasAutocompleteSuggestion)")
-        Log.info("  prefix: '\(prefix)' text: '\(text)' suffix: '\(suffix)'")
         Log.info("  newText: '\(newText)'")
         
         // Step 1: Write new value (WITHOUT suggestion content)
         // This deletes backspace chars, inserts new text, and OMITS the suggestion entirely
         guard AXUIElementSetAttributeValue(axEl, kAXValueAttribute as CFString, newText as CFTypeRef) == .success else {
             Log.info("AX: write failed")
-            return false
+            return .axFailure
         }
         
         // Step 2: Set cursor position to end of inserted text
@@ -245,22 +258,26 @@ class TextInjector {
             Log.info("AX: cursor set to \(newCursorLocation), selection cleared, result=\(result.rawValue)")
         }
         
-        // Step 3: Read back text to verify no suggestion was auto-added
-        // If browser re-triggered autocomplete, we detect and fallback
+        // Step 3: Verify content
+        // Read back text to verify no suggestion was auto-added immediately
         var checkValueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(axEl, kAXValueAttribute as CFString, &checkValueRef) == .success,
            let verifyText = checkValueRef as? String {
-            Log.info("AX: verified text='\(verifyText)' (len=\(verifyText.count))")
             
-            // If text got longer (browser re-added suggestion), fallback is needed
-            // This is detected by caller when text differs from expected
+            // If text got longer than calculated newText, browser re-added suggestion
             if verifyText.count > newText.count {
-                Log.info("AX: WARNING - browser re-added content after write, len increased from \(newText.count) to \(verifyText.count)")
+                Log.info("AX: VERIFY FAILED - browser override (len \(newText.count) -> \(verifyText.count))")
+                return .browserOverride
+            }
+            if verifyText != newText {
+                 Log.info("AX: text verification mismatch but not override")
+            } else {
+                 Log.info("AX: verify OK")
             }
         }
         
         Log.send("ax", bs, text)
-        return true
+        return .success
     }
     
     /// Try AX injection with retries, fallback to selection method if browser re-adds content
@@ -278,7 +295,7 @@ class TextInjector {
             }
             
             // Try AX injection (will verify and detect if browser re-adds content)
-            let result = injectViaAXWithVerify(bs: bs, text: text)
+            let result = injectViaAX(bs: bs, text: text)
             
             switch result {
             case .success:
@@ -304,66 +321,43 @@ class TextInjector {
         }
     }
     
-    /// Result of AX injection attempt
-    enum AXResult {
-        case success          // Text written correctly, no browser override
-        case browserOverride  // Browser re-added content via autocomplete
-        case axFailure        // AX API failed or unreachable
-    }
+
     
     /// Perform AX injection and verify result
     /// Returns whether browser honored our text write or re-triggered autocomplete
-    private func injectViaAXWithVerify(bs: Int, text: String) -> AXResult {
-        guard injectViaAX(bs: bs, text: text) else {
-            return .axFailure
+
+    
+    // MARK: - Session Buffer Management
+    
+    /// Update session buffer with new composed text
+    /// Called before injection to track full session text for selectAll method
+    func updateSessionBuffer(backspace: Int, newText: String) {
+        if backspace > 0 && sessionBuffer.count >= backspace {
+            sessionBuffer.removeLast(backspace)
         }
-        
-        // Give browser a moment to process our write and potential autocomplete
-        usleep(50000) // 50ms - sufficient for autocomplete re-trigger
-        
-        // Read back text to verify browser didn't override us
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
-              let ref = focusedRef else {
-            Log.info("AX: verify - lost focus")
-            return .axFailure
-        }
-        
-        let axEl = ref as! AXUIElement
-        var valueRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(axEl, kAXValueAttribute as CFString, &valueRef) == .success,
-              let currentText = valueRef as? String else {
-            Log.info("AX: verify - can't read text")
-            return .axFailure
-        }
-        
-        // Check if browser added extra content (autocomplete suggestion)
-        // Expected: deletion happened + new text inserted
-        // If longer than expected, browser added something
-        let expectedNewLength = text.count
-        
-        Log.info("AX: verify - expected=\(expectedNewLength), actual=\(currentText.count)")
-        
-        if currentText.count > expectedNewLength {
-            Log.info("AX: VERIFY FAILED - browser re-added content (len \(expectedNewLength) → \(currentText.count))")
-            return .browserOverride
-        }
-        
-        if currentText == text {
-            Log.info("AX: VERIFY OK - text matches exactly")
-            return .success
-        }
-        
-        // Text doesn't match exactly but not longer (could be encoding difference)
-        Log.info("AX: VERIFY WARNING - text mismatch but not override")
-        return .success
+        sessionBuffer.append(newText)
+    }
+    
+    /// Clear session buffer (call on focus change, submit, mouse click, etc.)
+    func clearSessionBuffer() {
+        sessionBuffer = ""
+    }
+    
+    /// Set session buffer to specific value (for restoring after paste, etc.)
+    func setSessionBuffer(_ text: String) {
+        sessionBuffer = text
+    }
+    
+    /// Get current session buffer
+    func getSessionBuffer() -> String {
+        return sessionBuffer
     }
     
     // MARK: - Helpers
     
     /// Post multiple backspace events in batch (faster than loop with delays)
     /// Reduces event loop overhead by posting events consecutively
+    /// CRITICAL: Never use proxy - causes event loop and duplicate keystrokes
     private func postBackspaces(_ count: Int, source: CGEventSource, proxy: CGEventTapProxy? = nil) {
         guard count > 0 else { return }
         
@@ -373,13 +367,9 @@ class TextInjector {
             dn.setIntegerValueField(.eventSourceUserData, value: eventMarker)
             up.setIntegerValueField(.eventSourceUserData, value: eventMarker)
             
-            if let proxy = proxy {
-                dn.tapPostEvent(proxy)
-                up.tapPostEvent(proxy)
-            } else {
-                dn.post(tap: .cgSessionEventTap)
-                up.post(tap: .cgSessionEventTap)
-            }
+            // ALWAYS post via cgSessionEventTap - never via proxy to avoid event loop
+            dn.post(tap: .cgSessionEventTap)
+            up.post(tap: .cgSessionEventTap)
         }
     }
     
@@ -401,6 +391,7 @@ class TextInjector {
     }
     
     /// Post text in chunks (CGEvent has 20-char limit)
+    /// CRITICAL: Never use proxy - causes event loop and duplicate keystrokes
     private func postText(_ text: String, source: CGEventSource, delay: UInt32 = 0, proxy: CGEventTapProxy? = nil) {
         let utf16 = Array(text.utf16)
         var offset = 0
@@ -416,13 +407,10 @@ class TextInjector {
             dn.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
             up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
             
-            if let proxy = proxy {
-                dn.tapPostEvent(proxy)
-                up.tapPostEvent(proxy)
-            } else {
-                dn.post(tap: .cgSessionEventTap)
-                up.post(tap: .cgSessionEventTap)
-            }
+            // ALWAYS post via cgSessionEventTap - never via proxy to avoid event loop
+            dn.post(tap: .cgSessionEventTap)
+            up.post(tap: .cgSessionEventTap)
+            
             if delay > 0 { usleep(delay) }
             offset = end
         }
@@ -488,8 +476,53 @@ private struct BundleConstants {
     ]
 }
 
+// MARK: - Detection Cache
+
+/// Cache for detectMethod() - avoids expensive AX queries on every keystroke
+/// Uses time-based TTL (200ms) + app switch invalidation for safety
+/// PERFORMANCE: Uses CFAbsoluteTimeGetCurrent() instead of Date() for faster timestamp
+private enum DetectionCache {
+    static var result: (method: InjectionMethod, delays: (UInt32, UInt32, UInt32))?
+    static var timestamp: CFAbsoluteTime = 0
+    static var lastLoggedKey: String = ""  // Only log when method+app changes
+    static let ttl: CFAbsoluteTime = 0.2  // 200ms
+
+    static func get() -> (InjectionMethod, (UInt32, UInt32, UInt32))? {
+        guard let cached = result,
+              CFAbsoluteTimeGetCurrent() - timestamp < ttl else { return nil }
+        return (cached.method, cached.delays)
+    }
+
+    static func set(_ method: InjectionMethod, _ delays: (UInt32, UInt32, UInt32), logKey: String) {
+        result = (method, delays)
+        timestamp = CFAbsoluteTimeGetCurrent()
+        // Only log when method+app combination changes
+        if logKey != lastLoggedKey {
+            lastLoggedKey = logKey
+            Log.method(logKey)
+        }
+    }
+
+    static func clear() {
+        result = nil
+        timestamp = 0
+    }
+}
+
+/// Clear detection cache (call on app switch)
+func clearDetectionCache() {
+    DetectionCache.clear()
+}
+
+// MARK: - Method Detection
+
 /// Detect optimal injection method based on focused app and UI element
 func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
+    // Check cache first (200ms TTL)
+    if let cached = DetectionCache.get() {
+        return cached
+    }
+    
     // Get focused element and its owning app (works for overlays like Spotlight)
     let systemWide = AXUIElementCreateSystemWide()
     var focused: CFTypeRef?
@@ -521,64 +554,73 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     
     guard let bundleId = bundleId else { return (.fast, (200, 800, 500)) }
     
-    // Debug: log bundle and role for investigation
-    Log.info("detect: \(bundleId) role=\(role ?? "nil")")
+    // Helper to cache and return result (only logs when method+app changes)
+    func cached(_ m: InjectionMethod, _ d: (UInt32, UInt32, UInt32), _ methodName: String) -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
+        let logKey = "\(methodName) [\(bundleId)] role=\(role ?? "nil")"
+        DetectionCache.set(m, d, logKey: logKey)
+        return (m, d)
+    }
     
     // Selection method for autocomplete UI elements (ComboBox, SearchField)
-    if role == "AXComboBox" { Log.method("sel:combo"); return (.selection, (0, 0, 0)) }
-    if role == "AXSearchField" { Log.method("sel:search"); return (.selection, (0, 0, 0)) }
+    if role == "AXComboBox" { return cached(.selection, (0, 0, 0), "sel:combo") }
+    if role == "AXSearchField" { return cached(.selection, (0, 0, 0), "sel:search") }
     
-    // Spotlight - use AX API direct method to prevent character duplication (dd → dđ bug)
-    // AX API bypasses autocomplete conflicts and ensures stable text injection
-    // Also check systemuiserver (fallback when Spotlight runs under system UI server process)
+    // Spotlight - use axDirect with no delays (matching gonhanh.org)
     if bundleId == "com.apple.Spotlight" || bundleId == "com.apple.systemuiserver" { 
-        Log.method("ax:spotlight")
-        return (.axDirect, (0, 0, 0)) 
+        return cached(.axDirect, (0, 0, 0), "ax:spotlight")
     }
     
-    // Chromium-based browser address bars - use autocomplete method
-    // Forward Delete clears suggestion, Backspace removes user-typed chars
+    // Arc/Dia browser - use selection method (same as Chrome which works)
+    let theBrowserCompany = ["company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia"]
+    if theBrowserCompany.contains(bundleId) && (role == "AXTextField" || role == "AXTextArea") {
+        return cached(.axDirect, (0, 0, 0), "ax:arc")
+    }
+    
+    // Chromium-based browser address bars - use selection method
     if BundleConstants.chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
-        Log.method("auto:chromium-addr")
-        return (.autocomplete, (0, 0, 0))
+        return cached(.selection, (0, 0, 0), "sel:chromium-addr")
     }
     
-    // Firefox-based browsers - use autocomplete method for address bar
-    if BundleConstants.firefoxBrowsers.contains(bundleId) && (role == "AXTextField" || role == "AXWindow") {
-        Log.method("auto:firefox-addr")
-        return (.autocomplete, (0, 0, 0))
+    // Firefox-based browsers - selection for address bar, slow for content
+    if BundleConstants.firefoxBrowsers.contains(bundleId) {
+        if role == "AXTextField" {
+            return cached(.selection, (0, 0, 0), "sel:firefox-addr")
+        } else {
+            return cached(.slow, (3000, 8000, 3000), "slow:firefox")
+        }
     }
     
-    // Safari - use selection method (different behavior from Chromium)
+    // Safari - use selection method
     if BundleConstants.safariBrowsers.contains(bundleId) && role == "AXTextField" {
-        Log.method("sel:safari")
-        return (.selection, (0, 0, 0))
+        return cached(.selection, (0, 0, 0), "sel:safari")
     }
-    if role == "AXTextField" && bundleId.hasPrefix("com.jetbrains") { Log.method("sel:jb"); return (.selection, (0, 0, 0)) }
+    if role == "AXTextField" && bundleId.hasPrefix("com.jetbrains") { 
+        return cached(.selection, (0, 0, 0), "sel:jb") 
+    }
     
-    // Microsoft Office apps - use backspace method instead of selection
-    // Selection method conflicts with Office's autocomplete/suggestion features
-    if bundleId == "com.microsoft.Excel" { Log.method("slow:excel"); return (.slow, (3000, 8000, 3000)) }
-    if bundleId == "com.microsoft.Word" { Log.method("slow:word"); return (.slow, (3000, 8000, 3000)) }
+    // Microsoft Office apps - use backspace method
+    if bundleId == "com.microsoft.Excel" { return cached(.slow, (3000, 8000, 3000), "slow:excel") }
+    if bundleId == "com.microsoft.Word" { return cached(.slow, (3000, 8000, 3000), "slow:word") }
     
-    // Electron apps - higher delays for reliable text replacement
-    if bundleId == "com.todesktop.230313mzl4w4u92" { Log.method("slow:claude"); return (.slow, (8000, 15000, 8000)) }
-    if bundleId == "notion.id" { Log.method("slow:notion"); return (.slow, (8000, 15000, 8000)) }
+    // Electron apps - higher delays
+    if bundleId == "com.todesktop.230313mzl4w4u92" { return cached(.slow, (8000, 15000, 8000), "slow:claude") }
+    if bundleId == "notion.id" { return cached(.slow, (8000, 15000, 8000), "slow:notion") }
     
-    // Modern editors - instant method with zero delays for maximum speed
-    if BundleConstants.modernEditors.contains(bundleId) { Log.method("instant:editor"); return (.instant, (0, 0, 0)) }
+    // Modern editors - instant method for speed
+    if BundleConstants.modernEditors.contains(bundleId) { 
+        return cached(.instant, (0, 0, 0), "instant:editor") 
+    }
     
-    // Terminal apps - need conservative delays for reliable rendering
-    if BundleConstants.terminals.contains(bundleId) { Log.method("fast:term"); return (.fast, (3000, 8000, 3000)) }
+    // Terminals - high delays for stable rendering
+    if BundleConstants.terminals.contains(bundleId) { 
+        return cached(.slow, (8000, 25000, 8000), "slow:term") 
+    }
     
-    // JetBrains IDEs - need moderate delays for stability
-    if bundleId.hasPrefix("com.jetbrains") { Log.method("slow:jb"); return (.slow, (3000, 8000, 3000)) }
+    // JetBrains IDEs - moderate delays
+    if bundleId.hasPrefix("com.jetbrains") { return cached(.slow, (3000, 8000, 3000), "slow:jb") }
     
-    // OPTIMIZATION: Reduced default delays for better performance
-    // Old: (1000, 3000, 1500) - conservative but slow
-    // New: (0, 0, 0) - fast for most modern apps
-    Log.method("default")
-    return (.instant, (0, 0, 0))
+    // Default: conservative delays
+    return cached(.instant, (1000, 3000, 1500), "default")
 }
 
 // MARK: - Screen Text Reading (for word restoration)
