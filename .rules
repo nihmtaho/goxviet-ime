@@ -97,14 +97,7 @@ Keystroke → Platform (Swift/C++) → FFI (lib.rs) → Rust Engine
 
 ## 5. Implementation Workflow
 
-1. **Plan:** Check `docs/features/` for existing context.
-2. **Modify:**
-     - If changing **Core**, run `cargo test`.
-     - If changing **macOS**, build `GoxViet.xcodeproj` and verify logic.
-3. **Verify:**
-     - Write/Update unit tests.
-     - Ensure **Performance** criteria (<1ms) is met.
-4. **Document:** Update the corresponding markdown file in `.docs/features/` if logic changes.
+**ALWAYS** using `implement-tasks` skill to execute feature implementations.
 
 ## 6. Common Patterns
 

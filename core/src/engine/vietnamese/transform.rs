@@ -58,16 +58,8 @@ impl TransformResult {
 ///
 /// Pattern-based: scans buffer for matching vowels
 pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8) -> TransformResult {
-    let len = buf.len();
-    let mut buffer_keys = [0u16; MAX];
-    for i in 0..len {
-        // SAFE: i < len <= MAX
-        buffer_keys[i] = buf.get(i).map(|c| c.key).unwrap_or(0);
-    }
-    let buffer_keys = &buffer_keys[..len];
-
     // Find target vowels based on key and method
-    let targets = find_tone_targets(&buffer_keys, key, tone_value, method);
+    let targets = find_tone_targets(buf, key, tone_value, method);
 
     if targets.is_empty() {
         return TransformResult::none();
@@ -94,11 +86,19 @@ pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8) -> Tra
 }
 
 /// Find which vowel positions should receive the tone modifier
-fn find_tone_targets(buffer_keys: &[u16], key: u16, tone_value: u8, method: u8) -> Vec<usize> {
-    let mut targets = Vec::with_capacity(buffer_keys.len());
+fn find_tone_targets(buf: &Buffer, key: u16, tone_value: u8, method: u8) -> Vec<usize> {
+    let mut targets = Vec::with_capacity(buf.len());
+
+    // Build buffer_keys array for phonology checks
+    let len = buf.len();
+    let mut buffer_keys = [0u16; MAX];
+    for i in 0..len {
+        buffer_keys[i] = buf.get(i).map(|c| c.key).unwrap_or(0);
+    }
+    let buffer_keys = &buffer_keys[..len];
 
     // Find all vowel positions
-    let mut vowel_positions = Vec::with_capacity(buffer_keys.len());
+    let mut vowel_positions = Vec::with_capacity(len);
     for (i, &k) in buffer_keys.iter().enumerate() {
         if keys::is_vowel(k) {
             vowel_positions.push(i);
@@ -111,11 +111,31 @@ fn find_tone_targets(buffer_keys: &[u16], key: u16, tone_value: u8, method: u8) 
 
     // Telex patterns
     if method == 0 {
-        // aa, ee, oo → circumflex
+        // aa, ee, oo → circumflex (immediate doubling only)
+        // The target vowel must be at the LAST position in the buffer
+        // This ensures "ee" doubling only works for consecutive presses,
+        // not for words like "teacher" where 'e' appears twice non-adjacently
         if tone_value == tone::CIRCUMFLEX && matches!(key, keys::A | keys::E | keys::O) {
-            // Find matching vowel (same key)
+            // If ANY vowel in the buffer already has a tone (horn/circumflex/breve),
+            // don't trigger same-vowel circumflex. The typed vowel should append as raw letter.
+            // Example: "chưa" + "a" → "chưaa" (NOT "chưâ")
+            // Also check for marks (sắc/huyền/hỏi/ngã/nặng) - if a vowel already
+            // has a mark, the typed vowel should append raw for extended vowel patterns.
+            // Example: "quá" + "a" → "quáa" (NOT "quấ")
+            let any_vowel_has_tone_or_mark = buf
+                .iter()
+                .filter(|c| keys::is_vowel(c.key))
+                .any(|c| c.has_tone() || c.has_mark());
+
+            if any_vowel_has_tone_or_mark {
+                // Skip circumflex, return empty targets to append raw vowel
+                return targets;
+            }
+
+            // Find matching vowel (same key) - must be at last position
+            let last_pos = buf.len().saturating_sub(1);
             for &pos in vowel_positions.iter().rev() {
-                if buffer_keys[pos] == key {
+                if buffer_keys[pos] == key && pos == last_pos {
                     targets.push(pos);
                     break;
                 }
@@ -411,39 +431,21 @@ mod tests {
 
     #[test]
     fn test_mark_repositioning_when_adding_circumflex() {
-        // Critical test: Mark MUST reposition when vowel gets diacritic
-        // Scenario: ie + mark → ié (mark on e, Rule 2: second vowel)
-        //           ié + e (e→ê) → iết (mark MUST move to ê, Rule 1: diacritic priority)
+        // Updated: With safety check (Issue #211), double-vowel circumflex BLOCKED when mark exists
+        // Scenario: ie + mark → ié (mark on e)
+        //        ié + e → blocked (NOT iê - circumflex blocked)
         let mut buf = setup_buffer("ie");
 
-        // Step 1: Apply mark (sắc) - should go on 'e' (position 1, Rule 2)
+        // Step 1: Apply mark - should go on 'e' (position 1)
         let result = apply_mark(&mut buf, mark::SAC, true);
         assert!(result.applied, "Mark should be applied");
-        assert_eq!(
-            buf.get(1).unwrap().mark,
-            mark::SAC,
-            "Mark should be on 'e' initially"
-        );
+        assert_eq!(buf.get(1).unwrap().mark, mark::SAC, "Mark on 'e'");
 
-        // Step 2: Add circumflex to 'e' to make 'ê'
+        // Step 2: Try circumflex - BLOCKED by safety check (mark exists)
         let result = apply_tone(&mut buf, keys::E, tone::CIRCUMFLEX, 0);
-        assert!(result.applied, "Circumflex should be applied");
-        assert_eq!(
-            buf.get(1).unwrap().tone,
-            tone::CIRCUMFLEX,
-            "'e' should become 'ê'"
-        );
-
-        // Step 3: Verify mark is STILL on position 1 (now 'ê')
-        // The mark should have been repositioned automatically by apply_tone
-        assert_eq!(
-            buf.get(1).unwrap().mark,
-            mark::SAC,
-            "Mark should stay on 'ê' (diacritic priority)"
-        );
-
-        // Verify 'i' has no mark
-        assert_eq!(buf.get(0).unwrap().mark, 0, "'i' should have no mark");
+        assert!(!result.applied, "Circumflex blocked");
+        assert_eq!(buf.get(1).unwrap().tone, tone::NONE, "No circumflex");
+        assert_eq!(buf.get(1).unwrap().mark, mark::SAC, "Mark remains");
     }
 
     #[test]

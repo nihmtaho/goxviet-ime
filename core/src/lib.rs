@@ -489,10 +489,7 @@ pub unsafe extern "C" fn ime_free_string(s: *mut std::os::raw::c_char) {
 pub extern "C" fn ime_set_shortcuts_enabled(enabled: bool) {
     let mut guard = lock_engine();
     if let Some(ref mut e) = *guard {
-        // Enable/disable all shortcuts in the table
-        for shortcut in e.shortcuts_mut().iter_mut() {
-            shortcut.enabled = enabled;
-        }
+        e.shortcuts_enabled = enabled;
     }
 }
 

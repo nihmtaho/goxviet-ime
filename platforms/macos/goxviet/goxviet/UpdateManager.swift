@@ -191,7 +191,10 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
 
     func checkForUpdates(userInitiated: Bool) {
         // Prevent overlapping checks
-        if isChecking { return }
+        if isChecking { 
+            Log.warning("Update check already in progress, skipping")
+            return 
+        }
 
         DispatchQueue.main.async {
             self.isChecking = true
@@ -202,17 +205,48 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         var request = URLRequest(url: apiURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("GoxViet-Update-Agent", forHTTPHeaderField: "User-Agent")
+        request.cachePolicy = .reloadIgnoringLocalCacheData // Always fetch fresh data
 
         makeAPISession().dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
 
             if let error = error {
-                self.finishCheckWithError("Network error: \(error.localizedDescription)", userInitiated: userInitiated)
+                let nsError = error as NSError
+                var errorMessage = "Network error: \(error.localizedDescription)"
+                
+                // Provide more specific error messages
+                if nsError.code == NSURLErrorNotConnectedToInternet {
+                    errorMessage = "No internet connection. Please check your network."
+                } else if nsError.code == NSURLErrorTimedOut {
+                    errorMessage = "Request timed out. Please try again."
+                } else if nsError.code == NSURLErrorCannotFindHost {
+                    errorMessage = "Cannot reach update server. Please try again later."
+                }
+                
+                self.finishCheckWithError(errorMessage, userInitiated: userInitiated)
+                Log.error("Update check failed: \(error)")
                 return
             }
 
-            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                self.finishCheckWithError("Unexpected response from update server", userInitiated: userInitiated)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                self.finishCheckWithError("Invalid response from update server", userInitiated: userInitiated)
+                return
+            }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let errorMessage: String
+                switch httpResponse.statusCode {
+                case 404:
+                    errorMessage = "Update information not found"
+                case 403:
+                    errorMessage = "Access to update server denied"
+                case 500...599:
+                    errorMessage = "Update server is temporarily unavailable"
+                default:
+                    errorMessage = "Unexpected response from update server (HTTP \(httpResponse.statusCode))"
+                }
+                self.finishCheckWithError(errorMessage, userInitiated: userInitiated)
+                Log.error("Update check HTTP error: \(httpResponse.statusCode)")
                 return
             }
 
@@ -226,6 +260,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
                 self.handleRelease(release, userInitiated: userInitiated)
             } catch {
                 self.finishCheckWithError("Unable to parse update information", userInitiated: userInitiated)
+                Log.error("Update check parse error: \(error)")
             }
         }.resume()
     }

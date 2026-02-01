@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 // ============================================================
 // Core FFI Functions
@@ -69,13 +70,33 @@ void ime_instant_restore(bool enabled);
 // ============================================================
 
 /// Add a text expansion shortcut
-void ime_add_shortcut(const char *trigger, const char *replacement);
+/// Returns true on success, false on error
+bool ime_add_shortcut(const char *trigger, const char *replacement);
 
 /// Remove a shortcut
 void ime_remove_shortcut(const char *trigger);
 
 /// Clear all shortcuts
 void ime_clear_shortcuts(void);
+
+/// Export shortcuts as JSON string (caller must free with ime_free_string)
+char *ime_export_shortcuts_json(void);
+
+/// Import shortcuts from JSON string
+/// Returns number of shortcuts imported, or -1 on error
+int32_t ime_import_shortcuts_json(const char *json);
+
+/// Enable or disable text expansion shortcuts
+void ime_set_shortcuts_enabled(bool enabled);
+
+/// Get current number of shortcuts
+size_t ime_shortcuts_count(void);
+
+/// Get maximum capacity for shortcuts
+size_t ime_shortcuts_capacity(void);
+
+/// Free a string returned by the IME engine
+void ime_free_string(char *str);
 
 // ============================================================
 // Word Restore

@@ -233,7 +233,7 @@ class InputSourceMonitor: LifecycleManaged {
         Log.info("Input source changed: \(inputSourceId)")
         
         // Check if auto-disable is enabled
-        guard AppState.shared.autoDisableForNonLatinEnabled else {
+        guard SettingsManager.shared.autoDisableForNonLatin else {
             return
         }
         
@@ -278,13 +278,13 @@ class InputSourceMonitor: LifecycleManaged {
     /// Temporarily disable Vietnamese input
     private func temporarilyDisable() {
         // Save current state
-        stateBeforeDisable = AppState.shared.isEnabled
+        stateBeforeDisable = SettingsManager.shared.isEnabled
         
         // Only disable if currently enabled
         if stateBeforeDisable {
             isTemporarilyDisabled = true
             
-            // Update Rust engine but don't change AppState.isEnabled
+            // Update Rust engine but don't change SettingsManager.isEnabled
             // This way the menu bar icon still shows the "intended" state
             ime_enabled(false)
             
@@ -331,7 +331,7 @@ class InputSourceMonitor: LifecycleManaged {
     /// This is called by InputManager to determine if key processing should happen
     func shouldSkipVietnameseProcessing() -> Bool {
         // Only skip if auto-disable is enabled AND currently temporarily disabled
-        return AppState.shared.autoDisableForNonLatinEnabled && isTemporarilyDisabled
+        return SettingsManager.shared.autoDisableForNonLatin && isTemporarilyDisabled
     }
     
     /// Get display name for current input source

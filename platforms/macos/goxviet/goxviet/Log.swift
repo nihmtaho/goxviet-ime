@@ -11,11 +11,7 @@ enum Log {
     static let logPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/GoxViet/keyboard.log")
     
-    #if DEBUG
     static var isEnabled: Bool = true
-    #else
-    static var isEnabled: Bool = false
-    #endif
     
     static let maxLogSize: Int = 5 * 1024 * 1024  // 5MB limit
     
