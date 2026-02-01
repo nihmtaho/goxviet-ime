@@ -37,7 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     var isEnabled: Bool {
-        return AppState.shared.isEnabled
+        return SettingsManager.shared.isEnabled
     }
 
     private func applyActivationPolicyFromPreference() {
@@ -283,7 +283,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleMenuItem.tag = 100
         
         // Create custom toggle view
-        toggleView = MenuToggleView(labelText: "Vietnamese Input", isOn: AppState.shared.isEnabled) { [weak self] newState in
+        toggleView = MenuToggleView(labelText: "Vietnamese Input", isOn: SettingsManager.shared.isEnabled) { [weak self] newState in
             self?.handleToggleChanged(newState)
         }
         
@@ -309,7 +309,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         smartModeToggleView = MenuToggleView(
             labelText: "Smart Per-App Mode",
-            isOn: AppState.shared.isSmartModeEnabled
+            isOn: SettingsManager.shared.smartModeEnabled
         ) { [weak self] newState in
             self?.handleSmartModeChanged(newState)
         }
@@ -362,7 +362,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateInputMethodMenuState() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let menu = self.statusItem.menu else { return }
-            let currentMethod = AppState.shared.inputMethod
+            let currentMethod = SettingsManager.shared.inputMethod
             
             if let telexItem = menu.item(withTag: 200) {
                 telexItem.state = (currentMethod == 0) ? .on : .off
@@ -457,7 +457,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard !hasSettingsWindow else { return }
 
             // Read current user preference (may have been changed in Settings UI)
-            let hideFromDock = AppState.shared.hideFromDock
+            let hideFromDock = SettingsManager.shared.hideFromDock
             let policy: NSApplication.ActivationPolicy = hideFromDock ? .accessory : .regular
             
             NSLog("[GoxViet] Restoring Dock policy: hideFromDock=\(hideFromDock), policy=\(policy == .accessory ? "accessory" : "regular")")
@@ -499,7 +499,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Listen for shortcut changes
         let shortcutToken = notificationCenter.addObserver(
-            forName: .shortcutChanged,
+            forName: NSNotification.Name("shortcutChanged"),
             object: nil,
             queue: .main
         ) { _ in
@@ -621,11 +621,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func handleSmartModeChanged(_ newState: Bool) {
-        AppState.shared.isSmartModeEnabled = newState
+        SettingsManager.shared.setSmartModeEnabled(newState)
         
         if newState {
             // Refresh to apply saved state for current app
-            PerAppModeManager.shared.refresh()
+            PerAppModeManagerEnhanced.shared.refresh()
         }
         
         Log.info("Smart Per-App Mode: \(newState ? "ON" : "OFF")")
@@ -635,20 +635,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func toggleVietnamese(_ sender: Any?) {
         // Toggle state
-        let newState = !AppState.shared.isEnabled
+        let newState = !SettingsManager.shared.isEnabled
         handleToggleChanged(newState)
         updateToggleMenuItem()
     }
     
     @objc func selectTelex() {
-        AppState.shared.inputMethod = 0
+        SettingsManager.shared.setInputMethod(0)
         InputManager.shared.setInputMethod(0)
         updateInputMethodMenuState()
         Log.info("Input method: Telex (selected from Menu)")
     }
     
     @objc func selectVNI() {
-        AppState.shared.inputMethod = 1
+        SettingsManager.shared.setInputMethod(1)
         InputManager.shared.setInputMethod(1)
         updateInputMethodMenuState()
         Log.info("Input method: VNI (selected from Menu)")

@@ -232,7 +232,7 @@ final class PerAppModeManagerEnhancedTests: XCTestCase {
     
     func testSetStateForCurrentApp() throws {
         manager.start()
-        AppState.shared.isSmartModeEnabled = true
+        SettingsManager.shared.smartModeEnabled = true
         
         guard let bundleId = manager.getCurrentBundleId() else {
             XCTFail("No current app")
@@ -243,7 +243,7 @@ final class PerAppModeManagerEnhancedTests: XCTestCase {
         manager.setStateForCurrentApp(true)
         
         // Verify saved
-        let saved = AppState.shared.getPerAppMode(bundleId: bundleId)
+        let saved = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
         XCTAssertTrue(saved, "Should save state")
         
         manager.stop()
@@ -251,20 +251,20 @@ final class PerAppModeManagerEnhancedTests: XCTestCase {
     
     func testSetStateRequiresSmartMode() throws {
         manager.start()
-        AppState.shared.isSmartModeEnabled = false
+        SettingsManager.shared.smartModeEnabled = false
         
         guard let bundleId = manager.getCurrentBundleId() else {
             XCTFail("No current app")
             return
         }
         
-        let originalState = AppState.shared.getPerAppMode(bundleId: bundleId)
+        let originalState = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
         
         // Try to save (should be ignored)
         manager.setStateForCurrentApp(!originalState)
         
         // Verify not changed (Smart Mode disabled)
-        let newState = AppState.shared.getPerAppMode(bundleId: bundleId)
+        let newState = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
         // Note: This might still change because AppState doesn't check Smart Mode
         // This is a test of expected behavior
         

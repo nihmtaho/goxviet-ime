@@ -14,6 +14,7 @@ struct GeneralSettingsView: View {
     @Binding var freeToneEnabled: Bool
     @Binding var instantRestoreEnabled: Bool
     @Binding var autoDisableForNonLatin: Bool
+    @Binding var shiftBackspaceEnabled: Bool
     
     @State private var showResetConfirmation = false
     @State private var showImportExport = false
@@ -45,13 +46,7 @@ struct GeneralSettingsView: View {
                             selection: $inputMethod,
                             options: [(0, "Telex"), (1, "VNI")]
                         )
-                        .onChange(of: inputMethod) { newValue in
-                            NotificationCenter.default.post(
-                                name: .inputMethodChanged,
-                                object: newValue
-                            )
-                            Log.info("Input method changed to: \(newValue == 0 ? "Telex" : "VNI")")
-                        }
+                        // SettingsManager handles notification and sync
                         
                         Divider()
                         
@@ -94,13 +89,7 @@ struct GeneralSettingsView: View {
                             systemImage: "doc.text.magnifyingglass",
                             isOn: $modernToneStyle
                         )
-                        .onChange(of: modernToneStyle) { newValue in
-                            NotificationCenter.default.post(
-                                name: .toneStyleChanged,
-                                object: newValue
-                            )
-                            Log.info("Tone style changed to: \(newValue ? "Modern" : "Traditional")")
-                        }
+                        // SettingsManager handles notification and sync
                         
                         Divider()
                         
@@ -110,12 +99,7 @@ struct GeneralSettingsView: View {
                             systemImage: "textformat",
                             isOn: $freeToneEnabled
                         )
-                        .onChange(of: freeToneEnabled) { newValue in
-                            NotificationCenter.default.post(
-                                name: .freeToneChanged,
-                                object: newValue
-                            )
-                        }
+                        // SettingsManager handles notification and sync
                     }
                     .padding(8)
                 } label: {
@@ -132,12 +116,7 @@ struct GeneralSettingsView: View {
                             systemImage: "arrow.uturn.backward",
                             isOn: $escRestoreEnabled
                         )
-                        .onChange(of: escRestoreEnabled) { newValue in
-                            NotificationCenter.default.post(
-                                name: .escRestoreChanged,
-                                object: newValue
-                            )
-                        }
+                        // SettingsManager handles notification and sync
                         
                         Divider()
                         
@@ -147,12 +126,17 @@ struct GeneralSettingsView: View {
                             systemImage: "arrow.clockwise",
                             isOn: $instantRestoreEnabled
                         )
-                        .onChange(of: instantRestoreEnabled) { newValue in
-                            NotificationCenter.default.post(
-                                name: .instantRestoreChanged,
-                                object: newValue
-                            )
-                        }
+                        // SettingsManager handles notification and sync
+                        
+                        Divider()
+                        
+                        ToggleRow(
+                            title: "Shift+Backspace Delete Word",
+                            description: "Quickly delete entire word with Shift+Backspace",
+                            systemImage: "delete.left.fill",
+                            isOn: $shiftBackspaceEnabled
+                        )
+                        // SettingsManager handles notification and sync
                     }
                     .padding(8)
                 } label: {
@@ -169,9 +153,7 @@ struct GeneralSettingsView: View {
                             systemImage: "globe",
                             isOn: $autoDisableForNonLatin
                         )
-                        .onChange(of: autoDisableForNonLatin) { newValue in
-                            AppState.shared.autoDisableForNonLatinEnabled = newValue
-                        }
+                        // SettingsManager handles AppState sync via syncToAppState()
                     }
                     .padding(8)
                 } label: {
@@ -353,7 +335,7 @@ struct GeneralSettingsView: View {
         
         // Notify InputManager to update shortcut
         NotificationCenter.default.post(
-            name: .shortcutChanged,
+            name: NSNotification.Name("shortcutChanged"),
             object: shortcut
         )
         
@@ -397,7 +379,8 @@ extension Notification.Name {
         escRestoreEnabled: .constant(true),
         freeToneEnabled: .constant(false),
         instantRestoreEnabled: .constant(true),
-        autoDisableForNonLatin: .constant(true)
+        autoDisableForNonLatin: .constant(true),
+        shiftBackspaceEnabled: .constant(true)
     )
     .frame(width: 700, height: 600)
 }

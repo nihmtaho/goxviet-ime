@@ -14,7 +14,11 @@ struct AdvancedSettingsView: View {
     let resetAction: () -> Void
     let openLogAction: () -> Void
     
+    @EnvironmentObject var settingsManager: SettingsManager
+    
     @State private var showResetConfirmation = false
+    @State private var showLegacyEncodingWarning = false
+    @State private var pendingEncoding: OutputEncoding?
     @State private var autoRefresh = false
     @State private var refreshTimer: Timer?
     @State private var currentMetrics: EngineMetrics
@@ -38,6 +42,89 @@ struct AdvancedSettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(.bottom, 8)
+                
+                // Output Encoding Section
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Output Encoding")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Choose output text encoding format")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                        }
+                        
+                        Divider()
+                        
+                        HStack {
+                            Text("Encoding:")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                                .frame(width: 80, alignment: .trailing)
+                            
+                            Picker("", selection: $settingsManager.outputEncoding) {
+                                ForEach(OutputEncoding.allCases, id: \.self) { encoding in
+                                    HStack {
+                                        Text(encoding.displayName)
+                                        if encoding.isLegacy {
+                                            Text("(Legacy)")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        }
+                                    }
+                                    .tag(encoding)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 200)
+                        }
+                        .onChange(of: settingsManager.outputEncoding) { _, newValue in
+                            if newValue.isLegacy {
+                                pendingEncoding = newValue
+                                showLegacyEncodingWarning = true
+                            }
+                        }
+                        
+                        // Description for selected encoding
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12))
+                            Text(settingsManager.outputEncoding.description)
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(8)
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(6)
+                        
+                        // Legacy encoding warning banner
+                        if settingsManager.outputEncoding.isLegacy {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                    .font(.system(size: 12))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Legacy Encoding Selected")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                    Text("This encoding is for compatibility with older systems. Use Unicode for modern applications.")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(10)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                    }
+                    .padding(12)
+                }
                 
                 // Engine Metrics Section
                 GroupBox {
@@ -97,6 +184,23 @@ struct AdvancedSettingsView: View {
                                 }
                             } message: {
                                 Text("This will reset all engine metrics. This action cannot be undone.")
+                            }
+                            .alert("Legacy Encoding Warning", isPresented: $showLegacyEncodingWarning) {
+                                Button("Cancel", role: .cancel) {
+                                    // Revert to Unicode
+                                    settingsManager.outputEncoding = .unicode
+                                    pendingEncoding = nil
+                                }
+                                Button("Use Legacy Encoding", role: .destructive) {
+                                    // Keep the selection
+                                    pendingEncoding = nil
+                                }
+                            } message: {
+                                if let encoding = pendingEncoding {
+                                    Text("You selected \(encoding.displayName), which is a legacy encoding. Modern applications should use Unicode (UTF-8) for best compatibility. Continue with legacy encoding?")
+                                } else {
+                                    Text("Legacy encodings may cause compatibility issues.")
+                                }
                             }
                         }
                     }

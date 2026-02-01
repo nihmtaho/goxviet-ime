@@ -32,7 +32,7 @@ struct SettingsWindowCoordinator: View {
     // MARK: - Helpers
     
     private func loadPerAppModes() {
-        perAppModes = AppState.shared.getKnownAppsWithStates()
+        perAppModes = PerAppModeManagerEnhanced.shared.getKnownAppsWithStates()
     }
     
     private func syncSettingsToLegacy() {
@@ -54,7 +54,8 @@ struct GeneralSettingsTab: View {
             escRestoreEnabled: $settingsManager.escRestoreEnabled,
             freeToneEnabled: $settingsManager.freeToneEnabled,
             instantRestoreEnabled: $settingsManager.instantRestoreEnabled,
-            autoDisableForNonLatin: $settingsManager.autoDisableForNonLatin
+            autoDisableForNonLatin: $settingsManager.autoDisableForNonLatin,
+            shiftBackspaceEnabled: $settingsManager.shiftBackspaceEnabled
         )
         .tabItem {
             Label("General", systemImage: "gearshape")
@@ -80,7 +81,7 @@ struct PerAppSettingsTab: View {
     }
     
     private func reloadModes() {
-        perAppModes = AppState.shared.getKnownAppsWithStates()
+        perAppModes = PerAppModeManagerEnhanced.shared.getKnownAppsWithStates()
     }
 }
 
@@ -91,6 +92,7 @@ struct AdvancedSettingsTab: View {
             resetAction: resetMetrics,
             openLogAction: openLog
         )
+        .environmentObject(SettingsManager.shared)
         .tabItem {
             Label("Advanced", systemImage: "slider.horizontal.3")
         }

@@ -72,7 +72,7 @@ class InputManager: LifecycleManaged {
         self.currentShortcut = KeyboardShortcut.load()
         Log.info("Toggle shortcut loaded: \(currentShortcut.displayString)")
         
-        // Load and apply saved settings from AppState
+        // Load and apply saved settings from SettingsManager
         loadSavedSettings()
         
         // Setup observers for configuration changes
@@ -85,34 +85,31 @@ class InputManager: LifecycleManaged {
     }
     
     private func loadSavedSettings() {
+        let settings = SettingsManager.shared
+        
         // Apply saved input method
-        let method = AppState.shared.inputMethod
-        ime_method(UInt8(method))
-        Log.info("Loaded input method: \(method == 0 ? "Telex" : "VNI")")
+        ime_method(UInt8(settings.inputMethod))
+        Log.info("Loaded input method: \(settings.inputMethod == 0 ? "Telex" : "VNI")")
         
         // Apply saved tone style
-        let modernTone = AppState.shared.modernToneStyle
-        ime_modern(modernTone)
-        Log.info("Loaded tone style: \(modernTone ? "Modern" : "Traditional")")
+        ime_modern(settings.modernToneStyle)
+        Log.info("Loaded tone style: \(settings.modernToneStyle ? "Modern" : "Traditional")")
         
         // Apply saved ESC restore setting
-        let escRestore = AppState.shared.escRestoreEnabled
-        ime_esc_restore(escRestore)
-        Log.info("Loaded ESC restore: \(escRestore ? "enabled" : "disabled")")
+        ime_esc_restore(settings.escRestoreEnabled)
+        Log.info("Loaded ESC restore: \(settings.escRestoreEnabled ? "enabled" : "disabled")")
         
         // Apply saved free tone setting
-        let freeTone = AppState.shared.freeToneEnabled
-        ime_free_tone(freeTone)
-        Log.info("Loaded free tone: \(freeTone ? "enabled" : "disabled")")
+        ime_free_tone(settings.freeToneEnabled)
+        Log.info("Loaded free tone: \(settings.freeToneEnabled ? "enabled" : "disabled")")
         
         // Apply saved instant restore setting
-        let instantRestore = AppState.shared.instantRestoreEnabled
-        ime_instant_restore(instantRestore)
-        Log.info("Loaded instant restore: \(instantRestore ? "enabled" : "disabled")")
+        ime_instant_restore(settings.instantRestoreEnabled)
+        Log.info("Loaded instant restore: \(settings.instantRestoreEnabled ? "enabled" : "disabled")")
         
         // Set initial enabled state (will be overridden by per-app mode if enabled)
-        ime_enabled(AppState.shared.isEnabled)
-        Log.info("Initial Gõ Việt input state: \(AppState.shared.isEnabled ? "enabled" : "disabled")")
+        ime_enabled(settings.isEnabled)
+        Log.info("Initial Gõ Việt input state: \(settings.isEnabled ? "enabled" : "disabled")")
     }
     
     // MARK: - Lifecycle
@@ -160,7 +157,7 @@ class InputManager: LifecycleManaged {
         startMouseMonitor()
         
         // Start per-app mode manager
-        PerAppModeManager.shared.start()
+        PerAppModeManagerEnhanced.shared.start()
         
         // Start input source monitor (auto-disable for non-Latin keyboards)
         InputSourceMonitor.shared.start()
@@ -192,7 +189,7 @@ class InputManager: LifecycleManaged {
             mouseMonitor = nil
         }
         
-        PerAppModeManager.shared.stop()
+        PerAppModeManagerEnhanced.shared.stop()
         InputSourceMonitor.shared.stop()
         
         isRunning = false
@@ -232,7 +229,7 @@ class InputManager: LifecycleManaged {
         
         // Add observer for shortcut changes
         let shortcutObserver = NotificationCenter.default.addObserver(
-            forName: .shortcutChanged,
+            forName: NSNotification.Name("shortcutChanged"),
             object: nil,
             queue: .main
         ) { [weak self] notification in
@@ -252,8 +249,10 @@ class InputManager: LifecycleManaged {
     }
     
     func setEnabled(_ enabled: Bool) {
-        // Update AppState
-        AppState.shared.setEnabled(enabled)
+        let settings = SettingsManager.shared
+        
+        // Update SettingsManager
+        settings.setEnabled(enabled)
         
         // Update Rust engine
         ime_enabled(enabled)
@@ -264,29 +263,29 @@ class InputManager: LifecycleManaged {
         Log.info("IME \(enabled ? "enabled" : "disabled")")
         
         // Update per-app state if smart mode is enabled
-        if AppState.shared.isSmartModeEnabled {
-            PerAppModeManager.shared.setStateForCurrentApp(enabled)
+        if settings.smartModeEnabled {
+            PerAppModeManagerEnhanced.shared.setStateForCurrentApp(enabled)
         }
     }
     
     func toggleEnabled() {
-        setEnabled(!AppState.shared.isEnabled)
+        setEnabled(!SettingsManager.shared.isEnabled)
     }
     
     func setInputMethod(_ method: Int) {
-        AppState.shared.inputMethod = method
+        SettingsManager.shared.setInputMethod(method)
         ime_method(UInt8(method))
         Log.info("Input method changed: \(method == 0 ? "Telex" : "VNI")")
     }
     
     func setModernToneStyle(_ modern: Bool) {
-        AppState.shared.modernToneStyle = modern
+        SettingsManager.shared.setModernToneStyle(modern)
         ime_modern(modern)
         Log.info("Modern tone style: \(modern ? "enabled" : "disabled")")
     }
     
     func setInstantRestore(_ enabled: Bool) {
-        AppState.shared.instantRestoreEnabled = enabled
+        SettingsManager.shared.setInstantRestoreEnabled(enabled)
         ime_instant_restore(enabled)
         Log.info("Instant auto-restore: \(enabled ? "enabled" : "disabled")")
     }
@@ -328,7 +327,7 @@ class InputManager: LifecycleManaged {
         }
         
         // 5. If IME is disabled, pass through
-        guard AppState.shared.isEnabled else {
+        guard SettingsManager.shared.isEnabled else {
             return Unmanaged.passUnretained(event)
         }
         
@@ -414,7 +413,14 @@ class InputManager: LifecycleManaged {
         // - On macOS, uppercase is typically (Shift XOR CapsLock).
         // - We still pass `shift` separately to Rust so it can decide when to skip modifiers (e.g., Shift+number).
         let capsLock = flags.contains(.maskAlphaShift)
-        let shift = flags.contains(.maskShift)
+        let shiftFlag = flags.contains(.maskShift)
+        // Robust shift detection: sometimes non-printing key events (like backspace)
+        // may not include the Shift flag. Also check physical key state for left/right shift.
+        let leftShift: CGKeyCode = 56
+        let rightShift: CGKeyCode = 60
+        let leftDown = CGEventSource.keyState(.combinedSessionState, key: leftShift)
+        let rightDown = CGEventSource.keyState(.combinedSessionState, key: rightShift)
+        let shift = shiftFlag || leftDown || rightDown
         let caps = capsLock != shift
         
         let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
@@ -467,7 +473,10 @@ class InputManager: LifecycleManaged {
         }
         
         // Call Rust engine for other keys (use extended API to preserve Shift state)
-        let result = ime_key_ext(keyCode, caps, ctrl, shift)
+        // Respect SettingsManager: only treat Shift as special for engine when user enabled Shift+Backspace
+        // Only let the Rust engine treat Shift specially when the user enabled Shift+Backspace.
+        let useShiftForEngine = (shift && SettingsManager.shared.shiftBackspaceEnabled)
+        let result = ime_key_ext(keyCode, caps, ctrl, useShiftForEngine)
         
         guard let r = result else {
             Log.skip()
@@ -537,8 +546,31 @@ class InputManager: LifecycleManaged {
     /// Handle DELETE key - process immediately through engine (no batching)
     /// Each DELETE is processed individually to maintain correct state
     private func handleDeleteKey(caps: Bool, shift: Bool, ctrl: Bool, proxy: CGEventTapProxy, event: CGEvent) {
+        // Special case: Shift+Backspace deletes entire word (configurable)
+        // Use native macOS shortcut (Option+Backspace) for consistent behavior
+        // Robust shift detection: also consider physical key state in case event flags omitted it.
+        let leftShiftKey: CGKeyCode = 56
+        let rightShiftKey: CGKeyCode = 60
+        let leftIsDown = CGEventSource.keyState(.combinedSessionState, key: leftShiftKey)
+        let rightIsDown = CGEventSource.keyState(.combinedSessionState, key: rightShiftKey)
+        let shiftActive = shift || leftIsDown || rightIsDown
+
+        if shiftActive && SettingsManager.shared.shiftBackspaceEnabled {
+            guard let src = CGEventSource(stateID: .privateState) else { return }
+            
+            // Clear engine buffer since we're deleting the entire word
+            ime_clear_all()
+            
+            // Send Option+Backspace (native macOS word delete)
+            TextInjector.shared.postKey(51, source: src, flags: .maskAlternate, proxy: proxy)
+            Log.info("Shift+DELETE: sent Option+Backspace to delete word")
+            return
+        }
+        
         // Process DELETE through Rust engine (use extended API to preserve Shift state)
-        let result = ime_key_ext(51, caps, ctrl, shift)
+        // When processing DELETE, ensure engine sees Shift only if feature enabled
+        let useShiftForEngine = (shiftActive && SettingsManager.shared.shiftBackspaceEnabled)
+        let result = ime_key_ext(51, caps, ctrl, useShiftForEngine)
         
         if let r = result {
             defer { ime_free(r) }
@@ -650,7 +682,7 @@ class InputManager: LifecycleManaged {
 
 extension InputManager {
     func getCurrentState() -> Bool {
-        return AppState.shared.isEnabled
+        return SettingsManager.shared.isEnabled
     }
     
     func clearComposition() {
@@ -667,12 +699,12 @@ extension InputManager {
     }
     
     func setEscRestore(_ enabled: Bool) {
-        AppState.shared.escRestoreEnabled = enabled
+        SettingsManager.shared.setEscRestoreEnabled(enabled)
         bridge.setEscRestore(enabled)
     }
     
     func setFreeTone(_ enabled: Bool) {
-        AppState.shared.freeToneEnabled = enabled
+        SettingsManager.shared.setFreeToneEnabled(enabled)
         bridge.setFreeTone(enabled)
     }
 }

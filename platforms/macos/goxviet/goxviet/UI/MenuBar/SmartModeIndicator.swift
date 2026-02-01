@@ -10,7 +10,7 @@ import SwiftUI
 /// Menu bar content showing Smart Mode status and current app info
 struct SmartModeIndicator: View {
     
-    @ObservedObject private var appState = AppState.shared
+    @ObservedObject private var settings = SettingsManager.shared
     @State private var currentApp: CurrentAppInfo?
     @State private var recentApps: [String] = []
     @State private var metrics: PerAppModeManagerEnhanced.PerformanceMetrics?
@@ -70,13 +70,13 @@ struct SmartModeIndicator: View {
         HStack {
             Image(systemName: "brain.head.profile")
                 .font(.title2)
-                .foregroundColor(appState.isSmartModeEnabled ? .green : .gray)
+                .foregroundColor(settings.smartModeEnabled ? .green : .gray)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text("Smart Mode")
                     .font(.headline)
                 
-                Text(appState.isSmartModeEnabled ? "Active" : "Inactive")
+                Text(settings.smartModeEnabled ? "Active" : "Inactive")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -84,9 +84,9 @@ struct SmartModeIndicator: View {
             Spacer()
             
             Toggle("", isOn: Binding(
-                get: { appState.isSmartModeEnabled },
+                get: { settings.smartModeEnabled },
                 set: { enabled in
-                    appState.isSmartModeEnabled = enabled
+                    settings.smartModeEnabled = enabled
                     if enabled {
                         PerAppModeManagerEnhanced.shared.refresh()
                     }
@@ -138,7 +138,7 @@ struct SmartModeIndicator: View {
             if let app = currentApp {
                 Button(action: {
                     let newState = !app.isVietnamese
-                    AppState.shared.setEnabled(newState)
+                    SettingsManager.shared.setEnabled(newState)
                     PerAppModeManagerEnhanced.shared.setStateForCurrentApp(newState)
                     loadCurrentApp()
                 }) {
@@ -197,7 +197,7 @@ struct SmartModeIndicator: View {
             
             Spacer()
             
-            let isEnabled = AppState.shared.getPerAppMode(bundleId: bundleId)
+            let isEnabled = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
             Circle()
                 .fill(isEnabled ? Color.green : Color.orange)
                 .frame(width: 6, height: 6)
@@ -262,7 +262,7 @@ struct SmartModeIndicator: View {
         
         let name = PerAppModeManagerEnhanced.shared.getAppName(bundleId)
         let icon = PerAppModeManagerEnhanced.shared.getAppIcon(bundleId)
-        let isVietnamese = AppState.shared.getPerAppMode(bundleId: bundleId)
+        let isVietnamese = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
         
         currentApp = CurrentAppInfo(
             bundleId: bundleId,
@@ -365,9 +365,9 @@ class SmartModeMenuBarItem {
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
         
-        let appState = AppState.shared
-        let isSmartMode = appState.isSmartModeEnabled
-        let isEnabled = appState.isEnabled
+        let settings = SettingsManager.shared
+        let isSmartMode = settings.smartModeEnabled
+        let isEnabled = settings.isEnabled
         
         // Choose icon based on state
         let iconName: String

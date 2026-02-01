@@ -115,7 +115,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             cacheAppMetadata(bundleId, app: frontmostApp)
             addToRecentApps(bundleId)
             
-            if AppState.shared.isSmartModeEnabled {
+            if SettingsManager.shared.smartModeEnabled {
                 restoreModeForCurrentApp()
             }
             
@@ -174,9 +174,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         
         // Save previous app state
         if let previousId = currentBundleId,
-           AppState.shared.isSmartModeEnabled {
-            let currentMode = AppState.shared.isEnabled
-            AppState.shared.setPerAppMode(bundleId: previousId, enabled: currentMode)
+           SettingsManager.shared.smartModeEnabled {
+            let currentMode = SettingsManager.shared.isEnabled
+            SettingsManager.shared.setPerAppMode(bundleId: previousId, enabled: currentMode)
         }
         
         // Update current
@@ -186,7 +186,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         ime_clear()
         
         // Restore mode for new app
-        if AppState.shared.isSmartModeEnabled {
+        if SettingsManager.shared.smartModeEnabled {
             restoreModeForCurrentApp()
         }
         
@@ -211,9 +211,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     private func restoreModeForCurrentApp() {
         guard let bundleId = currentBundleId else { return }
         
-        let savedMode = AppState.shared.getPerAppMode(bundleId: bundleId)
+        let savedMode = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
         
-        AppState.shared.setEnabledSilently(savedMode)
+        SettingsManager.shared.setEnabledSilently(savedMode)
         ime_enabled(savedMode)
         
         DispatchQueue.main.async {
@@ -228,9 +228,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     func setStateForCurrentApp(_ enabled: Bool) {
         guard let bundleId = currentBundleId else { return }
-        guard AppState.shared.isSmartModeEnabled else { return }
+        guard SettingsManager.shared.smartModeEnabled else { return }
         
-        AppState.shared.setPerAppMode(bundleId: bundleId, enabled: enabled)
+        SettingsManager.shared.setPerAppMode(bundleId: bundleId, enabled: enabled)
         
         Log.info("State saved: \(getAppName(bundleId)) → \(enabled ? "Vietnamese" : "English")")
         
@@ -289,7 +289,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         if let cached = appMetadataCache.get(bundleId) {
             return cached.name
         }
-        return AppState.shared.getAppName(bundleId: bundleId)
+        return SettingsManager.shared.getAppName(bundleId: bundleId)
     }
     
     func getAppIcon(_ bundleId: String) -> NSImage? {
@@ -325,6 +325,35 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         switchCount = 0
         cacheHitCount = 0
         Log.info("Cache cleared")
+    }
+    
+    /// Get all known apps with their Vietnamese input states
+    /// - Returns: Dictionary mapping bundle IDs to enabled states
+    func getKnownAppsWithStates() -> [String: Bool] {
+        return SettingsManager.shared.getKnownAppsWithStates()
+    }
+    
+    /// Set per-app mode for a specific app
+    /// - Parameters:
+    ///   - bundleId: Application bundle identifier
+    ///   - enabled: Whether Vietnamese input should be enabled
+    func setPerAppMode(bundleId: String, enabled: Bool) {
+        SettingsManager.shared.setPerAppMode(bundleId: bundleId, enabled: enabled)
+        
+        // Post notification
+        NotificationCenter.default.post(
+            name: .perAppModeChanged,
+            object: bundleId,
+            userInfo: ["enabled": enabled]
+        )
+        
+        Log.info("Per-app mode set: \(getAppName(bundleId)) → \(enabled ? "Vietnamese" : "English")")
+    }
+    
+    /// Clear all per-app settings
+    func clearAllPerAppModes() {
+        SettingsManager.shared.clearAllPerAppModes()
+        Log.info("All per-app modes cleared")
     }
     
     func refresh() {

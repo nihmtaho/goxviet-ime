@@ -87,12 +87,7 @@ struct PerAppSettingsView: View {
                     systemImage: "brain.head.profile",
                     isOn: $smartModeEnabled
                 )
-                .onChange(of: smartModeEnabled) { newValue in
-                    NotificationCenter.default.post(
-                        name: .smartModeChanged,
-                        object: newValue
-                    )
-                }
+                // SettingsManager handles notification
                 
                 if !smartModeEnabled {
                     HStack {
@@ -240,40 +235,26 @@ struct PerAppSettingsView: View {
     }
     
     private func getAppName(from bundleId: String) -> String {
-        // Try to get app name from bundle
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            if let bundle = Bundle(url: url),
-               let name = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String {
-                return name
-            }
-            return url.deletingPathExtension().lastPathComponent
-        }
-        return bundleId
+        return PerAppModeManagerEnhanced.shared.getAppName(bundleId)
     }
     
     private func toggleApp(_ bundleId: String) {
         perAppModes[bundleId]?.toggle()
-        // TODO: Migrate to PerAppModeManagerEnhanced
-        // PerAppModeManager.shared.setEnabled(!perAppModes[bundleId]!, forApp: bundleId)
-        AppState.shared.setPerAppMode(bundleId: bundleId, enabled: !perAppModes[bundleId]!)
+        PerAppModeManagerEnhanced.shared.setPerAppMode(bundleId: bundleId, enabled: perAppModes[bundleId]!)
         reloadAction()
     }
     
     private func bulkAction(enable: Bool) {
         for bundleId in selectedApps {
             perAppModes[bundleId] = enable
-            // TODO: Migrate to PerAppModeManagerEnhanced
-            // PerAppModeManager.shared.setEnabled(!enable, forApp: bundleId)
-            AppState.shared.setPerAppMode(bundleId: bundleId, enabled: !enable)
+            PerAppModeManagerEnhanced.shared.setPerAppMode(bundleId: bundleId, enabled: enable)
         }
         selectedApps.removeAll()
         reloadAction()
     }
     
     private func clearAllSettings() {
-        // TODO: Migrate to PerAppModeManagerEnhanced  
-        // PerAppModeManager.shared.clearAll()
-        AppState.shared.clearAllPerAppModes()
+        PerAppModeManagerEnhanced.shared.clearAllPerAppModes()
         perAppModes.removeAll()
         selectedApps.removeAll()
         reloadAction()

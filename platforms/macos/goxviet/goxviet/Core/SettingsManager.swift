@@ -21,6 +21,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var inputMethod: Int = 0 {
         didSet {
+            saveToDefaults(Keys.inputMethod, value: inputMethod)
             syncToCore()
             postNotification(.inputMethodChanged, value: inputMethod)
         }
@@ -28,6 +29,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var modernToneStyle: Bool = false {
         didSet {
+            saveToDefaults(Keys.modernToneStyle, value: modernToneStyle)
             syncToCore()
             postNotification(.toneStyleChanged, value: modernToneStyle)
         }
@@ -35,6 +37,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var escRestoreEnabled: Bool = true {
         didSet {
+            saveToDefaults(Keys.escRestoreEnabled, value: escRestoreEnabled)
             syncToCore()
             postNotification(.escRestoreChanged, value: escRestoreEnabled)
         }
@@ -42,6 +45,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var freeToneEnabled: Bool = false {
         didSet {
+            saveToDefaults(Keys.freeToneEnabled, value: freeToneEnabled)
             syncToCore()
             postNotification(.freeToneChanged, value: freeToneEnabled)
         }
@@ -49,6 +53,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var instantRestoreEnabled: Bool = true {
         didSet {
+            saveToDefaults(Keys.instantRestoreEnabled, value: instantRestoreEnabled)
             syncToCore()
             postNotification(.instantRestoreChanged, value: instantRestoreEnabled)
         }
@@ -56,23 +61,51 @@ final class SettingsManager: ObservableObject {
     
     @Published var smartModeEnabled: Bool = true {
         didSet {
-            syncToAppState()
+            saveToDefaults(Keys.smartModeEnabled, value: smartModeEnabled)
             postNotification(.smartModeChanged, value: smartModeEnabled)
         }
     }
     
     @Published var autoDisableForNonLatin: Bool = true {
         didSet {
-            syncToAppState()
+            saveToDefaults(Keys.autoDisableForNonLatin, value: autoDisableForNonLatin)
         }
     }
     
     @Published var hideFromDock: Bool = false {
         didSet {
+            saveToDefaults(Keys.hideFromDock, value: hideFromDock)
             // Use legacy notification for now (hideFromDockChanged not in TypedNotifications yet)
             NotificationCenter.default.post(name: NSNotification.Name("hideFromDockChanged"), object: hideFromDock)
         }
     }
+    
+    // MARK: - Phase 2.9 Settings
+    
+    @Published var outputEncoding: OutputEncoding = .unicode {
+        didSet {
+            saveToDefaults(Keys.outputEncoding, value: outputEncoding.rawValue)
+            syncToCore()
+            postNotification(.outputEncodingChanged, value: outputEncoding)
+            Log.info("Output encoding changed to: \(outputEncoding.shortName)")
+        }
+    }
+    
+    @Published var shiftBackspaceEnabled: Bool = false {
+        didSet {
+            saveToDefaults(Keys.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
+            postNotification(.shiftBackspaceEnabledChanged, value: shiftBackspaceEnabled)
+            Log.info("Shift+Backspace \(shiftBackspaceEnabled ? "enabled" : "disabled")")
+        }
+    }
+    
+    // MARK: - Runtime State (Not Persisted)
+    
+    /// Whether Vietnamese input is currently enabled (runtime state, not persisted)
+    @Published private(set) var isEnabled: Bool = false
+    
+    /// Debounce work item for setEnabled notifications
+    private var setEnabledDebounceWork: DispatchWorkItem?
     
     // MARK: - Private Properties
     
@@ -90,6 +123,10 @@ final class SettingsManager: ObservableObject {
         static let smartModeEnabled = "smartModeEnabled"
         static let autoDisableForNonLatin = "com.goxviet.ime.autoDisableNonLatin"
         static let hideFromDock = "com.goxviet.ime.hideFromDock"
+        
+        // Phase 2.9 keys
+        static let outputEncoding = "com.goxviet.ime.outputEncoding"
+        static let shiftBackspaceEnabled = "com.goxviet.ime.shiftBackspaceEnabled"
     }
     
     // MARK: - Initialization
@@ -210,13 +247,227 @@ final class SettingsManager: ObservableObject {
         instantRestoreEnabled = true
         smartModeEnabled = true
         autoDisableForNonLatin = true
-        hideFromDock = false
+        hideFromDock = true  // Default: hide from dock (menubar-only)
         
         // Save to defaults
         saveAllToDefaults()
         
         Log.info("All settings reset to defaults")
     }
+    
+    // MARK: - Runtime State Management
+    
+    /// Set enabled state and notify observers
+    /// Debounced to reduce overhead during rapid toggles
+    func setEnabled(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        guard enabled != isEnabled else { return }
+        
+        isEnabled = enabled
+        
+        // Cancel pending debounce work
+        setEnabledDebounceWork?.cancel()
+        
+        // Create new debounced notification (50ms delay)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            
+            // Post notification for UI update
+            NotificationCenter.default.post(
+                name: .updateStateChanged,
+                object: enabled
+            )
+            
+            Log.info("Gõ Việt input: \(enabled ? "enabled" : "disabled")")
+        }
+        
+        setEnabledDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+    }
+    
+    /// Set enabled state without posting notification (used during app switching)
+    func setEnabledSilently(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        isEnabled = enabled
+    }
+    
+    // MARK: - Per-App Mode Management
+    
+    /// Maximum number of per-app settings to store (prevents unbounded memory growth)
+    private static let MAX_PER_APP_ENTRIES = 100
+    private static let perAppModesKey = "com.goxviet.ime.perAppModes"
+    private static let knownAppsKey = "com.goxviet.ime.knownApps"
+    
+    /// Get the saved mode for a specific app
+    /// Returns false (disabled/English) by default if no specific setting exists
+    func getPerAppMode(bundleId: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        guard let dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] else {
+            return false  // Default: disabled (English mode)
+        }
+        
+        return dict[bundleId] ?? false
+    }
+    
+    /// Save the mode for a specific app
+    func setPerAppMode(bundleId: String, enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        var dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+        
+        let isNewApp = (dict[bundleId] == nil)
+        
+        // If this is a new app and the user has not enabled Vietnamese yet,
+        // do NOT create a tracking entry. Keep default = disabled without persisting.
+        if isNewApp && enabled == false {
+            Log.info("Per-app skip save (new app, still English): \(bundleId)")
+            return
+        }
+        
+        // For a new app with enabled == true, enforce capacity before saving
+        if isNewApp {
+            if dict.count >= Self.MAX_PER_APP_ENTRIES {
+                Log.warning("Per-app settings at capacity (\(Self.MAX_PER_APP_ENTRIES)). Not saving new entry for: \(bundleId)")
+                return
+            }
+        }
+        
+        // Store/update the state
+        dict[bundleId] = enabled
+        
+        // Record as known app only when Vietnamese is enabled at least once
+        if enabled {
+            recordKnownApp(bundleId: bundleId)
+        }
+        
+        userDefaults.set(dict, forKey: Self.perAppModesKey)
+        
+        Log.info("Per-app mode saved: \(bundleId) = \(enabled ? "Vietnamese" : "English")")
+        postNotification(.perAppModesChanged, value: nil)
+    }
+    
+    /// Clear per-app settings for a specific app
+    func clearPerAppMode(bundleId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        var dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+        dict.removeValue(forKey: bundleId)
+        userDefaults.set(dict, forKey: Self.perAppModesKey)
+        
+        removeKnownApp(bundleId: bundleId)
+        
+        Log.info("Per-app mode cleared: \(bundleId)")
+        postNotification(.perAppModesChanged, value: nil)
+    }
+    
+    /// Get all per-app settings
+    func getAllPerAppModes() -> [String: Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        return userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+    }
+    
+    /// Clear all per-app settings
+    func clearAllPerAppModes() {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        userDefaults.removeObject(forKey: Self.perAppModesKey)
+        userDefaults.removeObject(forKey: Self.knownAppsKey)
+        Log.info("All per-app modes cleared")
+        postNotification(.perAppModesChanged, value: nil)
+    }
+    
+    /// Get count of stored per-app settings
+    func getPerAppModesCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        let dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+        return dict.count
+    }
+    
+    /// Check if per-app settings is at capacity
+    func isPerAppModesAtCapacity() -> Bool {
+        return getPerAppModesCount() >= Self.MAX_PER_APP_ENTRIES
+    }
+    
+    // MARK: - Known Apps Tracking
+    
+    private func recordKnownApp(bundleId: String) {
+        guard !bundleId.isEmpty else { return }
+        
+        var known = userDefaults.array(forKey: Self.knownAppsKey) as? [String] ?? []
+        
+        if known.contains(bundleId) { return }
+        
+        if known.count >= Self.MAX_PER_APP_ENTRIES {
+            Log.warning("Known apps at capacity (\(Self.MAX_PER_APP_ENTRIES)). Not recording: \(bundleId)")
+            return
+        }
+        
+        known.append(bundleId)
+        userDefaults.set(known, forKey: Self.knownAppsKey)
+        postNotification(.perAppModesChanged, value: nil)
+    }
+    
+    private func removeKnownApp(bundleId: String) {
+        var known = userDefaults.array(forKey: Self.knownAppsKey) as? [String] ?? []
+        guard let idx = known.firstIndex(of: bundleId) else { return }
+        known.remove(at: idx)
+        userDefaults.set(known, forKey: Self.knownAppsKey)
+        postNotification(.perAppModesChanged, value: nil)
+    }
+    
+    /// Get all known apps (bundle IDs)
+    func getKnownApps() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        return userDefaults.array(forKey: Self.knownAppsKey) as? [String] ?? []
+    }
+    
+    /// Get a map of known apps -> effective enabled state
+    func getKnownAppsWithStates() -> [String: Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        let known = getKnownApps()
+        guard !known.isEmpty else { return [:] }
+        
+        var result: [String: Bool] = [:]
+        for bundleId in known {
+            result[bundleId] = getPerAppMode(bundleId: bundleId)
+        }
+        return result
+    }
+    
+    /// Get human-readable app name from bundle ID
+    func getAppName(bundleId: String) -> String {
+        // Try to get the app name from the running application
+        if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleId }) {
+            return app.localizedName ?? bundleId
+        }
+        
+        // Fallback: try to extract from bundle ID
+        let components = bundleId.components(separatedBy: ".")
+        if let lastComponent = components.last {
+            return lastComponent.capitalized
+        }
+        
+        return bundleId
+    }
+    
+    // MARK: - Settings Import/Export
     
     /// Export settings to dictionary
     func exportSettings() -> [String: Any] {
@@ -231,6 +482,9 @@ final class SettingsManager: ObservableObject {
             "instantRestoreEnabled": instantRestoreEnabled,
             "smartModeEnabled": smartModeEnabled,
             "autoDisableForNonLatin": autoDisableForNonLatin,
+            "hideFromDock": hideFromDock,
+            "outputEncoding": outputEncoding.rawValue,
+            "shiftBackspaceEnabled": shiftBackspaceEnabled,
             "exportedAt": ISO8601DateFormatter().string(from: Date())
         ]
     }
@@ -261,10 +515,19 @@ final class SettingsManager: ObservableObject {
         if let enabled = settings["autoDisableForNonLatin"] as? Bool {
             autoDisableForNonLatin = enabled
         }
+        if let hide = settings["hideFromDock"] as? Bool {
+            hideFromDock = hide
+        }
+        if let encodingValue = settings["outputEncoding"] as? Int,
+           let encoding = OutputEncoding(rawValue: encodingValue) {
+            outputEncoding = encoding
+        }
+        if let enabled = settings["shiftBackspaceEnabled"] as? Bool {
+            shiftBackspaceEnabled = enabled
+        }
         
         saveAllToDefaults()
         syncToCore()
-        syncToAppState()
         
         Log.info("Settings imported successfully")
     }
@@ -272,6 +535,32 @@ final class SettingsManager: ObservableObject {
     // MARK: - Private Helpers
     
     private func loadFromDefaults() {
+        // Check if this is first launch
+        let hasLaunchedBefore = userDefaults.bool(forKey: "hasLaunchedBefore")
+        
+        if !hasLaunchedBefore {
+            // First launch: Register default values without triggering didSet
+            let defaults: [String: Any] = [
+                Keys.inputMethod: 0,
+                Keys.modernToneStyle: false,
+                Keys.escRestoreEnabled: true,
+                Keys.freeToneEnabled: false,
+                Keys.instantRestoreEnabled: true,
+                Keys.smartModeEnabled: true,
+                Keys.autoDisableForNonLatin: true,
+                Keys.hideFromDock: true,
+                Keys.outputEncoding: OutputEncoding.unicode.rawValue,
+                Keys.shiftBackspaceEnabled: false,
+                "hasLaunchedBefore": true
+            ]
+            userDefaults.register(defaults: defaults)
+            
+            // Set values directly without triggering didSet (avoiding double save)
+            // This ensures proper initialization on first launch
+            Log.info("First launch: registering default settings")
+        }
+        
+        // Load from UserDefaults (will use registered defaults if keys don't exist)
         inputMethod = userDefaults.integer(forKey: Keys.inputMethod)
         modernToneStyle = userDefaults.bool(forKey: Keys.modernToneStyle)
         escRestoreEnabled = userDefaults.bool(forKey: Keys.escRestoreEnabled)
@@ -281,10 +570,18 @@ final class SettingsManager: ObservableObject {
         autoDisableForNonLatin = userDefaults.bool(forKey: Keys.autoDisableForNonLatin)
         hideFromDock = userDefaults.bool(forKey: Keys.hideFromDock)
         
-        // Set defaults if never saved
-        if !userDefaults.bool(forKey: "hasLaunchedBefore") {
-            resetToDefaults()
+        // Phase 2.9 settings
+        if let encoding = OutputEncoding(rawValue: userDefaults.integer(forKey: Keys.outputEncoding)) {
+            outputEncoding = encoding
+        }
+        shiftBackspaceEnabled = userDefaults.bool(forKey: Keys.shiftBackspaceEnabled)
+        
+        // Mark as launched after loading
+        if !hasLaunchedBefore {
             userDefaults.set(true, forKey: "hasLaunchedBefore")
+            // Explicitly save all loaded defaults to ensure persistence
+            saveAllToDefaults()
+            Log.info("First launch defaults saved to UserDefaults")
         }
     }
     
@@ -300,26 +597,36 @@ final class SettingsManager: ObservableObject {
         saveToDefaults(Keys.instantRestoreEnabled, value: instantRestoreEnabled)
         saveToDefaults(Keys.smartModeEnabled, value: smartModeEnabled)
         saveToDefaults(Keys.autoDisableForNonLatin, value: autoDisableForNonLatin)
+        saveToDefaults(Keys.hideFromDock, value: hideFromDock)
+        saveToDefaults(Keys.outputEncoding, value: outputEncoding.rawValue)
+        saveToDefaults(Keys.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
     }
     
     private func syncToCore() {
         // Sync to Rust core via RustBridgeSafe
         let bridge = RustBridgeSafe.shared
         
-        _ = bridge.setMethod(inputMethod)
-        _ = bridge.setModernTone(modernToneStyle)
-        _ = bridge.setEscRestore(escRestoreEnabled)
-        _ = bridge.setFreeTone(freeToneEnabled)
-        _ = bridge.setInstantRestore(instantRestoreEnabled)
+        // Ensure bridge is initialized
+        _ = bridge.initialize()
+        
+        // Sync all settings to core
+        let results = [
+            bridge.setMethod(inputMethod),
+            bridge.setModernTone(modernToneStyle),
+            bridge.setEscRestore(escRestoreEnabled),
+            bridge.setFreeTone(freeToneEnabled),
+            bridge.setInstantRestore(instantRestoreEnabled)
+        ]
+        
+        // Log any failures
+        for (index, result) in results.enumerated() {
+            if case .failure(let error) = result {
+                Log.error("Failed to sync setting \(index) to core: \(error.localizedDescription)")
+            }
+        }
     }
     
-    private func syncToAppState() {
-        // Sync to AppState for app-wide access (legacy compatibility)
-        AppState.shared.isSmartModeEnabled = smartModeEnabled
-        AppState.shared.autoDisableForNonLatinEnabled = autoDisableForNonLatin
-    }
-    
-    private func postNotification(_ name: Notification.Name, value: Any) {
+    private func postNotification(_ name: Notification.Name, value: Any?) {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: name, object: value)
         }
@@ -350,8 +657,3 @@ final class SettingsManager: ObservableObject {
     }
 }
 
-// MARK: - Notification Names Extension
-
-extension Notification.Name {
-    static let settingsChanged = Notification.Name("com.goxviet.settingsChanged")
-}

@@ -336,3 +336,20 @@ final class NotificationDebouncer {
      }
  }
  */
+
+// MARK: - Notification Name Extensions
+
+extension Notification.Name {
+    static let inputMethodChanged = Notification.Name("inputMethodChanged")
+    static let toneStyleChanged = Notification.Name("toneStyleChanged")
+    static let smartModeChanged = Notification.Name("smartModeChanged")
+    static let updateStateChanged = Notification.Name("updateStateChanged")
+    static let shortcutChanged = Notification.Name("shortcutChanged")
+    static let perAppModesChanged = Notification.Name("perAppModesChanged")
+    static let toggleVietnamese = Notification.Name("toggleVietnamese")
+    static let settingsChanged = Notification.Name("com.goxviet.settingsChanged")
+    static let outputEncodingChanged = Notification.Name("com.goxviet.outputEncodingChanged")
+    static let shiftBackspaceEnabledChanged = Notification.Name("com.goxviet.shiftBackspaceEnabledChanged")
+    static let openUpdateWindow = Notification.Name("openUpdateWindow")
+}
+

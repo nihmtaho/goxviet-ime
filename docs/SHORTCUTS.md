@@ -35,6 +35,7 @@ Tính năng phím tắt (keyboard shortcut) cho phép chuyển đổi nhanh gi�
 ### Phím tắt mặc định
 
 - **Control + Space** (`⌃Space`): Toggle ON/OFF chế độ gõ tiếng Việt.
+- **Shift + Backspace** (`⇧⌫`): Xóa toàn bộ từ (word delete).
 
 ### Preset khác (cấu hình được):
 
@@ -90,11 +91,26 @@ Trả về nil (swallow event) → Ứng dụng khác không nhận được s�
 ### 1. Sử dụng phím tắt
 
 - Nhấn **Control+Space** để bật/tắt chế độ gõ tiếng Việt.
+- Nhấn **Shift+Backspace** để xóa toàn bộ từ (tương tự Option+Backspace).
 - Quan sát icon status bar:
   - 🇻🇳 = Vietnamese input ON
   - EN = English input OFF
 
-### 2. Kiểm thử nhanh
+### 2. Ví dụ xóa từ
+
+```text
+Before: "Hello world|"  (cursor at |)
+Press: Shift+Backspace
+After: "Hello |"
+
+Before: "Xin chào thế_giới|"
+Press: Shift+Backspace
+After: "Xin chào |"
+```
+
+**Lưu ý:** Shift+Backspace hoạt động giống Option+Backspace (native macOS) nên ranh giới từ do macOS quyết định.
+
+### 3. Kiểm thử nhanh
 
 - Mở TextEdit hoặc bất kỳ ứng dụng nào.
 - Nhấn Control+Space → icon đổi trạng thái.
