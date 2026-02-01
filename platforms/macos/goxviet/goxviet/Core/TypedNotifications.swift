@@ -104,6 +104,17 @@ struct InstantRestoreChangedNotification: NotificationPayload {
     }
 }
 
+/// Text expansion enabled/disabled notification
+struct TextExpansionEnabledChangedNotification: NotificationPayload {
+    let enabled: Bool
+    let timestamp: Date
+    
+    init(enabled: Bool) {
+        self.enabled = enabled
+        self.timestamp = Date()
+    }
+}
+
 // MARK: - Typed Notification Center
 
 /// Type-safe wrapper around NotificationCenter
@@ -190,6 +201,16 @@ final class TypedNotificationCenter {
         queue.async {
             self.center.post(
                 name: .instantRestoreChanged,
+                object: notification,
+                userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
+            )
+        }
+    }
+    
+    func post(_ notification: TextExpansionEnabledChangedNotification) {
+        queue.async {
+            self.center.post(
+                name: .textExpansionEnabledChanged,
                 object: notification,
                 userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
             )
@@ -350,6 +371,10 @@ extension Notification.Name {
     static let settingsChanged = Notification.Name("com.goxviet.settingsChanged")
     static let outputEncodingChanged = Notification.Name("com.goxviet.outputEncodingChanged")
     static let shiftBackspaceEnabledChanged = Notification.Name("com.goxviet.shiftBackspaceEnabledChanged")
-    static let openUpdateWindow = Notification.Name("openUpdateWindow")
+    static let textExpansionEnabledChanged = Notification.Name("com.goxviet.ime.textExpansionEnabledChanged")
+    static let openUpdateWindow = Notification.Name("com.goxviet.ime.openUpdateWindow")
+    
+    // Debugging
+    static let didSaveShortcuts = Notification.Name("com.goxviet.ime.didSaveShortcuts")
 }
 

@@ -65,7 +65,7 @@ class InputManager: LifecycleManaged {
     private var previousKeyTimestamp: TimeInterval = 0
     
     private init() {
-        self.bridge = RustBridge()
+        self.bridge = RustBridge.shared
         self.bridge.initialize()
         
         // Load shortcut configuration
@@ -106,6 +106,10 @@ class InputManager: LifecycleManaged {
         // Apply saved instant restore setting
         ime_instant_restore(settings.instantRestoreEnabled)
         Log.info("Loaded instant restore: \(settings.instantRestoreEnabled ? "enabled" : "disabled")")
+        
+        // Apply saved text expansion enabled setting
+        RustBridge.shared.setShortcutsEnabled(settings.textExpansionEnabled)
+        Log.info("Loaded text expansion: \(settings.textExpansionEnabled ? "enabled" : "disabled")")
         
         // Set initial enabled state (will be overridden by per-app mode if enabled)
         ime_enabled(settings.isEnabled)
@@ -246,6 +250,19 @@ class InputManager: LifecycleManaged {
             self?.reloadShortcuts()
         }
         ResourceManager.shared.register(observer: shortcutObserver, identifier: "InputManager.shortcutObserver")
+        
+        // Add observer for text expansion enabled/disabled
+        let textExpansionObserver = NotificationCenter.default.addObserver(
+            forName: .textExpansionEnabledChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let enabled = notification.userInfo?["enabled"] as? Bool {
+                RustBridge.shared.setShortcutsEnabled(enabled)
+                Log.info("Text expansion \(enabled ? "enabled" : "disabled") via notification")
+            }
+        }
+        ResourceManager.shared.register(observer: textExpansionObserver, identifier: "InputManager.textExpansionObserver")
     }
     
     func setEnabled(_ enabled: Bool) {

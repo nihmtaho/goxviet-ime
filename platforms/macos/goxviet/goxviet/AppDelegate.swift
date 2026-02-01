@@ -709,6 +709,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ aNotification: Notification) {
         Log.info("Application terminating")
         
+        // Save shortcuts before termination
+        SettingsManager.shared.saveShortcuts()
+
         // CRITICAL: Guard against premature termination when just closing a window
         // Only terminate if truly exiting the app, not just closing a window
         let visibleWindows = NSApp.windows.filter { $0.isVisible }

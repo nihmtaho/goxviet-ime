@@ -124,6 +124,66 @@ struct PickerRow<SelectionValue: Hashable>: View {
     }
 }
 
+// MARK: - Custom Title Views
+
+struct SettingRowCustomTitle<Title: View, Content: View>: View {
+    @ViewBuilder let title: () -> Title
+    let description: String?
+    let systemImage: String?
+    @ViewBuilder let content: () -> Content
+    
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            // Left side: Icon + Label
+            HStack(alignment: .center, spacing: 12) {
+                if let icon = systemImage {
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundColor(.accentColor)
+                        .frame(width: 24, height: 24)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    title()
+                    
+                    if let desc = description {
+                        Text(desc)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // Right side: Control
+            content()
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        )
+        .contentShape(Rectangle())
+    }
+}
+
+struct ToggleRowCustomTitle<Title: View>: View {
+    @ViewBuilder let title: () -> Title
+    let description: String?
+    let systemImage: String?
+    @Binding var isOn: Bool
+
+    var body: some View {
+        SettingRowCustomTitle(title: title, description: description, systemImage: systemImage) {
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+    }
+}
+
 #Preview {
     VStack(spacing: 12) {
         ToggleRow(

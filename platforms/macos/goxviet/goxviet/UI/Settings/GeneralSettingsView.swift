@@ -110,8 +110,18 @@ struct GeneralSettingsView: View {
                 // Restore Settings Section
                 GroupBox {
                     VStack(spacing: 12) {
-                        ToggleRow(
-                            title: "ESC Key Restore",
+                        ToggleRowCustomTitle(
+                            title: {
+                                HStack(spacing: 4) {
+                                    Text("ESC Key Restore")
+                                    Text("(Beta)")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(Color.orange.opacity(0.2)))
+                                }
+                            },
                             description: "Press ESC to restore original text",
                             systemImage: "arrow.uturn.backward",
                             isOn: $escRestoreEnabled
@@ -130,8 +140,18 @@ struct GeneralSettingsView: View {
                         
                         Divider()
                         
-                        ToggleRow(
-                            title: "Shift+Backspace Delete Word",
+                        ToggleRowCustomTitle(
+                            title: {
+                                HStack(spacing: 4) {
+                                    Text("Shift+Backspace Delete Word")
+                                    Text("(Beta)")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(Color.orange.opacity(0.2)))
+                                }
+                            },
                             description: "Quickly delete entire word with Shift+Backspace",
                             systemImage: "delete.left.fill",
                             isOn: $shiftBackspaceEnabled

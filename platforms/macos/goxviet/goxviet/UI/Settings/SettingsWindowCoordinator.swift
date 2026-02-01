@@ -19,6 +19,7 @@ struct SettingsWindowCoordinator: View {
         TabView {
             GeneralSettingsTab()
             PerAppSettingsTab(perAppModes: $perAppModes, showClearConfirmation: $showClearConfirmation)
+            TextExpansionSettingsTab()
             AdvancedSettingsTab()
             AboutSettingsTab()
         }
@@ -82,6 +83,15 @@ struct PerAppSettingsTab: View {
     
     private func reloadModes() {
         perAppModes = PerAppModeManagerEnhanced.shared.getKnownAppsWithStates()
+    }
+}
+
+struct TextExpansionSettingsTab: View {
+    var body: some View {
+        TextExpansionSettingsView()
+            .tabItem {
+                Label("Text Expansion", systemImage: "text.badge.plus")
+            }
     }
 }
 

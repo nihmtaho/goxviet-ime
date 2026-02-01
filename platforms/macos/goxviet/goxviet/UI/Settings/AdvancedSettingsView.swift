@@ -50,6 +50,12 @@ struct AdvancedSettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Output Encoding")
                                     .font(.system(size: 14, weight: .semibold))
+                                Text("(Beta)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.orange)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.orange.opacity(0.2)))
                                 Text("Choose output text encoding format")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
@@ -315,33 +321,7 @@ struct AdvancedSettingsView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 
-                // Shortcuts Management
-                GroupBox {
-                    VStack(spacing: 12) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Text Expansion Shortcuts")
-                                    .font(.system(size: 13, weight: .medium))
-                                Text("Manage your typing shortcuts")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Button {
-                                openShortcutsManager()
-                            } label: {
-                                Label("Manage Shortcuts", systemImage: "arrow.right")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                    .padding(8)
-                } label: {
-                    Label("Shortcuts", systemImage: "text.badge.plus")
-                        .font(.system(size: 14, weight: .semibold))
-                }
+
                 
                 // System Information
                 GroupBox {

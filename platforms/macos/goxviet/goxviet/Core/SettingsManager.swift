@@ -99,6 +99,16 @@ final class SettingsManager: ObservableObject {
         }
     }
     
+    @Published var textExpansionEnabled: Bool = true {
+        didSet {
+            saveToDefaults(Keys.textExpansionEnabled, value: textExpansionEnabled)
+            postNotification(.textExpansionEnabledChanged, value: textExpansionEnabled)
+            Log.info("Text Expansion \(textExpansionEnabled ? "enabled" : "disabled")")
+        }
+    }
+    
+    @Published var shortcutsLoaded: Bool = false
+    
     // MARK: - Runtime State (Not Persisted)
     
     /// Whether Vietnamese input is currently enabled (runtime state, not persisted)
@@ -127,6 +137,7 @@ final class SettingsManager: ObservableObject {
         // Phase 2.9 keys
         static let outputEncoding = "com.goxviet.ime.outputEncoding"
         static let shiftBackspaceEnabled = "com.goxviet.ime.shiftBackspaceEnabled"
+        static let textExpansionEnabled = "com.goxviet.ime.textExpansionEnabled"
     }
     
     // MARK: - Initialization
@@ -248,6 +259,9 @@ final class SettingsManager: ObservableObject {
         smartModeEnabled = true
         autoDisableForNonLatin = true
         hideFromDock = true  // Default: hide from dock (menubar-only)
+        outputEncoding = .unicode
+        shiftBackspaceEnabled = false
+        textExpansionEnabled = true
         
         // Save to defaults
         saveAllToDefaults()
@@ -467,6 +481,71 @@ final class SettingsManager: ObservableObject {
         return bundleId
     }
     
+    // MARK: - Shortcut Persistence
+    
+    private var shortcutsFileURL: URL? {
+        guard let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let dir = appSupportURL.appendingPathComponent("GoxViet")
+        return dir.appendingPathComponent("shortcuts.json")
+    }
+
+    public func saveShortcuts() {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        guard let json = RustBridge.shared.exportShortcutsJSON() else {
+            Log.error("Failed to export shortcuts to save.")
+            return
+        }
+        
+        guard let url = shortcutsFileURL else {
+            Log.error("Could not get shortcuts file URL.")
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+            try json.write(to: url, atomically: true, encoding: .utf8)
+            Log.info("Saved shortcuts to file: \(url.path)")
+            
+            // Post notification for debug UI
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .didSaveShortcuts, object: Date())
+            }
+        } catch {
+            Log.error("Failed to save shortcuts to file: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadShortcuts() {
+        lock.lock()
+        defer {
+            lock.unlock()
+            DispatchQueue.main.async {
+                self.shortcutsLoaded = true
+            }
+        }
+        
+        guard let url = shortcutsFileURL, FileManager.default.fileExists(atPath: url.path) else {
+            Log.info("No shortcuts file found to load.")
+            return
+        }
+
+        do {
+            let json = try String(contentsOf: url, encoding: .utf8)
+            let count = RustBridge.shared.importShortcutsJSON(json)
+            if count >= 0 {
+                Log.info("Loaded \(count) shortcuts from file.")
+            } else {
+                Log.error("Failed to import shortcuts from file.")
+            }
+        } catch {
+            Log.error("Failed to read shortcuts file: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Settings Import/Export
     
     /// Export settings to dictionary
@@ -551,6 +630,7 @@ final class SettingsManager: ObservableObject {
                 Keys.hideFromDock: true,
                 Keys.outputEncoding: OutputEncoding.unicode.rawValue,
                 Keys.shiftBackspaceEnabled: false,
+                Keys.textExpansionEnabled: true,
                 "hasLaunchedBefore": true
             ]
             userDefaults.register(defaults: defaults)
@@ -575,7 +655,10 @@ final class SettingsManager: ObservableObject {
             outputEncoding = encoding
         }
         shiftBackspaceEnabled = userDefaults.bool(forKey: Keys.shiftBackspaceEnabled)
+        textExpansionEnabled = userDefaults.bool(forKey: Keys.textExpansionEnabled)
         
+        loadShortcuts()
+
         // Mark as launched after loading
         if !hasLaunchedBefore {
             userDefaults.set(true, forKey: "hasLaunchedBefore")
