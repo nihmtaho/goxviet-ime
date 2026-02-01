@@ -96,7 +96,7 @@ class WindowManager: NSObject, NSWindowDelegate {
                 return
             }
             
-            let hideFromDock = AppState.shared.hideFromDock
+            let hideFromDock = SettingsManager.shared.hideFromDock
             let policy: NSApplication.ActivationPolicy = hideFromDock ? .accessory : .regular
             
             // Delay policy change to ensure window closing is complete

@@ -89,6 +89,8 @@ pub struct Engine {
     enabled: bool,
     last_transform: Option<Transform>,
     shortcuts: ShortcutTable,
+    /// Global enable/disable flag for all shortcuts (text expansion feature)
+    pub shortcuts_enabled: bool,
     /// Raw keystroke history for ESC restore (key, caps)
     /// Uses fixed-size circular buffer for bounded memory usage
     raw_input: RawInputBuffer,
@@ -143,6 +145,7 @@ impl Engine {
             enabled: true,
             last_transform: None,
             shortcuts: ShortcutTable::with_defaults(),
+            shortcuts_enabled: true,
             raw_input: RawInputBuffer::new(),
             raw_mode: false,
             has_non_letter_prefix: false,
@@ -919,6 +922,15 @@ impl Engine {
     fn try_word_boundary_shortcut(&mut self) -> Result {
         if self.buf.is_empty() {
             return Result::none();
+        }
+
+        // Check global shortcuts enabled flag
+        if !self.shortcuts_enabled {
+            // Default: commit buffer as-is and add a space
+            let output = self.buf.to_full_string();
+            let final_output = format!("{} ", output);
+            let final_chars: Vec<char> = final_output.chars().collect();
+            return Result::send(output.chars().count() as u8, &final_chars);
         }
 
         // Don't trigger shortcut if word has non-letter prefix

@@ -1,5 +1,17 @@
 # Changelog - Gõ Việt (GoxViet)
 
+## [Unreleased]
+
+### Added
+- **Shift+Backspace**: Thêm phím tắt Shift+Backspace để xóa cả từ, sử dụng native macOS Option+Backspace shortcut cho tính nhất quán (#TBD).
+- **Output Encoding UI**: Thêm picker cho Output Encoding trong Advanced Settings với 4 tùy chọn: Unicode (UTF-8), TCVN3, VNI Windows, CP1258. Hiển thị cảnh báo và confirmation dialog cho legacy encodings (#TBD).
+- **Shift+Backspace Toggle**: Thêm toggle "Enable Shift+Backspace to delete word" trong General Settings, cho phép người dùng bật/tắt tính năng xóa từ bằng Shift+Backspace (#TBD).
+- **Phase 2.9.3 Documentation**: Tài liệu chi tiết về UI implementation cho Output Encoding và Shift+Backspace trong `docs/PHASE2.9.3_UI_IMPLEMENTATION.md` (#TBD).
+
+### Changed
+- **Settings Persistence**: Mở rộng SettingsManager để lưu trữ `outputEncoding` và `shiftBackspaceEnabled` vào UserDefaults, hỗ trợ export/import settings (#TBD).
+- **Settings Notifications**: Thêm `outputEncodingChanged` và `shiftBackspaceEnabledChanged` notifications để hỗ trợ tích hợp backend trong Milestone 2.9.4 (#TBD).
+
 ## [2.0.3] - 2026-01-29
 
 ### Added

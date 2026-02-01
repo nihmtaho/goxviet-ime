@@ -25,10 +25,17 @@
 
 ### 2. Platform Layer
 
-- [ ] **macOS**
-	- Cải tiến UI SwiftUI, tối ưu Settings, hỗ trợ Smart Mode per-app
-	- Tối ưu RustBridge, đảm bảo memory safety, không leak
-	- Đảm bảo đồng bộ trạng thái với core engine
+- [x] **macOS - Phase 2 (Core Implementation)** ✅ *Completed 2026-01-30*
+	- [x] Milestone 2.1: UI Components & Settings Enhancement
+	- [x] Milestone 2.2: RustBridge Memory Safety
+	- [x] Milestone 2.3: State Synchronization
+	- [x] Milestone 2.4: Smart Mode Per-App Enhancement
+
+- [ ] **macOS - Phase 2 Supplement (Integration)** 🔄 *In Progress*
+	- [ ] Milestone 2.5: Xcode Project Integration
+	- [ ] Milestone 2.6: Settings UI Integration
+	- [ ] Milestone 2.7: Architecture Migration
+	- [ ] Milestone 2.8: Testing & Validation
 
 - [ ] **Windows**
 	- Tối ưu tích hợp TSF, hỗ trợ các bảng mã legacy
@@ -50,4 +57,7 @@
 **Lưu ý:**
 Mọi milestone đều phải tuân thủ quy tắc kiến trúc, coding standards, và quy trình kiểm thử của dự án Gõ Việt (GoxViet).
 
-**Progress: Phase 1 Core Engine 75% complete (3/4 milestones)**
+**Progress:**
+- Phase 1: Core Engine ✅ 100% complete (4/4 milestones)
+- Phase 2: Platform Layer - Core ✅ 100% complete (4/4 milestones)
+- Phase 2: Platform Layer - Integration 🔄 0% complete (0/4 milestones)

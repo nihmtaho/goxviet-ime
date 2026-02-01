@@ -196,3 +196,4 @@ release/
 
 .gemini/
 gha-creds-*.json
+*.skill

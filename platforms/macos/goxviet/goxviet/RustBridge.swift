@@ -12,7 +12,11 @@ import ApplicationServices
 // MARK: - Rust Bridge Class
 
 class RustBridge {
+    static let shared = RustBridge()
+    
     private var isInitialized = false
+    
+    private init() {}
     
     func initialize() {
         guard !isInitialized else { return }
@@ -78,15 +82,21 @@ class RustBridge {
     
     // MARK: - Shortcut Management
     
-    func addShortcut(trigger: String, replacement: String) {
+    @discardableResult
+    func addShortcut(trigger: String, replacement: String) -> Bool {
         guard let triggerC = trigger.cString(using: .utf8),
-              let replacementC = replacement.cString(using: .utf8) else { return }
+              let replacementC = replacement.cString(using: .utf8) else { 
+            Log.error("Failed to convert strings to C format")
+            return false 
+        }
         Log.info("Add shortcut: \(trigger) → \(replacement)")
+        var result = false
         triggerC.withUnsafeBufferPointer { triggerPtr in
             replacementC.withUnsafeBufferPointer { replacementPtr in
-                ime_add_shortcut(triggerPtr.baseAddress!, replacementPtr.baseAddress!)
+                result = ime_add_shortcut(triggerPtr.baseAddress!, replacementPtr.baseAddress!)
             }
         }
+        return result
     }
     
     func removeShortcut(trigger: String) {
@@ -107,6 +117,66 @@ class RustBridge {
         for shortcut in shortcuts where shortcut.enabled {
             addShortcut(trigger: shortcut.key, replacement: shortcut.value)
         }
+    }
+    
+    // MARK: - Text Expansion Extended Methods
+    
+    /// Export all shortcuts as JSON string
+    /// - Returns: JSON string containing all shortcuts, or nil if export fails
+    func exportShortcutsJSON() -> String? {
+        guard let jsonPtr = ime_export_shortcuts_json() else {
+            Log.error("Failed to export shortcuts JSON")
+            return nil
+        }
+        
+        defer {
+            ime_free_string(jsonPtr)
+        }
+        
+        let jsonString = String(cString: jsonPtr)
+        Log.info("Exported shortcuts JSON (\(jsonString.count) bytes)")
+        return jsonString
+    }
+    
+    /// Import shortcuts from JSON string
+    /// - Parameter json: JSON string containing shortcuts
+    /// - Returns: Number of imported shortcuts, or -1 on error
+    func importShortcutsJSON(_ json: String) -> Int {
+        guard let jsonC = json.cString(using: .utf8) else {
+            Log.error("Failed to convert JSON string to C string")
+            return -1
+        }
+        
+        let count = jsonC.withUnsafeBufferPointer { ptr in
+            Int(ime_import_shortcuts_json(ptr.baseAddress!))
+        }
+        
+        if count >= 0 {
+            Log.info("Imported \(count) shortcuts from JSON")
+        } else {
+            Log.error("Failed to import shortcuts from JSON")
+        }
+        
+        return count
+    }
+    
+    /// Enable or disable text expansion globally
+    /// - Parameter enabled: true to enable, false to disable
+    func setShortcutsEnabled(_ enabled: Bool) {
+        ime_set_shortcuts_enabled(enabled)
+        Log.info("Text expansion \(enabled ? "enabled" : "disabled")")
+    }
+    
+    /// Get current number of shortcuts
+    /// - Returns: Number of shortcuts currently stored
+    func getShortcutsCount() -> Int {
+        Int(ime_shortcuts_count())
+    }
+    
+    /// Get maximum capacity for shortcuts
+    /// - Returns: Maximum number of shortcuts that can be stored
+    func getShortcutsCapacity() -> Int {
+        Int(ime_shortcuts_capacity())
     }
 }
 

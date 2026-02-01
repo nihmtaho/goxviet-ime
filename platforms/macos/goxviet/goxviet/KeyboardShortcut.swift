@@ -156,7 +156,7 @@ struct KeyboardShortcut: Codable, Equatable {
             UserDefaults.standard.set(data, forKey: KeyboardShortcut.storageKey)
             
             // Notify observers that shortcut changed
-            NotificationCenter.default.post(name: .shortcutChanged, object: self)
+            NotificationCenter.default.post(name: NSNotification.Name("shortcutChanged"), object: self)
             
             Log.info("Shortcut saved: \(displayString)")
         }
