@@ -830,7 +830,75 @@ impl Engine {
                         // Check if the last character in the buffer has the same base key.
                         // This correctly handles cases like 'e' + 's' -> 'é', then 'é' + 'e' -> 'ê'.
                         let prev_key_match = self.buf.last().map_or(false, |c| c.key == key);
-                        prev_key_match // ONLY allow if double-key pattern
+                        
+                        // NEW FEATURE: Also allow if last char is final consonant and there's a
+                        // matching vowel before it (for backward diacritical application)
+                        // Example: "cam" + "a" → should check tone to apply circumflex backward
+                        // 
+                        // CONSTRAINT: Only allow if buffer forms valid syllable structure (C-V-C pattern)
+                        // Reject cases like: "m" + "aa" (consonant-only at start)
+                        let backward_match = if !prev_key_match && self.buf.len() >= 2 {
+                            let last_idx = self.buf.len() - 1;
+                            let last_char = self.buf.get(last_idx).unwrap();
+                            
+                            // CASE 1: Last char is consonant (backward after final consonant)
+                            // Example: "cam" + "a" → "câm"
+                            if !keys::is_vowel(last_char.key) {
+                                // Check for Digraph finals (ng, nh, ch)
+                                // If last char is g, h, check prev char
+                                let is_final = if let Some(cons_char) = crate::utils::key_to_char(last_char.key, false) {
+                                    let cons_str = cons_char.to_string();
+                                    if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str) {
+                                        true
+                                    } else {
+                                        // Check digraphs: ng, nh, ch
+                                        // Need preceding char
+                                        if last_idx > 0 {
+                                            let prev_cons = self.buf.get(last_idx - 1).unwrap();
+                                            let s = format!("{}{}", 
+                                                crate::utils::key_to_char(prev_cons.key, false).unwrap_or(' '),
+                                                cons_char
+                                            );
+                                            matches!(s.as_str(), "ng" | "nh" | "ch")
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                } else {
+                                    false
+                                };
+
+                                if is_final {
+                                    // For backward application to be valid, need at least C-V-C pattern
+                                    // Minimum: 3 chars (initial consonant, vowel, final consonant)
+                                    // Or 4 chars if digraph final
+                                    if self.buf.len() >= 3 {
+                                        // Check if there's a vowel before the consonant matching the key
+                                        // Scan backwards skipping the final consonant(s)
+                                        self.buf.iter().rev().skip(1).any(|c| c.key == key && c.tone == tone::NONE)
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                // Last is vowel - only allow backward for Telex doubling patterns (aa, ee, oo)
+                                // or VNI mode (which doesn't need key matching)
+                                if self.method == 1 {
+                                    // VNI mode: always allow (numbers don't need to match vowels)
+                                    true
+                                } else {
+                                    // Telex mode: only allow if it's a doubling pattern (Circumflex)
+                                    // We are inside matches!(key, A|E|O) block so it is Circumflex.
+                                    true
+                                }
+                            }
+                        } else {
+                            false
+                        };
+                        
+                        prev_key_match || backward_match
                     }
                     _ => true, // Other keys can be tone modifiers directly
                 }
@@ -860,12 +928,44 @@ impl Engine {
                         }
                         return result; // Return the result from try_tone with correct backspace
                     } else {
+                        // tone() is Some but try_tone failed
                         if keys::is_number(key) {
                             // Fallback: VNI tone number (e.g. 1) failed to apply to vowel.
                             // It should act as a number (break key).
                             return self.commit_and_break_sequence();
                         }
-                        // If tone() is Some but try_tone failed, fall through to mark handling
+                        
+                        // CRITICAL FIX: For Telex a/e/o double-key patterns, if try_tone fails
+                        // (e.g., due to diacritical validation rejecting it), we should NOT
+                        // fall through to handle_normal_letter. The keystroke should be consumed
+                        // but have no output effect, preventing the second vowel from being added.
+                        // 
+                        // Examples:
+                        //   Buffer: [s, a, n], Keystroke: 'a' (double-key)
+                        //   try_tone fails (can_apply_diacritical rejects due to final 'n')
+                        //   Result: Return empty (consume keystroke, no output)
+                        //   Not: Fall through and add the second 'a'
+                        //
+                        // NEW: This also applies to BACKWARD APPLICATION patterns
+                        //   Buffer: [c, â, m], Keystroke: 'a' (backward application, but vowel has tone)
+                        //   try_tone fails (backward search finds 'â' but it has tone != NONE)
+                        //   Result: Return empty (consume keystroke, no output)
+                        if self.method == 0 && matches!(key, keys::A | keys::E | keys::O) {
+                            // Check if this was intended as a tone modifier (either adjacent or backward)
+                            let was_tone_attempt = self.buf.last().map_or(false, |c| c.key == key)
+                                || (self.buf.len() >= 3 
+                                    && self.buf.last().map_or(false, |c| !keys::is_vowel(c.key))
+                                    && self.buf.get(0).map_or(false, |c| !keys::is_vowel(c.key)));
+                            
+                            eprintln!("DEBUG: try_tone failed for key={}, was_tone_attempt={}", key, was_tone_attempt);
+                            
+                            if was_tone_attempt {
+                                eprintln!("DEBUG: Consuming keystroke without output");
+                                return Result::default(); // Consume keystroke, produce no output
+                            }
+                        }
+                        
+                        // If tone() is Some but try_tone failed (and not Telex a/e/o), fall through to mark handling
                     }
                 }
             }
@@ -1142,24 +1242,34 @@ impl Engine {
 
             // Check if last char is un-stroked 'd'
             // If already stroked (and not revertible above), we can't stroke again
-            if last_char.key != keys::D || last_char.stroke {
+            // NEW: Search backward for unstroked 'd' if last char is not eligible
+            let target_pos = if last_char.key == keys::D && !last_char.stroke {
+                Some(last_pos)
+            } else {
+                // Backward scan for unstroked 'd'
+                self.buf.iter().rposition(|c| c.key == keys::D && !c.stroke)
+            };
+
+            let Some(target_pos) = target_pos else {
                 return None;
-            }
+            };
 
             // FAST PATH: If no vowels yet, apply stroke immediately (O(1))
-            // "dd" at start or "ndd" → "đ", "nđ" without validation
+            // "dd" at start or "d...d" -> "đ..." without complex validation
+            // Check for vowels BEFORE the target position
             let has_vowel = self
                 .buf
                 .iter()
-                .take(last_pos)
+                .take(target_pos)
                 .any(|c| keys::is_vowel(c.key));
+                
             if !has_vowel {
-                if let Some(c) = self.buf.get_mut(last_pos) {
+                if let Some(c) = self.buf.get_mut(target_pos) {
                     c.stroke = true;
                 }
                 self.last_transform = Some(Transform::Stroke(key));
                 // CRITICAL FIX: Track the modifier key in raw_input
-                return Some(self.rebuild_from(self.buf.len() - 1));
+                return Some(self.rebuild_from(target_pos));
             }
 
             // COMPLEX PATH: Has vowels, need validation
@@ -1177,11 +1287,11 @@ impl Engine {
             }
 
             // Apply stroke (Validated)
-            if let Some(c) = self.buf.get_mut(last_pos) {
+            if let Some(c) = self.buf.get_mut(target_pos) {
                 c.stroke = true;
             }
             self.last_transform = Some(Transform::Stroke(key));
-            return Some(self.rebuild_from(last_pos));
+            return Some(self.rebuild_from(target_pos));
         }
 
         // VNI MODE: '9' can stroke any 'd' in buffer (delayed stroke)
@@ -1225,6 +1335,182 @@ impl Engine {
         Some(self.rebuild_from(pos))
     }
 
+    /// Helper: Check if applying diacritical at a position is valid
+    /// Returns false if there's a final consonant after this position
+    /// 
+    /// # Arguments
+    /// * `target_pos` - Position in buffer to apply diacritical
+    /// * `is_backward_application` - True if this is backward application (e.g., "cam" + "a" → "câm")
+    ///                                In backward mode, final consonant at END is ALLOWED
+    fn can_apply_diacritical(&self, target_pos: usize, is_backward_application: bool) -> bool {
+        use crate::data::keys;
+        
+        eprintln!("DEBUG can_apply_diacritical: ENTRY target_pos={}, buf.len()={}", target_pos, self.buf.len());
+        
+        if target_pos >= self.buf.len() {
+            eprintln!("DEBUG can_apply_diacritical: target_pos out of bounds, ALLOW");
+            return true; // Invalid position - allow
+        }
+
+        // Work directly with buffer keys
+        let target_char = self.buf.get(target_pos).unwrap();
+        eprintln!("DEBUG can_apply_diacritical: target_char.key={}", target_char.key);
+        
+        // Ensure target is a vowel
+        if !keys::is_vowel(target_char.key) {
+            eprintln!("DEBUG can_apply_diacritical: target is not vowel, ALLOW");
+            return true; // Can't apply diacritical to non-vowel anyway
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════════════
+        // CHECK CASE 1: Consonant immediately after
+        eprintln!("DEBUG can_apply_diacritical: Checking CASE 1 (consonant after)");
+        if target_pos + 1 < self.buf.len() {
+            let next_char = self.buf.get(target_pos + 1).unwrap();
+            eprintln!("DEBUG can_apply_diacritical: next_char.key={}", next_char.key);
+            
+            // If next is a vowel, no consonant immediately after
+            if !keys::is_vowel(next_char.key) {
+                // Next is a consonant. Is it a final consonant?
+                if let Some(cons_char) = crate::utils::key_to_char(next_char.key, false) {
+                    let cons_str = cons_char.to_string();
+                    eprintln!("DEBUG can_apply_diacritical: next is consonant '{}', checking if final", cons_str);
+                    
+                    if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str)
+                    {
+                        eprintln!("DEBUG can_apply_diacritical: CASE 1 FOUND FINAL CONSONANT");
+                        
+                        // SPECIAL CASE: Backward application
+                        // When backward applying diacritical (e.g., "cam" + "a" → "câm"),
+                        // the final consonant IS AT THE END, which is EXPECTED and ALLOWED
+                        if is_backward_application && target_pos + 2 >= self.buf.len() {
+                            eprintln!("DEBUG can_apply_diacritical: backward application with final consonant at end, ALLOW");
+                            return true; // ALLOW backward application
+                        }
+                        
+                        // Check if it's truly final (not part of a 2-char consonant followed by vowel)
+                        if target_pos + 2 >= self.buf.len() {
+                            eprintln!("DEBUG can_apply_diacritical: final consonant at end of buffer, REJECT");
+                            return false; // REJECT: vowel followed by final consonant at end
+                        }
+                        
+                        let after_cons = self.buf.get(target_pos + 2).unwrap();
+                        
+                        // Check if it forms a digraph (e.g. 'ng', 'nh', 'ch')
+                        let is_digraph = if let Some(second_char) = crate::utils::key_to_char(after_cons.key, false) {
+                             let two_char = format!("{}{}", cons_char, second_char);
+                             crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&two_char)
+                        } else { false };
+
+                        if is_digraph {
+                             // SPECIAL CASE: It's a valid digraph final (ng, nh, ch)
+                             eprintln!("DEBUG can_apply_diacritical: found digraph final"); 
+
+                             // Check what follows the digraph
+                             if target_pos + 3 >= self.buf.len() {
+                                  // End of buffer.
+                                  // Backward application allows final consonant at end.
+                                  if is_backward_application { 
+                                      eprintln!("DEBUG can_apply_diacritical: backward application with digraph final at end, ALLOW");
+                                      return true; 
+                                  }
+                                  
+                                  // Even if not backward application (e.g. valid word),
+                                  // a final consonant shouldn't block tone on the vowel?
+                                  // Logic 1386 says "backward application ... final consonant IS AT THE END ... is ALLOWED"
+                                  // Implying normal application expects open vowel?
+                                  // But "ung" is valid.
+                                  // If this function returns false, tone is blocked.
+                                  // We should probably allow if it's a valid final consonant at end.
+                                  eprintln!("DEBUG can_apply_diacritical: valid digraph matching end of buffer, ALLOW");
+                                  return true;
+                             }
+                             
+                             // If not end of buffer, check what's after digraph.
+                             let after_digraph = self.buf.get(target_pos + 3).unwrap();
+                             if !keys::is_vowel(after_digraph.key) {
+                                  eprintln!("DEBUG can_apply_diacritical: digraph followed by non-vowel, REJECT");
+                                  return false; // REJECT
+                             }
+                             
+                             // Followed by vowel? 
+                             // e.g. "unga". "ng" is final? No, "ng" + "a" -> "nga".
+                             // So "u" + "nga". "u" is open?
+                             // This is complex but for now we assume rejection or allow based on validator.
+                             // But here we are VALIDATING DIACRITICAL PLACEMENT.
+                             // Safest to reject if followed by vowel as it changes syllable structure?
+                             eprintln!("DEBUG can_apply_diacritical: digraph followed by vowel, REJECT");
+                             return false; 
+                        }
+
+                        // Not a digraph. Check single char.
+                        if !keys::is_vowel(after_cons.key) {
+                            eprintln!("DEBUG can_apply_diacritical: final consonant followed by non-vowel, REJECT");
+                            return false; // REJECT: vowel followed by final consonant
+                        }
+                        
+                        // Single final consonant followed by vowel = it's part of the syllable
+                        eprintln!("DEBUG can_apply_diacritical: final consonant followed by vowel, REJECT");
+                        return false; // REJECT
+                    }
+                }
+            }
+        }
+
+        // CHECK CASE 2: Immediately preceded by a final consonant
+        // This prevents applying diacritical to a vowel that starts a new syllable after a complete one.
+        // 
+        // KEY INSIGHT: A consonant is only "final" if it comes AFTER a vowel (closing a syllable).
+        // Example scenarios:
+        //   "taan" (t-a-a-n) → 't' is INITIAL (before vowel), NOT final → target pos=1 ALLOW ✓
+        //   "camaa" (c-a-m-a-a) → 'm' comes AFTER vowel (pos=1), IS final → target pos=3 REJECT ✓
+        //
+        // Algorithm:
+        //   1. Check if prev_pos is a potential final consonant (c, ch, m, n, ng, nh, p, t)
+        //   2. If yes, check if there's a vowel BEFORE it (making it a true final)
+        //   3. If both true → REJECT (target starts new syllable after complete syllable)
+        eprintln!("DEBUG can_apply_diacritical: Checking CASE 2 (preceding final consonant)");
+        if target_pos > 0 {
+            let prev_pos = target_pos - 1;
+            if let Some(prev_char) = self.buf.get(prev_pos) {
+                eprintln!("DEBUG can_apply_diacritical: prev_char.key={}, is_vowel={}", prev_char.key, keys::is_vowel(prev_char.key));
+                
+                // Check if immediately preceding character is a consonant
+                if !keys::is_vowel(prev_char.key) {
+                    // Previous is consonant. Check if it could be a final consonant
+                    if let Some(prev_cons_char) = crate::utils::key_to_char(prev_char.key, false) {
+                        let prev_cons_str = prev_cons_char.to_string();
+                        eprintln!("DEBUG can_apply_diacritical: prev is consonant '{}', checking if final", prev_cons_str);
+                        
+                        // Is this consonant type potentially final? (c, ch, m, n, ng, nh, p, t)
+                        if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&prev_cons_str) {
+                            // It CAN be final, but is it ACTUALLY final? (must have vowel before it)
+                            let has_vowel_before = if prev_pos > 0 {
+                                // Check if there's ANY vowel before this consonant
+                                (0..prev_pos).any(|i| {
+                                    self.buf.get(i).map_or(false, |c| keys::is_vowel(c.key))
+                                })
+                            } else {
+                                false // Consonant at position 0 can't be final (no vowel before it)
+                            };
+                            
+                            if has_vowel_before {
+                                eprintln!("DEBUG can_apply_diacritical: CASE 2 FOUND TRUE FINAL CONSONANT (has vowel before), REJECT");
+                                return false; // REJECT: target vowel starts new syllable after complete one
+                            } else {
+                                eprintln!("DEBUG can_apply_diacritical: consonant '{}' is potentially final but NO vowel before it (initial consonant), ALLOW", prev_cons_str);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // No final consonants blocking this vowel = ALLOW
+        eprintln!("DEBUG can_apply_diacritical: No final consonants found, ALLOW");
+        true
+    }
+
     /// Try to apply tone transformation by scanning buffer for targets
     fn try_tone(
         &mut self,
@@ -1244,9 +1530,32 @@ impl Engine {
                     && last_char.tone == tone::NONE
                     && last_char.mark == mark::NONE
                 {
-                    // This is the 'a+w' -> 'ă' case, don't handle here
-                    // Let try_w_as_vowel() take care of it
-                    return None;
+                    // Check if previous char is 'u' (ua pattern)
+                    // If so, let try_tone handle it (ua + w -> ưa)
+                    // Unless it is 'q' (qua + w -> quă)
+                    let is_ua_pattern = self.buf.len() >= 2 && {
+                        let prev = self.buf.get(self.buf.len() - 2).unwrap();
+                        prev.key == keys::U
+                    };
+                    
+                    if is_ua_pattern {
+                        // Check for 'q' before 'u' (qua)
+                        // qua + w -> quă (breve on a) -> let try_w_as_vowel handle it
+                        let has_q_initial = self.has_qu_initial();
+                        
+                        if !has_q_initial {
+                             // nua, mua, tua... + w -> nưa, mưa, tưa...
+                             // Proceed with try_tone
+                             // DO NOT RETURN None here
+                        } else {
+                            // qua + w -> quă
+                            return None;
+                        }
+                    } else {
+                        // This is the 'a+w' -> 'ă' case, don't handle here
+                        // Let try_w_as_vowel() take care of it
+                        return None;
+                    }
                 }
             }
         }
@@ -1320,8 +1629,8 @@ impl Engine {
                 // For horn modifier, apply smart vowel selection based on Vietnamese phonology
                 target_positions = self.find_horn_target_with_switch(targets, tone_val);
                 println!(
-                    "DEBUG: find_horn_target_with_switch returned {:?}",
-                    target_positions
+                    "DEBUG: find_horn_target_with_switch returned {:?}, targets={:?}",
+                    target_positions, targets
                 );
             } else {
                 // FALLBACK: Normal tone application (e.g. aa -> â, ee -> ê, oo -> ô)
@@ -1336,6 +1645,93 @@ impl Engine {
                         // i.e., the key being pressed is the same as the last char
                         // This is already guaranteed because we're checking the last buffer char
                         target_positions.push(last_buf_idx);
+                    } 
+                }
+                
+                // NEW FEATURE: Smart backward diacritical application
+                // When typing diacritical mark after a final consonant or vowel,
+                // apply diacritical to the appropriate vowel BEFORE the consonant/vowel
+                // Examples:
+                //   Telex: "cam" + "a" → "câm" (aa pattern)
+                //   VNI:   "cam" + "6" → "câm" (6 = circumflex)
+                //   Telex: "dau" + "a" → "dâu" (aa pattern) 
+                //   VNI:   "dau" + "6" → "dâu" (6 = circumflex)
+                if target_positions.is_empty() 
+                    && matches!(tone_type, ToneType::Circumflex | ToneType::Horn | ToneType::Breve)
+                    && self.buf.len() >= 2 
+                {
+                    let last_char = self.buf.get(last_buf_idx).unwrap();
+                    
+                    // CASE 1: Last char is a final consonant (e.g., "cam" + "a/6" → "câm")
+                    // CASE 2: Last char is a vowel (e.g., "dau" + "a/6" → "dâu")
+                    let should_check_backward = if !keys::is_vowel(last_char.key) {
+                        // Last is consonant - check if it's a final consonant
+                        if let Some(cons_char) = crate::utils::key_to_char(last_char.key, false) {
+                            let cons_str = cons_char.to_string();
+                            if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str) {
+                                true
+                            } else {
+                                // Check digraphs: ng, nh, ch
+                                // Need preceding char
+                                if last_buf_idx > 0 {
+                                    let prev_cons = self.buf.get(last_buf_idx - 1).unwrap();
+                                    let s = format!("{}{}", 
+                                        crate::utils::key_to_char(prev_cons.key, false).unwrap_or(' '),
+                                        cons_char
+                                    );
+                                    matches!(s.as_str(), "ng" | "nh" | "ch")
+                                } else {
+                                    false
+                                }
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        // Last is vowel - only allow backward for Telex doubling patterns (aa, ee, oo)
+                        // or VNI mode (which doesn't need key matching)
+                        // 
+                        // CRITICAL: For Telex, if last vowel is 'a' and key is 'w' (not 'a'),
+                        // this is NOT a backward case! 'w' should apply to a different vowel.
+                        // Example: "nua" + "w" should apply horn to 'u', NOT breve to 'a'
+                        if self.method == 1 {
+                            // VNI mode: always allow (numbers don't need to match vowels)
+                            true
+                        } else {
+                            // Telex mode: only allow if it's a doubling pattern (Circumflex)
+                            // We don't require last_char.key == key because we might be
+                            // doubling a vowel further back (e.g. dau + a -> dâu)
+                            // Horn and Breve don't have doubling patterns in Telex so we exclude them.
+                            tone_type == ToneType::Circumflex
+                        }
+                    };
+                    
+                    if should_check_backward {
+                        eprintln!("DEBUG try_tone: Checking backward application, last_char_key={}", last_char.key);
+                        
+                        // Look backward to find matching vowel that can receive this diacritical
+                        for pos in (0..last_buf_idx).rev() {
+                            if let Some(c) = self.buf.get(pos) {
+                                eprintln!("DEBUG try_tone backward: Checking pos={}, key={}, is_vowel={}, tone={}", 
+                                    pos, c.key, keys::is_vowel(c.key), c.tone);
+                                
+                                // For VNI mode: match by tone targets (e.g., 6 can apply to a,e,o)
+                                // For Telex mode: match by key (e.g., 'a' matches 'a')
+                                let vowel_matches = if self.method == 1 {
+                                    // VNI mode: check if vowel is in targets for this tone
+                                    keys::is_vowel(c.key) && targets.contains(&c.key)
+                                } else {
+                                    // Telex mode: vowel must match the key being pressed
+                                    keys::is_vowel(c.key) && c.key == key && targets.contains(&c.key)
+                                };
+                                
+                                if vowel_matches && c.tone == tone::NONE {
+                                    eprintln!("DEBUG try_tone: Found matching vowel at pos {} (key={}), applying {:?} backward", pos, c.key, tone_type);
+                                    target_positions.push(pos);
+                                    break;
+                                }
+                           }
+                        }
                     }
                 }
             }
@@ -1348,6 +1744,22 @@ impl Engine {
 
         // Track earliest position modified for rebuild
         let mut earliest_pos = usize::MAX;
+        
+        // FEATURE FLAG: Detect if this is backward diacritical application
+        // Backward = applying circumflex to vowel BEFORE final consonant (e.g., "cam" + "a" → "câm")
+        // Indicator: Last buffer char is NOT a vowel AND target position is NOT last position
+        let is_backward_application = if matches!(tone_type, ToneType::Circumflex | ToneType::Horn | ToneType::Breve) && self.buf.len() >= 2 {
+            let last_idx = self.buf.len() - 1;
+            // Backward IF: target is not last position
+            // This covers both CASE 1 (after final consonant) and CASE 2 (after vowel)
+            target_positions.iter().all(|&pos| pos != last_idx)
+        } else {
+            false
+        };
+        
+        if is_backward_application {
+            eprintln!("DEBUG try_tone: BACKWARD APPLICATION DETECTED - allowing final consonant at end");
+        }
 
         // If switching, clear old tones first for proper rebuild
         if is_switching {
@@ -1415,6 +1827,14 @@ impl Engine {
                 continue;
             }
 
+            // VALIDATION: Check if applying diacritical at this position is allowed
+            // Prevent diacritical marks after final consonants (c, ch, m, n, ng, nh, p, t)
+            // EXCEPT for backward application where final consonant at end is expected
+            if !self.can_apply_diacritical(pos, is_backward_application) {
+                // This position has a final consonant after it - reject tone
+                return None;
+            }
+
             // Step 2: Apply tone
             if let Some(c) = self.buf.get_mut(pos) {
                 c.tone = tone_val;
@@ -1462,10 +1882,12 @@ impl Engine {
         // VALIDATION CHECK: Verify the tone application resulted in valid Vietnamese
         // If validation fails, this indicates English word typing - trigger instant restore
         let simulated_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        eprintln!("DEBUG try_tone: Validating buffer keys: {:?}", simulated_keys);
         let validation_result =
             crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate(
                 &simulated_keys,
             );
+        eprintln!("DEBUG try_tone: Validation result: is_valid={}", validation_result.is_valid);
         if !validation_result.is_valid {
             // Validation failed - revert the tone and trigger instant restore
             for &pos in &target_positions {
@@ -1651,6 +2073,11 @@ impl Engine {
         if !vietnamese::validation::is_valid_tone_placement(&buffer_keys, &current_tones) {
             return None;
         }
+
+        // NOTE: We do NOT validate diacritical placement here.
+        // try_mark() applies TONE MARKS (sắc, huyền, hỏi, ngã, nặng), not DIACRITICAL MARKS (^, ˘, ʼ).
+        // Tone marks ARE allowed after final consonants (e.g., "tiền", "sàn").
+        // Only diacritical marks (handled by try_tone()) are prohibited after final consonants.
 
         eprintln!("DEBUG try_mark: About to apply mark at pos={}", pos);
         if let Some(c) = self.buf.get_mut(pos) {
@@ -1971,6 +2398,7 @@ impl Engine {
 
     /// Handle normal letter input
     fn handle_normal_letter(&mut self, key: u16, caps: bool, _shift: bool) -> Result {
+        eprintln!("DEBUG handle_normal_letter: ENTRY key={}, caps={}, buf.len={}", key, caps, self.buf.len());
         // Detect if typing special characters with Shift (e.g., @, #, $)
         // These indicate English input, so mark as English word
         //
@@ -2006,6 +2434,35 @@ impl Engine {
 
         self.last_transform = None;
         if keys::is_letter(key) {
+            // VALIDATION: Before adding vowel, check if it would create invalid multi-syllable pattern
+            // Example: buffer=[c, â (with tone), m], adding 'a' → [c, â, m, a] (TWO syllables) → REJECT
+            // This prevents invalid sequences after backward diacritical application
+            if keys::is_vowel(key) && self.buf.len() >= 2 {
+                eprintln!("DEBUG handle_normal_letter: Checking vowel '{}' against buffer len={}", key, self.buf.len());
+                let last_idx = self.buf.len() - 1;
+                
+                // Check pattern: [..., vowel-with-tone, final-consonant] + new-vowel
+                if let (Some(last_char), Some(prev_char)) = (self.buf.get(last_idx), self.buf.get(last_idx - 1)) {
+                    eprintln!("DEBUG handle_normal_letter: last_char.key={}, is_vowel={}", last_char.key, keys::is_vowel(last_char.key));
+                    eprintln!("DEBUG handle_normal_letter: prev_char.key={}, is_vowel={}, tone={}", prev_char.key, keys::is_vowel(prev_char.key), prev_char.tone);
+                    
+                    // Last char is final consonant AND previous char is vowel with tone
+                    if !keys::is_vowel(last_char.key) && keys::is_vowel(prev_char.key) && prev_char.tone != tone::NONE {
+                        eprintln!("DEBUG handle_normal_letter: Pattern matched! Checking if last is final consonant");
+                        // Check if last is actually a final consonant
+                        if let Some(cons_char) = crate::utils::key_to_char(last_char.key, false) {
+                            let cons_str = cons_char.to_string();
+                            eprintln!("DEBUG handle_normal_letter: cons_str='{}', checking if final", cons_str);
+                            if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str) {
+                                eprintln!("DEBUG handle_normal_letter: REJECTING vowel '{}' after [vowel-with-tone, final-consonant] pattern", key);
+                                // Return empty - consume keystroke but don't add letter
+                                return Result::default();
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Add the letter to buffer
             self.buf.push(Char::new(key, caps));
 
