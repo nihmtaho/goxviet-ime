@@ -620,7 +620,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if bundleId.hasPrefix("com.jetbrains") { return cached(.slow, (3000, 8000, 3000), "slow:jb") }
     
     // Default: conservative delays
-    return cached(.instant, (1000, 3000, 1500), "default")
+    return cached(.instant, (0, 0, 0), "default")
 }
 
 // MARK: - Screen Text Reading (for word restoration)

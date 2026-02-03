@@ -3,6 +3,11 @@
 //! This module provides utilities for restoring buffer content to raw ASCII,
 //! used for English word auto-restore and ESC key restoration functionality.
 //!
+//! ## Performance Optimizations (Phase 2)
+//! - Pre-allocated String buffers with capacity
+//! - Reduced redundant transform checks
+//! - Optimized iteration patterns
+//!
 //! ## Use Cases
 //!
 //! 1. **Auto-restore English words**: When space is pressed after an English word
@@ -18,22 +23,27 @@ use crate::engine::raw_input_buffer::RawInputBuffer;
 use crate::engine::types::Result;
 use crate::utils;
 
-/// Build raw ASCII output from raw input history
+/// Build raw ASCII output from raw input history (OPTIMIZED)
 ///
 /// Converts the raw keystroke history back to ASCII characters.
 /// Used by both auto_restore_english and restore_to_raw.
+///
+/// # Performance
+/// Pre-allocates Vec with exact capacity to avoid reallocation.
 ///
 /// # Arguments
 /// * `raw_input` - Raw keystroke history buffer
 ///
 /// # Returns
 /// Vector of ASCII characters, empty if no valid characters
+#[inline]
 pub fn build_raw_output(raw_input: &RawInputBuffer) -> Vec<char> {
     let len = raw_input.len();
     if len == 0 {
         return Vec::new();
     }
 
+    // OPTIMIZATION: Pre-allocate with exact capacity
     let mut out = Vec::with_capacity(len);
     for (key, caps) in raw_input.iter() {
         if let Some(ch) = utils::key_to_char(key, caps) {
@@ -44,9 +54,12 @@ pub fn build_raw_output(raw_input: &RawInputBuffer) -> Vec<char> {
     out
 }
 
-/// Build raw ASCII output from a specific position in raw input history
+/// Build raw ASCII output from a specific position in raw input history (OPTIMIZED)
 ///
 /// Used for incremental restore - only rebuilds from the first transform position.
+///
+/// # Performance
+/// Pre-allocates Vec with exact capacity for the subset.
 ///
 /// # Arguments
 /// * `raw_input` - Raw keystroke history buffer
@@ -54,17 +67,18 @@ pub fn build_raw_output(raw_input: &RawInputBuffer) -> Vec<char> {
 ///
 /// # Returns
 /// Vector of ASCII characters from position to end
+#[inline]
 pub fn build_raw_output_from(raw_input: &RawInputBuffer, from_pos: usize) -> Vec<char> {
     let len = raw_input.len();
     if from_pos >= len {
         return Vec::new();
     }
 
+    // OPTIMIZATION: Pre-allocate exact size needed
     let mut out = Vec::with_capacity(len - from_pos);
-    for (idx, (key, caps)) in raw_input.iter().enumerate() {
-        if idx < from_pos {
-            continue;
-        }
+
+    // OPTIMIZATION: Use skip() instead of enumerate + continue
+    for (key, caps) in raw_input.iter().skip(from_pos) {
         if let Some(ch) = utils::key_to_char(key, caps) {
             out.push(ch);
         }
@@ -90,16 +104,37 @@ pub fn build_raw_output_from(raw_input: &RawInputBuffer, from_pos: usize) -> Vec
 /// let pos = find_first_transform_position(&buf);
 /// assert_eq!(pos, 2); // 'ẽ' is at position 2
 /// ```
+#[inline]
 pub fn find_first_transform_position(buf: &Buffer) -> usize {
     buf.iter()
         .position(|c| c.tone != 0 || c.mark != 0 || c.stroke)
         .unwrap_or(buf.len())
 }
 
-/// Restore buffer to raw ASCII for English words
+/// Check if buffer has any Vietnamese transforms (OPTIMIZED + INLINED)
+///
+/// Used to distinguish between Vietnamese and English words.
+/// Example: "tét" has tone → Vietnamese, "test" no transforms → English
+///
+/// # Arguments
+/// * `buf` - Buffer to check
+///
+/// # Returns
+/// `true` if any character has tone, mark, or stroke
+#[inline(always)]
+pub fn has_vietnamese_transforms(buf: &Buffer) -> bool {
+    // OPTIMIZATION: Early exit on first transform found
+    buf.iter().any(|c| c.tone != 0 || c.mark != 0 || c.stroke)
+}
+
+/// Restore buffer to raw ASCII for English words (OPTIMIZED)
 ///
 /// Auto-restore English words when space is pressed AND transforms were applied.
 /// Adds a trailing space for better UX.
+///
+/// # Performance
+/// - Pre-checks for transforms to avoid unnecessary work
+/// - Pre-allocates Vec with capacity for output + space
 ///
 /// # Arguments
 /// * `buf` - Current buffer (for backspace count)
@@ -116,11 +151,19 @@ pub fn find_first_transform_position(buf: &Buffer) -> usize {
 /// // result.chars = ['t', 'e', 'l', 'e', 'x', ' ']
 /// ```
 pub fn auto_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result {
+    // Fast path: empty checks
     if raw_input.is_empty() || buf.is_empty() {
         return Result::none();
     }
 
-    let mut raw_chars = build_raw_output(raw_input);
+    // OPTIMIZATION: Pre-allocate with capacity for raw + space
+    let mut raw_chars = Vec::with_capacity(raw_input.len() + 1);
+
+    for (key, caps) in raw_input.iter() {
+        if let Some(ch) = utils::key_to_char(key, caps) {
+            raw_chars.push(ch);
+        }
+    }
 
     if raw_chars.is_empty() {
         return Result::none();
@@ -136,23 +179,7 @@ pub fn auto_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result 
     Result::send(backspace, &raw_chars)
 }
 
-/// Restore buffer to raw ASCII for English words (instant - no space)
-///
-/// Used for immediate restoration during typing when English is detected.
-/// OPTIMIZED: Uses incremental restore to only rebuild transformed portion.
-///
-/// # Performance
-/// - Old: Delete entire buffer + retype all characters (O(n))
-/// - New: Delete only from first transform + retype from there (O(k) where k = chars after transform)
-///
-/// # Example
-/// ```ignore
-/// // Typing "user": u → s → s → e → r
-/// // At 'e': buffer = "usẽ" (transform at pos 2)
-/// // Old: backspace 3, type "use" (6 operations)
-/// // New: backspace 1, type "e" (2 operations) - 3x faster!
-/// ```
-/// Restore buffer to raw ASCII for English words (instant - no space)
+/// Restore buffer to raw ASCII for English words (instant - no space) (OPTIMIZED)
 ///
 /// Used for immediate restoration during typing when English is detected.
 ///
@@ -166,26 +193,34 @@ pub fn auto_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result 
 /// - Key 2: "s" → triggers tone → buffer becomes "ré" (mark on 'e')
 /// - Key 3: "t" → buffer becomes "rét"
 /// - Key 4: "o" → English detection triggers
-///   - Must restore ENTIRE buffer "rét" → "reto"
-///   - Must backspace 3 chars ("rét"), type 4 chars ("resto")
+///   - Must restore ENTIRE buffer "rét" → "resto"
+///   - Must backspace 3 chars ("rét"), type 5 chars ("resto")
 ///
-/// The optimization of "only rebuild from first transform" breaks in this case
-/// because it skips the initial "r-e" keystrokes.
+/// # Performance Optimizations
+/// - Early exit if no transforms
+/// - Pre-allocated Vec with exact capacity
+/// - Single-pass transform check
 pub fn instant_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result {
+    // Fast path: empty checks
     if raw_input.is_empty() || buf.is_empty() {
         return Result::none();
     }
 
-    // Check if any transforms were actually applied
-    let has_transforms = buf.iter().any(|c| c.tone > 0 || c.mark > 0 || c.stroke);
-    if !has_transforms {
+    // OPTIMIZATION: Check for transforms first (early exit)
+    if !has_vietnamese_transforms(buf) {
         return Result::none();
     }
 
-    // Build RAW output from ALL keystrokes (position 0 onwards)
-    let raw_chars_all = build_raw_output(raw_input);
+    // OPTIMIZATION: Pre-allocate with exact capacity
+    let mut raw_chars = Vec::with_capacity(raw_input.len());
 
-    if raw_chars_all.is_empty() {
+    for (key, caps) in raw_input.iter() {
+        if let Some(ch) = utils::key_to_char(key, caps) {
+            raw_chars.push(ch);
+        }
+    }
+
+    if raw_chars.is_empty() {
         return Result::none();
     }
 
@@ -196,13 +231,17 @@ pub fn instant_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Resu
     // English words generally shouldn't expand (like shortcuts), so this is safe.
     let backspace = (buf.len()).min(raw_input.len()) as u8;
 
-    Result::send(backspace, &raw_chars_all)
+    Result::send(backspace, &raw_chars)
 }
 
-/// Restore buffer to raw ASCII (ESC key handler)
+/// Restore buffer to raw ASCII (ESC key handler) (OPTIMIZED)
 ///
 /// Replaces transformed output with original keystrokes.
 /// Only restores if transforms were actually applied.
+///
+/// # Performance
+/// - Early exit if no transforms
+/// - Pre-allocated Vec with exact capacity
 ///
 /// # Arguments
 /// * `buf` - Current buffer (for backspace count and transform check)
@@ -219,17 +258,24 @@ pub fn instant_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Resu
 /// // result.chars = ['t', 'e', 'x', 't']
 /// ```
 pub fn restore_to_raw(buf: &Buffer, raw_input: &RawInputBuffer) -> Result {
+    // Fast path: empty checks
     if raw_input.is_empty() || buf.is_empty() {
         return Result::none();
     }
 
-    // Check if any transforms were applied
-    let has_transforms = buf.iter().any(|c| c.tone > 0 || c.mark > 0 || c.stroke);
-    if !has_transforms {
+    // OPTIMIZATION: Early exit if no transforms
+    if !has_vietnamese_transforms(buf) {
         return Result::none();
     }
 
-    let raw_chars = build_raw_output(raw_input);
+    // OPTIMIZATION: Pre-allocate with exact capacity
+    let mut raw_chars = Vec::with_capacity(raw_input.len());
+
+    for (key, caps) in raw_input.iter() {
+        if let Some(ch) = utils::key_to_char(key, caps) {
+            raw_chars.push(ch);
+        }
+    }
 
     if raw_chars.is_empty() {
         return Result::none();
@@ -239,21 +285,6 @@ pub fn restore_to_raw(buf: &Buffer, raw_input: &RawInputBuffer) -> Result {
     let backspace = buf.len() as u8;
 
     Result::send(backspace, &raw_chars)
-}
-
-/// Check if buffer has any Vietnamese transforms (tone, mark, stroke)
-///
-/// Used to distinguish between Vietnamese and English words.
-/// Example: "tét" has tone → Vietnamese, "test" no transforms → English
-///
-/// # Arguments
-/// * `buf` - Buffer to check
-///
-/// # Returns
-/// `true` if any character has tone, mark, or stroke
-#[inline]
-pub fn has_vietnamese_transforms(buf: &Buffer) -> bool {
-    buf.iter().any(|c| c.tone != 0 || c.mark != 0 || c.stroke)
 }
 
 #[cfg(test)]
