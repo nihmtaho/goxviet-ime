@@ -33,11 +33,13 @@ class RustBridge {
         Log.info("RustBridge initialized with Telex mode enabled")
     }
     
+    @inline(__always)
     func setMethod(_ method: Int) {
         Log.method("Setting input method to \(method)")
         ime_method(UInt8(method))
     }
     
+    @inline(__always)
     func setEnabled(_ enabled: Bool) {
         Log.info("IME \(enabled ? "enabled" : "disabled")")
         ime_enabled(enabled)
@@ -68,6 +70,7 @@ class RustBridge {
         ime_instant_restore(enabled)
     }
     
+    @inline(__always)
     func clearBuffer() {
         ime_clear()
     }

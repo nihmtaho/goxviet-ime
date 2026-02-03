@@ -1233,10 +1233,16 @@ impl Engine {
                dd -> đ
             */
 
-            // Check revert: dđ -> d (original d + stroke key d)
+            // Check revert: dđ -> d (stroke key d pressed again)
+            // CRITICAL FIX: After transformation, the buffer structure changes
+            // e.g., [d, a, d(stroked)] becomes [d(stroked), a]
+            // So we need to find the stroked 'd' position, not use last_pos
             if let Some(Transform::Stroke(last_key)) = self.last_transform {
                 if last_key == key {
-                    return Some(self.revert_stroke(key, last_pos));
+                    // Find the stroked 'd' to revert
+                    if let Some(stroked_pos) = self.buf.iter().position(|c| c.key == keys::D && c.stroke) {
+                        return Some(self.revert_stroke(key, stroked_pos));
+                    }
                 }
             }
 
@@ -2352,25 +2358,47 @@ impl Engine {
     fn revert_stroke(&mut self, key: u16, pos: usize) -> Result {
         self.last_transform = None;
 
-        if let Some(c) = self.buf.get_mut(pos) {
-            // Fix: Check if char IS stroked (đ) to revert it
-            if c.key == keys::D && c.stroke {
-                c.stroke = false; // Clear stroke
+        // Early check if position is valid and char is stroked 'd'
+        let should_revert = self.buf.get(pos).map_or(false, |c| {
+            c.key == keys::D && c.stroke
+        });
+        
+        if !should_revert {
+            return Result::none();
+        }
 
-                // Add the key back to buffer
-                // For "đ" -> "dd", we unstroke 'd' and add 'd'.
-                let caps = c.caps;
-                self.buf.push(Char::new(key, caps));
-
-                // CRITICAL FIX: Mark as English to prevent re-stroke loop
-                self.is_english_word = true;
-
-                // CRITICAL FIX: backspace = 1 for single stroked char 'đ'
-                // The stroked char 'đ' is always displayed as 1 character on screen
-                let backspace_count = 1;
-                return self.rebuild_from_with_backspace(pos, backspace_count);
+        // CRITICAL FIX: Calculate screen length BEFORE unstroke
+        // We need to backspace the entire current output (e.g., "đa" = 2 chars)
+        // not just the stroked char (1 char)
+        let mut old_screen_len = 0;
+        for i in pos..self.buf.len() {
+            if let Some(ch) = self.buf.get(i) {
+                if ch.key == keys::D && ch.stroke {
+                    old_screen_len += 1; // 'đ' is 1 char
+                } else if chars::to_char(ch.key, ch.caps, ch.tone, ch.mark).is_some() {
+                    old_screen_len += 1;
+                } else if utils::key_to_char(ch.key, ch.caps).is_some() {
+                    old_screen_len += 1;
+                }
             }
         }
+
+        // Now we can safely mutate
+        if let Some(c) = self.buf.get_mut(pos) {
+            c.stroke = false; // Clear stroke
+
+            // Add the key back to buffer
+            // For "đ" -> "dd", we unstroke 'd' and add 'd'.
+            let caps = c.caps;
+            self.buf.push(Char::new(key, caps));
+
+            // CRITICAL FIX: Mark as English to prevent re-stroke loop
+            self.is_english_word = true;
+
+            // Use the calculated screen length for backspace
+            return self.rebuild_from_with_backspace(pos, old_screen_len);
+        }
+        
         Result::none()
     }
 

@@ -20,7 +20,7 @@ pub struct Char {
 }
 
 impl Char {
-    #[inline]
+    #[inline(always)]
     pub fn new(key: u16, caps: bool) -> Self {
         Self {
             key,
@@ -31,12 +31,12 @@ impl Char {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn has_tone(&self) -> bool {
         self.tone > 0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn has_mark(&self) -> bool {
         self.mark > 0
     }
@@ -64,7 +64,7 @@ impl Buffer {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn push(&mut self, c: Char) {
         if self.len < MAX {
             self.data[self.len] = c;
@@ -72,7 +72,7 @@ impl Buffer {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn pop(&mut self) -> Option<Char> {
         if self.len > 0 {
             self.len -= 1;
@@ -82,17 +82,17 @@ impl Buffer {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -125,12 +125,14 @@ impl Buffer {
     }
 
     /// Remove element at index, shifting subsequent elements left
+    /// OPTIMIZATION: Uses copy_within for efficient memory move (LLVM optimized to memmove)
     #[inline]
     pub fn remove(&mut self, index: usize) {
         if index < self.len {
-            // Shift elements left to fill the gap
-            for i in index..self.len - 1 {
-                self.data[i] = self.data[i + 1];
+            // Use copy_within (optimized by LLVM to memmove intrinsic)
+            // Faster than manual loop for bulk memory operations
+            if index + 1 < self.len {
+                self.data.copy_within(index + 1..self.len, index);
             }
             self.len -= 1;
         }

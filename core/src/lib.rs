@@ -34,6 +34,7 @@ use std::sync::Mutex;
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 
 /// Lock the engine mutex, recovering from poisoned state if needed (for tests)
+#[inline(always)]
 fn lock_engine() -> std::sync::MutexGuard<'static, Option<Engine>> {
     ENGINE.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -76,18 +77,15 @@ pub extern "C" fn ime_init() {
 /// For VNI mode with Shift+number keys (to type @, #, $ etc.),
 /// use `ime_key_ext` with the shift parameter.
 #[no_mangle]
+#[inline]
 pub extern "C" fn ime_key(key: u16, caps: bool, ctrl: bool) -> *mut Result {
     let mut guard = lock_engine();
-    if let Some(ref mut e) = *guard {
-        let initial_english = e.is_english_word;
-        let r = e.on_key(key, caps, ctrl);
-        println!(
-            "FFI: key={}, is_english: {} -> {}",
-            key, initial_english, e.is_english_word
-        );
-        Box::into_raw(Box::new(r))
-    } else {
-        std::ptr::null_mut()
+    match guard.as_mut() {
+        Some(e) => {
+            let r = e.on_key(key, caps, ctrl);
+            Box::into_raw(Box::new(r))
+        }
+        None => std::ptr::null_mut(),
     }
 }
 
@@ -110,13 +108,15 @@ pub extern "C" fn ime_key(key: u16, caps: bool, ctrl: bool) -> *mut Result {
 /// - Shift+3 → # (not hỏi mark)
 /// - etc.
 #[no_mangle]
+#[inline]
 pub extern "C" fn ime_key_ext(key: u16, caps: bool, ctrl: bool, shift: bool) -> *mut Result {
     let mut guard = lock_engine();
-    if let Some(ref mut e) = *guard {
-        let r = e.on_key_ext(key, caps, ctrl, shift);
-        Box::into_raw(Box::new(r))
-    } else {
-        std::ptr::null_mut()
+    match guard.as_mut() {
+        Some(e) => {
+            let r = e.on_key_ext(key, caps, ctrl, shift);
+            Box::into_raw(Box::new(r))
+        }
+        None => std::ptr::null_mut(),
     }
 }
 
@@ -127,9 +127,9 @@ pub extern "C" fn ime_key_ext(key: u16, caps: bool, ctrl: bool, shift: bool) -> 
 ///
 /// No-op if engine not initialized.
 #[no_mangle]
+#[inline]
 pub extern "C" fn ime_method(method: u8) {
-    let mut guard = lock_engine();
-    if let Some(ref mut e) = *guard {
+    if let Some(e) = lock_engine().as_mut() {
         e.set_method(method);
     }
 }
@@ -139,9 +139,9 @@ pub extern "C" fn ime_method(method: u8) {
 /// When disabled, `ime_key` returns action=0 (pass through).
 /// No-op if engine not initialized.
 #[no_mangle]
+#[inline]
 pub extern "C" fn ime_enabled(enabled: bool) {
-    let mut guard = lock_engine();
-    if let Some(ref mut e) = *guard {
+    if let Some(e) = lock_engine().as_mut() {
         e.set_enabled(enabled);
     }
 }

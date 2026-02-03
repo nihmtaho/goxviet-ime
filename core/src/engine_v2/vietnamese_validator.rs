@@ -12,6 +12,8 @@ impl VietnameseSyllableValidator {
     /// O(1) validation of Vietnamese syllable structure
     pub fn validate(keys: &[u16]) -> ValidationResult {
         println!("DEBUG: validate() called with {:?}", keys);
+
+        // Fast path: empty is valid
         if keys.is_empty() {
             return ValidationResult {
                 is_valid: true,
@@ -20,6 +22,14 @@ impl VietnameseSyllableValidator {
         }
 
         let len = keys.len();
+
+        // Fast path: single key is always valid (initial consonant or vowel)
+        if len == 1 {
+            return ValidationResult {
+                is_valid: true,
+                confidence: 100,
+            };
+        }
 
         // Rule 1: Validate initial consonants (comprehensive check from OpenKey)
         // Vietnamese allows specific initial consonants and clusters
