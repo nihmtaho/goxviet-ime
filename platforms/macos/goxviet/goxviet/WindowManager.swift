@@ -2,7 +2,7 @@
 //  WindowManager.swift
 //  GoxViet
 //
-//  Manages application windows (Settings and Update).
+//  Manages application windows (Settings).
 //
 
 import Cocoa
@@ -74,8 +74,7 @@ class WindowManager: NSObject, NSWindowDelegate {
         Log.info("Created Settings window")
     }
     
-    /// Closes the Settings window independently without affecting Update window.
-    /// This ensures that closing one window doesn't close the other.
+    /// Closes the Settings window.
     func closeSettingsWindow() {
         settingsWindow?.close()
         // cleanup delegated to windowWillClose via notifications/delegates
