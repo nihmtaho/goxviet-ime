@@ -187,7 +187,8 @@ struct AboutSettingsView: View {
                     VStack(spacing: 12) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                if updateManager.isChecking {
+                                switch updateManager.state {
+                                case .checking:
                                     HStack(spacing: 8) {
                                         ProgressView()
                                             .controlSize(.small)
@@ -198,26 +199,67 @@ struct AboutSettingsView: View {
                                     Text("Please wait...")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
-                                } else if updateManager.updateAvailable {
+                                        
+                                case .available(let info):
                                     HStack(spacing: 6) {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundColor(.green)
                                         Text("Update Available")
                                             .font(.system(size: 13, weight: .semibold))
                                     }
-                                    if let version = updateManager.latestVersion {
-                                        Text("Version \(version) is ready to install")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
-                                    }
-                                } else {
+                                    Text("Version \(info.version) is ready to install")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                        
+                                case .upToDate:
                                     HStack(spacing: 6) {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundColor(.green)
                                         Text("You're up to date")
                                             .font(.system(size: 13, weight: .semibold))
                                     }
-                                    Text(updateManager.statusMessage)
+                                    if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                                        Text("Version \(version) is the latest version")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                case .error(let message):
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundColor(.red)
+                                        Text("Check Failed")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    Text(message)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                    
+                                case .downloading:
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .scaleEffect(0.8)
+                                        Text("Downloading update...")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    
+                                case .readyToInstall:
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("Ready to Install")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    
+                                case .idle:
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                            .foregroundColor(.secondary)
+                                        Text("Software Update")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    Text("Check for the latest version")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                 }
@@ -225,7 +267,7 @@ struct AboutSettingsView: View {
                             
                             Spacer()
                             
-                            if updateManager.updateAvailable {
+                            if case .available = updateManager.state {
                                 Button {
                                     updateManager.downloadUpdate()
                                     showUpdateWindow = true
@@ -235,7 +277,7 @@ struct AboutSettingsView: View {
                                 .buttonStyle(.borderedProminent)
                             } else {
                                 Button {
-                                    updateManager.checkForUpdates(userInitiated: true)
+                                    updateManager.checkForUpdatesManually()
                                 } label: {
                                     Label(updateManager.isChecking ? "Checking..." : "Check for Updates", 
                                           systemImage: "arrow.clockwise")
@@ -260,12 +302,12 @@ struct AboutSettingsView: View {
                         }
                         
                         // Download progress (if downloading)
-                        if updateManager.isInstalling {
+                        if case .downloading(let progress) = updateManager.state {
                             VStack(spacing: 8) {
-                                ProgressView(value: updateManager.downloadProgress)
+                                ProgressView(value: progress)
                                     .progressViewStyle(.linear)
                                 HStack {
-                                    Text("\(Int(updateManager.downloadProgress * 100))% downloaded")
+                                    Text("\(Int(progress * 100))% downloaded")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                     Spacer()

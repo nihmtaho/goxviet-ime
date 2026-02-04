@@ -565,7 +565,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if role == "AXComboBox" { return cached(.selection, (0, 0, 0), "sel:combo") }
     if role == "AXSearchField" { return cached(.selection, (0, 0, 0), "sel:search") }
     
-    // Spotlight - use axDirect with no delays (matching gonhanh.org)
+    // Spotlight - use axDirect with no delays
     if bundleId == "com.apple.Spotlight" || bundleId == "com.apple.systemuiserver" { 
         return cached(.axDirect, (0, 0, 0), "ax:spotlight")
     }
