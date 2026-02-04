@@ -52,14 +52,14 @@ struct UpdateWindowView: View {
         }
         .frame(width: 480, height: 520)
         .onAppear {
-            if updateManager.updateState == .idle || updateManager.updateState == .error {
+            if case .idle = updateManager.state {
+                updateManager.checkForUpdates(userInitiated: true)
+            } else if case .error = updateManager.state {
                 updateManager.checkForUpdates(userInitiated: true)
             }
         }
         .onDisappear {
-            // CRITICAL: Stop timer IMMEDIATELY when view is disappearing
-            // This prevents timer callbacks from firing during/after deallocation
-            updateManager.pauseChecking()
+            // No action needed on disappear for singleton
         }
     }
     
@@ -98,21 +98,23 @@ struct UpdateWindowView: View {
     
     @ViewBuilder
     private var mainContentView: some View {
-        switch updateManager.updateState {
+        switch updateManager.state {
         case .idle:
             idleStateView
         case .checking:
             checkingStateView
-        case .updateAvailable:
-            updateAvailableView
-        case .downloading:
-            downloadingView
+        case .available(let info):
+            updateAvailableView(info: info)
+        case .downloading(let progress):
+            downloadingView(progress: progress)
         case .readyToInstall:
             readyToInstallView
+        case .installing:
+            installingView
         case .upToDate:
             upToDateView
-        case .error:
-            errorStateView
+        case .error(let msg):
+            errorStateView(message: msg)
         }
     }
     
@@ -150,7 +152,7 @@ struct UpdateWindowView: View {
         }
     }
     
-    private var updateAvailableView: some View {
+    private func updateAvailableView(info: UpdateInfo) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "arrow.down.circle.fill")
                 .font(.system(size: 64))
@@ -160,21 +162,19 @@ struct UpdateWindowView: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            if let latestVersion = updateManager.latestVersion {
-                VStack(spacing: 8) {
-                    Text("New Version: \(latestVersion)")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.green)
-                    
-                    if let currentVersion = currentVersion() {
-                        Text("Current: \(currentVersion)")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
+            VStack(spacing: 8) {
+                Text("New Version: \(info.version)")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.green)
+                
+                if let currentVersion = currentVersion() {
+                    Text("Current: \(currentVersion)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 8)
             }
+            .padding(.vertical, 8)
             
             Text("A new version is ready to download")
                 .font(.callout)
@@ -182,7 +182,7 @@ struct UpdateWindowView: View {
         }
     }
     
-    private var downloadingView: some View {
+    private func downloadingView(progress: Double) -> some View {
         VStack(spacing: 24) {
             // Circular progress indicator
             ZStack {
@@ -193,7 +193,7 @@ struct UpdateWindowView: View {
                 
                 // Progress circle
                 Circle()
-                    .trim(from: 0, to: updateManager.downloadProgress)
+                    .trim(from: 0, to: progress)
                     .stroke(
                         LinearGradient(
                             colors: [.blue, .purple],
@@ -204,11 +204,11 @@ struct UpdateWindowView: View {
                     )
                     .frame(width: 160, height: 160)
                     .rotationEffect(.degrees(-90))
-                    .animation(.easeInOut(duration: 0.3), value: updateManager.downloadProgress)
+                    .animation(.easeInOut(duration: 0.3), value: progress)
                 
                 // Percentage text
                 VStack(spacing: 4) {
-                    Text("\(Int(updateManager.downloadProgress * 100))%")
+                    Text("\(Int(progress * 100))%")
                         .font(.system(size: 36, weight: .bold))
                         .monospacedDigit()
                     
@@ -248,6 +248,21 @@ struct UpdateWindowView: View {
         }
     }
     
+    private var installingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.5)
+            
+            Text("Installing Update...")
+                .font(.title2)
+                .fontWeight(.bold)
+                
+            Text("Application will restart automatically")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+    
     private var upToDateView: some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
@@ -277,7 +292,7 @@ struct UpdateWindowView: View {
         }
     }
     
-    private var errorStateView: some View {
+    private func errorStateView(message: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 64))
@@ -287,7 +302,7 @@ struct UpdateWindowView: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text(updateManager.statusMessage)
+            Text(message)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -301,7 +316,7 @@ struct UpdateWindowView: View {
     private var actionButtonsView: some View {
         HStack(spacing: 12) {
             // Cancel/Close button
-            if updateManager.updateState == .downloading {
+            if case .downloading = updateManager.state {
                 Button("Cancel") {
                     updateManager.cancelDownload()
                 }
@@ -311,7 +326,7 @@ struct UpdateWindowView: View {
             Spacer()
             
             // Primary action button
-            switch updateManager.updateState {
+            switch updateManager.state {
             case .idle, .error:
                 HStack(spacing: 12) {
                     #if DEBUG
@@ -332,7 +347,7 @@ struct UpdateWindowView: View {
                     .tint(.blue)
                 }
                 
-            case .updateAvailable:
+            case .available:
                 HStack(spacing: 12) {
                     Button {
                         openReleasePage()

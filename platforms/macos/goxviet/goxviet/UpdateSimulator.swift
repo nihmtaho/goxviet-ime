@@ -4,6 +4,7 @@
 //
 //  Simulator for testing update flow without requiring actual GitHub releases
 //
+//
 
 #if DEBUG
 import Foundation
@@ -21,12 +22,9 @@ final class UpdateSimulator {
     
     /// Simulate a complete update flow with progress animation
     func simulateUpdateFlow() {
-        let updateManager = UpdateManager.shared
-        
         // Step 1: Simulate checking for updates
         DispatchQueue.main.async {
-            updateManager.setValue(UpdateState.checking, forKey: "updateState")
-            updateManager.setValue("Checking for updates...", forKey: "statusMessage")
+            self.setManagerState(.checking)
         }
         
         // Step 2: After 2 seconds, show update available
@@ -34,25 +32,25 @@ final class UpdateSimulator {
             let currentVersion = self.getCurrentVersion()
             let simulatedVersion = self.getSimulatedNewerVersion(current: currentVersion)
             
-            updateManager.setValue(simulatedVersion, forKey: "latestVersion")
-            updateManager.setValue(UpdateState.updateAvailable, forKey: "updateState")
-            updateManager.setValue("New version available: \(simulatedVersion)", forKey: "statusMessage")
-            updateManager.setValue(true, forKey: "updateAvailable")
-            updateManager.setValue(Date(), forKey: "lastChecked")
+            // Create a mock update info
+            let mockInfo = UpdateInfo(
+                version: simulatedVersion,
+                downloadURL: URL(string: "https://example.com/mock.dmg")!,
+                releaseNotes: "This is a simulated update for testing purposes.",
+                publishedAt: Date()
+            )
+            
+            self.setManagerState(.available(mockInfo))
         }
     }
     
     /// Simulate download progress (call this after user clicks Download)
     func simulateDownload() {
-        let updateManager = UpdateManager.shared
-        
         // Reset progress
         currentProgress = 0.0
         
         DispatchQueue.main.async {
-            updateManager.setValue(UpdateState.downloading, forKey: "updateState")
-            updateManager.setValue(0.0, forKey: "downloadProgress")
-            updateManager.setValue("Downloading: 0%", forKey: "statusMessage")
+            self.setManagerState(.downloading(progress: 0.0))
         }
         
         // Animate progress over 5 seconds
@@ -72,20 +70,15 @@ final class UpdateSimulator {
             }
             
             DispatchQueue.main.async {
-                updateManager.setValue(self.currentProgress, forKey: "downloadProgress")
-                updateManager.setValue("Downloading: \(Int(self.currentProgress * 100))%", forKey: "statusMessage")
+                self.setManagerState(.downloading(progress: self.currentProgress))
             }
         }
     }
     
     /// Simulate installation ready state
     private func finishDownload() {
-        let updateManager = UpdateManager.shared
-        
         DispatchQueue.main.async {
-            updateManager.setValue(UpdateState.readyToInstall, forKey: "updateState")
-            updateManager.setValue(1.0, forKey: "downloadProgress")
-            updateManager.setValue("Download complete - Ready to install", forKey: "statusMessage")
+            self.setManagerState(.readyToInstall)
         }
     }
     
@@ -95,16 +88,20 @@ final class UpdateSimulator {
         progressTimer = nil
         currentProgress = 0.0
         
-        let updateManager = UpdateManager.shared
         DispatchQueue.main.async {
-            updateManager.setValue(UpdateState.idle, forKey: "updateState")
-            updateManager.setValue(0.0, forKey: "downloadProgress")
-            updateManager.setValue("Not checked yet", forKey: "statusMessage")
-            updateManager.setValue(false, forKey: "updateAvailable")
+            self.setManagerState(.idle)
         }
     }
     
     // MARK: - Helpers
+    
+    private func setManagerState(_ state: UpdateState) {
+        // UpdateManager needs a debug setter for this to work
+        UpdateManager.shared.simulateState(state)
+        #if DEBUG
+        print("[UpdateSimulator] Setting state to: \(state)")
+        #endif
+    }
     
     private func getCurrentVersion() -> String {
         guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
@@ -114,7 +111,6 @@ final class UpdateSimulator {
     }
     
     private func getSimulatedNewerVersion(current: String) -> String {
-        // Parse current version and increment minor version
         let components = current.split(separator: ".").compactMap { Int($0) }
         
         if components.count >= 3 {
@@ -126,14 +122,4 @@ final class UpdateSimulator {
         }
     }
 }
-
-// MARK: - NSObject Extension for setValue
-
-private extension NSObject {
-    func setValue(_ value: Any?, forKey key: String) {
-        // Use KVO to set private properties for testing
-        setValue(value, forKeyPath: key)
-    }
-}
-
 #endif
