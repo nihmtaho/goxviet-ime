@@ -435,7 +435,17 @@ class InputManager: LifecycleManaged {
         let rightShift: CGKeyCode = 60
         let leftDown = CGEventSource.keyState(.combinedSessionState, key: leftShift)
         let rightDown = CGEventSource.keyState(.combinedSessionState, key: rightShift)
-        let shift = shiftFlag || leftDown || rightDown
+        
+        // FIX: The original code `shift = shiftFlag || leftDown || rightDown` caused
+        // intermittent auto-capitalization issues because it overrode the OS event flags 
+        // for normal typing if the global key state was stale (stuck key).
+        // We now enforce that for normal keys, we trust the event flags.
+        // We only fallback to physical key state for Backspace where robust Shift detection
+        // is critical for the Shift+Backspace (Word Delete) feature.
+        let isBackspace = (keyCode == 51)
+        let physicalShift = leftDown || rightDown
+        let shift = shiftFlag || (isBackspace && physicalShift)
+        
         let caps = capsLock != shift
         
         let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
