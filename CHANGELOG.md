@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [2.0.6] - 2026-02-04
+
+- Release preparation and version bump
+
+---
+
+
 ## [2.0.5] - 2026-02-04
 
 ### 🐛 Bug Fixes
