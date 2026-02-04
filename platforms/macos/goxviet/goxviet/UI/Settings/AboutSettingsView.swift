@@ -252,6 +252,18 @@ struct AboutSettingsView: View {
                                             .font(.system(size: 13, weight: .semibold))
                                     }
                                     
+                                case .installing:
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .scaleEffect(0.8)
+                                        Text("Installing...")
+                                            .font(.system(size: 13, weight: .semibold))
+                                    }
+                                    Text("Application will restart automatically")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+
                                 case .idle:
                                     HStack(spacing: 6) {
                                         Image(systemName: "arrow.triangle.2.circlepath")

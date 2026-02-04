@@ -17,6 +17,7 @@ enum UpdateState: Equatable {
     case available(UpdateInfo)
     case downloading(progress: Double)
     case readyToInstall
+    case installing
     case upToDate
     case error(String)
 }
@@ -36,15 +37,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         return false
     }
     
-    var updateAvailable: Bool {
-        if case .available = state { return true }
-        return false
-    }
-    
-    var isInstalling: Bool {
-        if case .readyToInstall = state { return true } // Or downloading
-        return false
-    }
+
     
     var latestVersion: String? {
         if case .available(let info) = state { return info.version }
@@ -58,6 +51,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         case .available(let info): return "New version available: \(info.version)"
         case .downloading(let progress): return "Downloading: \(Int(progress * 100))%"
         case .readyToInstall: return "Ready to install"
+        case .installing: return "Installing..."
         case .upToDate: return "You are up to date"
         case .error(let msg): return msg
         }
@@ -297,11 +291,19 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
             self.state = .error(msg)
         }
     }
+
+#if DEBUG
+    func simulateState(_ newState: UpdateState) {
+        DispatchQueue.main.async {
+            self.state = newState
+        }
+    }
+#endif
     
     // Kept robust implementation
     private func relaunchWithNewApp(tempApp: String) {
         DispatchQueue.main.async {
-            self.statusMessage = "Installing..." // Just update message, state can remain mostly static used by UI
+            self.state = .installing
         }
         
         // Stop InputManager explicitly to release resources immediately
@@ -309,6 +311,8 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
 
         let destApp = Bundle.main.bundlePath
         let logFile = "/tmp/goxviet_update.log"
+
+
         let currentPID = ProcessInfo.processInfo.processIdentifier
         
         let debugScript = """
