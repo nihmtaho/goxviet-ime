@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [2.0.5] - 2026-02-04
+
+### 🐛 Bug Fixes
+- **Auto-caps VNI Input**: Sửa lỗi VNI input tự động viết hoa ký tự dù Caps Lock tắt, cải thiện logic phát hiện shift key trong macOS InputManager.
+- **Shift Key Detection**: Hoàn thiện logic phát hiện trạng thái phím Shift, tránh gọi Shift handler không cần thiết khi buffer trống.
+
+### 🔧 Chores
+- **Test Coverage**: Thêm comprehensive edge case tests cho auto-capitalization handling, đảm bảo fix ổn định trên các scenario khác nhau.
+- **Code Signing**: Cải thiện code signing trong release workflow, bảo đảm macOS app đúng chuẩn phát hành.
+
+---
+
 ## [2.0.4] - 2026-02-04
 
 ### Added
