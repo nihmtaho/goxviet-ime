@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## [2.0.7] - 2026-02-04
+
+### 🔧 Chores
+- **macOS Build Version**: Bump build version and marketing version to 2.0.7
+
+---
+
 ## [2.0.6] - 2026-02-04
 
 ### ✨ Features
