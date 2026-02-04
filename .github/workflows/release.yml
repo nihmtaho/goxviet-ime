@@ -179,7 +179,7 @@ jobs:
             -derivedDataPath ./build \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES \
             clean build
 
           echo "✅ macOS app built successfully"
@@ -225,6 +225,11 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$STAGING_DIR/${{ env.APP_NAME }}.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$STAGING_DIR/${{ env.APP_NAME }}.app/Contents/Info.plist"
           echo "📝 Updated Info.plist with version $VERSION ($BUILD_NUMBER)"
+
+          # CRITICAL: Re-sign the app because modifying Info.plist invalidates the signature
+          echo "🔏 Re-signing app with ad-hoc signature..."
+          codesign --force --deep --sign - "$STAGING_DIR/${{ env.APP_NAME }}.app"
+          echo "✅ App re-signed successfully"
 
           # Calculate size needed (app size + 50MB buffer)
           APP_SIZE=$(du -sm "$APP_PATH" | cut -f1)

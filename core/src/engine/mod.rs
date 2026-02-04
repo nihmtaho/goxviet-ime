@@ -46,6 +46,9 @@ pub mod state;
 pub mod types;
 pub mod vietnamese;
 
+#[cfg(test)]
+mod edge_cases_tests;
+
 // For backward compatibility, re-export from submodules
 pub use self::state::history::WordHistory;
 pub use self::types::config::{EngineConfig, InputMethod as EngineInputMethod};

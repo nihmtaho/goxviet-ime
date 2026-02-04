@@ -17,21 +17,11 @@ mod tests {
     // Regression: th-/tr- prefixes must keep tone application (s/f/r/x/j) on the vowel
     // Previously English detection could block tone placement, causing missing marks.
     const TH_TR_TONE_CASES: &[(&str, &str)] = &[
-        ("this", "thís"),   // th + i + s → sắc on i
-        ("thir", "thỉr"),   // th + i + r → hỏi on i
-        ("thiif", "thìi"),  // th + i + i + f → huyền on i (duplicate i path)
-        ("truws", "trứ"),   // tru + w + s → trứ (ư + sắc)
-        ("truwj", "trự"),   // tru + w + j → trự (ư + nặng)
-    ];
-
-    // Regression: th-/tr- prefixes must keep tone application (s/f/r/x/j) on the vowel
-    // Previously English detection could block tone placement, causing missing marks.
-    const TH_TR_TONE_CASES: &[(&str, &str)] = &[
-        ("this", "thís"),   // th + i + s → sắc on i
-        ("thir", "thỉr"),   // th + i + r → hỏi on i
-        ("thiif", "thìi"),  // th + i + i + f → huyền on i (duplicate i path)
-        ("truws", "trứ"),   // tru + w + s → trứ (ư + sắc)
-        ("truwj", "trự"),   // tru + w + j → trự (ư + nặng)
+        ("this", "thís"),  // th + i + s → sắc on i
+        ("thir", "thỉr"),  // th + i + r → hỏi on i
+        ("thiif", "thìi"), // th + i + i + f → huyền on i (duplicate i path)
+        ("truws", "trứ"),  // tru + w + s → trứ (ư + sắc)
+        ("truwj", "trự"),  // tru + w + j → trự (ư + nặng)
     ];
 
     // ═══════════════════════════════════════════════════════════════════
@@ -42,45 +32,45 @@ mod tests {
 
     const UO_COMPOUND_BASIC: &[(&str, &str)] = &[
         // Basic ươ patterns
-        ("duow", "dươ"),      // du + o + w → dươ
-        ("duowc", "dươc"),    // dươ + c
-        ("duowcj", "dược"),   // dươc + tone nặng → dược
-        ("nguoiw", "ngươi"),  // ngu + o + i + w → ngươi
-        ("tuoiw", "tươi"),    // tu + o + i + w → tươi
-        ("tuoiwj", "tưới"),   // tươi + tone nặng → tưới
+        ("duow", "dươ"),     // du + o + w → dươ
+        ("duowc", "dươc"),   // dươ + c
+        ("duowcj", "dược"),  // dươc + tone nặng → dược
+        ("nguoiw", "ngươi"), // ngu + o + i + w → ngươi
+        ("tuoiw", "tươi"),   // tu + o + i + w → tươi
+        ("tuoiwj", "tưới"),  // tươi + tone nặng → tưới
     ];
 
     const UO_COMPOUND_COMPLEX: &[(&str, &str)] = &[
         // Complex ươ words from requirements
         // Note: "uo" + "w" → both u and o get horn → "ươ"
-        ("thuow", "thươ"),       // thu + o + w → thươ (both vowels get horn)
-        ("thuowr", "thuở"),      // thươ + tone hỏi → thuở
-        ("nguowfi", "người"),    // ngu + o + w + f + i → người (tone huyền on ơ)
-        ("muownj", "mượn"),      // mu + o + w + n + j → mượn (tone nặng on ơ)
-        ("luowngj", "lượng"),    // lu + o + w + ng + j → lượng (tone nặng on ơ)
-        ("ruowuj", "rượu"),      // ru + o + w + u + j → rượu (tone nặng on ơ)
+        ("thuow", "thươ"),    // thu + o + w → thươ (both vowels get horn)
+        ("thuowr", "thuở"),   // thươ + tone hỏi → thuở
+        ("nguowfi", "người"), // ngu + o + w + f + i → người (tone huyền on ơ)
+        ("muownj", "mượn"),   // mu + o + w + n + j → mượn (tone nặng on ơ)
+        ("luowngj", "lượng"), // lu + o + w + ng + j → lượng (tone nặng on ơ)
+        ("ruowuj", "rượu"),   // ru + o + w + u + j → rượu (tone nặng on ơ)
     ];
 
     const UO_COMPOUND_TONE_POSITIONING: &[(&str, &str)] = &[
         // Test tone mark positioning in ươ compounds
         // With final consonant: tone goes on ơ (second vowel) - Rule 3
         // Without final consonant: tone still goes on ơ (diacritic priority) - Rule 1
-        ("duowcj", "dược"),      // du + o + w + c + j → dược (tone on ơ, has final 'c')
-        ("duowf", "dườ"),        // du + o + w + f → dườ (tone on ơ, no final)
-        ("duowr", "dưở"),        // du + o + w + r → dưở (tone on ơ, no final)
-        ("duowx", "dưỡ"),        // du + o + w + x → dưỡ (tone on ơ, no final)
-        ("duowj", "dượ"),        // du + o + w + j → dượ (tone on ơ, no final)
-        ("nguowfi", "người"),    // ngu + o + w + f + i → người (tone on ơ)
-        ("tuowri", "tưởi"),      // tu + o + w + r + i → tưởi (tone on ơ)
+        ("duowcj", "dược"), // du + o + w + c + j → dược (tone on ơ, has final 'c')
+        ("duowf", "dườ"),   // du + o + w + f → dườ (tone on ơ, no final)
+        ("duowr", "dưở"),   // du + o + w + r → dưở (tone on ơ, no final)
+        ("duowx", "dưỡ"),   // du + o + w + x → dưỡ (tone on ơ, no final)
+        ("duowj", "dượ"),   // du + o + w + j → dượ (tone on ơ, no final)
+        ("nguowfi", "người"), // ngu + o + w + f + i → người (tone on ơ)
+        ("tuowri", "tưởi"), // tu + o + w + r + i → tưởi (tone on ơ)
     ];
 
     const UO_COMPOUND_WITH_FINALS: &[(&str, &str)] = &[
         // ươ + final consonants (challenging patterns)
-        ("duowc", "dươc"),       // du + o + w + c → dươc
-        ("tuowng", "tương"),     // tu + o + w + ng → tương
-        ("luown", "lươn"),       // lu + o + w + n → lươn
-        ("buowcj", "bước"),      // bu + o + w + c + j → bước (tone nặng)
-        ("huowngf", "hường"),    // hu + o + w + ng + f → hường (tone huyền)
+        ("duowc", "dươc"),    // du + o + w + c → dươc
+        ("tuowng", "tương"),  // tu + o + w + ng → tương
+        ("luown", "lươn"),    // lu + o + w + n → lươn
+        ("buowcj", "bước"),   // bu + o + w + c + j → bước (tone nặng)
+        ("huowngf", "hường"), // hu + o + w + ng + f → hường (tone huyền)
     ];
 
     // ═══════════════════════════════════════════════════════════════════
@@ -91,49 +81,49 @@ mod tests {
 
     const MODERN_TONE_OA: &[(&str, &str)] = &[
         // oa pattern - modern: tone on 'a'
-        ("hoas", "hoá"),         // hoa + sắc → hoá (tone on a)
-        ("hoaf", "hoà"),         // hoa + huyền → hoà
-        ("hoar", "hoả"),         // hoa + hỏi → hoả
-        ("hoax", "hoã"),         // hoa + ngã → hoã
-        ("hoaj", "hoạ"),         // hoa + nặng → hoạ
-        ("khoas", "khoá"),       // khoa + sắc → khoá
-        ("toans", "toán"),       // toan + sắc → toán (with final consonant)
+        ("hoas", "hoá"),   // hoa + sắc → hoá (tone on a)
+        ("hoaf", "hoà"),   // hoa + huyền → hoà
+        ("hoar", "hoả"),   // hoa + hỏi → hoả
+        ("hoax", "hoã"),   // hoa + ngã → hoã
+        ("hoaj", "hoạ"),   // hoa + nặng → hoạ
+        ("khoas", "khoá"), // khoa + sắc → khoá
+        ("toans", "toán"), // toan + sắc → toán (with final consonant)
     ];
 
     const MODERN_TONE_OE: &[(&str, &str)] = &[
         // oe pattern - modern: tone on 'e'
-        ("loes", "loé"),         // loe + sắc → loé
-        ("loef", "loè"),         // loe + huyền → loè
-        ("loer", "loẻ"),         // loe + hỏi → loẻ
-        ("hoef", "hoè"),         // hoe + huyền → hoè
-        ("toef", "toè"),         // toe + huyền → toè
+        ("loes", "loé"), // loe + sắc → loé
+        ("loef", "loè"), // loe + huyền → loè
+        ("loer", "loẻ"), // loe + hỏi → loẻ
+        ("hoef", "hoè"), // hoe + huyền → hoè
+        ("toef", "toè"), // toe + huyền → toè
     ];
 
     const MODERN_TONE_UY: &[(&str, &str)] = &[
         // uy pattern (no qu-initial) - modern: tone on 'y'
-        ("tuys", "tuý"),         // tuy + sắc → tuý
-        ("tuyf", "tuỳ"),         // tuy + huyền → tuỳ
-        ("tuyr", "tuỷ"),         // tuy + hỏi → tuỷ
-        ("muys", "muý"),         // muy + sắc → muý (rare but valid)
+        ("tuys", "tuý"), // tuy + sắc → tuý
+        ("tuyf", "tuỳ"), // tuy + huyền → tuỳ
+        ("tuyr", "tuỷ"), // tuy + hỏi → tuỷ
+        ("muys", "muý"), // muy + sắc → muý (rare but valid)
     ];
 
     const MODERN_TONE_UYE_TRIPHTHONG: &[(&str, &str)] = &[
         // uyê triphthong pattern - tone always on ê (has diacritic)
         // NOT affected by modern/traditional setting
-        ("duyeenf", "duyền"),    // duy + e + e + n + f → duyền
-        ("duyeens", "duyến"),    // duy + e + e + n + s → duyến
-        ("tuyeenf", "tuyền"),    // tuy + e + e + n + f → tuyền
-        ("kuyeens", "kuyến"),    // kuy + e + e + n + s → kuyến (rare)
+        ("duyeenf", "duyền"), // duy + e + e + n + f → duyền
+        ("duyeens", "duyến"), // duy + e + e + n + s → duyến
+        ("tuyeenf", "tuyền"), // tuy + e + e + n + f → tuyền
+        ("kuyeens", "kuyến"), // kuy + e + e + n + s → kuyến (rare)
     ];
 
     const MODERN_TONE_UY_QU_INITIAL: &[(&str, &str)] = &[
         // uy with qu-initial - always on 'y' (qu is consonant cluster)
         // NOT affected by modern/traditional setting
-        ("quys", "quý"),         // quy + sắc → quý
-        ("quyf", "quỳ"),         // quy + huyền → quỳ
-        ("quyr", "quỷ"),         // quy + hỏi → quỷ
-        ("quyeenf", "quyền"),    // quy + e + e + n + f → quyền (uyê triphthong, tone on ê)
-        ("quyeets", "quyết"),    // quy + e + e + t + s → quyết (uyê triphthong, tone on ê)
+        ("quys", "quý"),      // quy + sắc → quý
+        ("quyf", "quỳ"),      // quy + huyền → quỳ
+        ("quyr", "quỷ"),      // quy + hỏi → quỷ
+        ("quyeenf", "quyền"), // quy + e + e + n + f → quyền (uyê triphthong, tone on ê)
+        ("quyeets", "quyết"), // quy + e + e + t + s → quyết (uyê triphthong, tone on ê)
     ];
 
     // ═══════════════════════════════════════════════════════════════════
@@ -144,30 +134,30 @@ mod tests {
 
     const TRADITIONAL_TONE_OA: &[(&str, &str)] = &[
         // oa pattern - traditional: tone on 'o'
-        ("hoas", "hóa"),         // hoa + sắc → hóa (tone on o)
-        ("hoaf", "hòa"),         // hoa + huyền → hòa
-        ("hoar", "hỏa"),         // hoa + hỏi → hỏa
-        ("hoax", "hõa"),         // hoa + ngã → hõa
-        ("hoaj", "họa"),         // hoa + nặng → họa
-        ("khoas", "khóa"),       // khoa + sắc → khóa
+        ("hoas", "hóa"),   // hoa + sắc → hóa (tone on o)
+        ("hoaf", "hòa"),   // hoa + huyền → hòa
+        ("hoar", "hỏa"),   // hoa + hỏi → hỏa
+        ("hoax", "hõa"),   // hoa + ngã → hõa
+        ("hoaj", "họa"),   // hoa + nặng → họa
+        ("khoas", "khóa"), // khoa + sắc → khóa
     ];
 
     const TRADITIONAL_TONE_OE: &[(&str, &str)] = &[
         // oe pattern - traditional: tone on 'o'
-        ("loes", "lóe"),         // loe + sắc → lóe
-        ("loef", "lòe"),         // loe + huyền → lòe
-        ("loer", "lỏe"),         // loe + hỏi → lỏe
-        ("hoef", "hòe"),         // hoe + huyền → hòe
-        ("toef", "tòe"),         // toe + huyền → tòe
+        ("loes", "lóe"), // loe + sắc → lóe
+        ("loef", "lòe"), // loe + huyền → lòe
+        ("loer", "lỏe"), // loe + hỏi → lỏe
+        ("hoef", "hòe"), // hoe + huyền → hòe
+        ("toef", "tòe"), // toe + huyền → tòe
     ];
 
     const TRADITIONAL_TONE_UY: &[(&str, &str)] = &[
         // uy pattern (no qu-initial) - traditional: tone on 'u'
-        ("tuys", "túy"),         // tuy + sắc → túy
-        ("tuyf", "tùy"),         // tuy + huyền → tùy
-        ("tuyr", "tủy"),         // tuy + hỏi → tủy
-        ("muys", "múy"),         // muy + sắc → múy
-        ("duyf", "dùy"),         // duy + huyền → dùy
+        ("tuys", "túy"), // tuy + sắc → túy
+        ("tuyf", "tùy"), // tuy + huyền → tùy
+        ("tuyr", "tủy"), // tuy + hỏi → tủy
+        ("muys", "múy"), // muy + sắc → múy
+        ("duyf", "dùy"), // duy + huyền → dùy
     ];
 
     // ═══════════════════════════════════════════════════════════════════
@@ -177,19 +167,19 @@ mod tests {
 
     const OEO_PATTERN: &[(&str, &str)] = &[
         // oeo pattern - tone on middle 'e'
-        ("khoeo", "khoeo"),      // khoe + o → khoeo
-        ("khoeof", "khoèo"),     // khoeo + huyền → khoèo (tone on e)
-        ("khoeos", "khoeó"),     // khoeo + sắc → khoeó (tone on e)
-        ("kheof", "khèo"),       // kheo + huyền → khèo
-        ("kheos", "khéo"),       // kheo + sắc → khéo
-        ("ngoeof", "ngoèo"),     // ngoeo + huyền → ngoèo
-        ("ngoeos", "ngoeó"),     // ngoeo + sắc → ngoeó
+        ("khoeo", "khoeo"),  // khoe + o → khoeo
+        ("khoeof", "khoèo"), // khoeo + huyền → khoèo (tone on e)
+        ("khoeos", "khoeó"), // khoeo + sắc → khoeó (tone on e)
+        ("kheof", "khèo"),   // kheo + huyền → khèo
+        ("kheos", "khéo"),   // kheo + sắc → khéo
+        ("ngoeof", "ngoèo"), // ngoeo + huyền → ngoèo
+        ("ngoeos", "ngoeó"), // ngoeo + sắc → ngoeó
     ];
 
     const OEO_WITH_FINALS: &[(&str, &str)] = &[
         // oeo + final consonants (if valid)
-        ("kheoet", "kheoét"),    // oeo + t (rare pattern)
-        ("khoeot", "khoèot"),    // oeo + huyền + t
+        ("kheoet", "kheoét"), // oeo + t (rare pattern)
+        ("khoeot", "khoèot"), // oeo + huyền + t
     ];
 
     // ═══════════════════════════════════════════════════════════════════
@@ -243,19 +233,6 @@ mod tests {
             assert_eq!(
                 result, *expected,
                 "[ươ Finals] '{}' should become '{}' but got '{}'",
-                input, expected, result
-            );
-        }
-    }
-
-    #[test]
-    fn test_th_tr_tone_retention() {
-        for (input, expected) in TH_TR_TONE_CASES {
-            let mut e = Engine::new();
-            let result = type_word(&mut e, input);
-            assert_eq!(
-                result, *expected,
-                "[th/tr tone] '{}' should become '{}' but got '{}'",
                 input, expected, result
             );
         }
@@ -443,7 +420,10 @@ mod tests {
         }
 
         let accuracy = (passed as f64 / total as f64) * 100.0;
-        eprintln!("\nươ Compound Accuracy: {:.1}% ({}/{})", accuracy, passed, total);
+        eprintln!(
+            "\nươ Compound Accuracy: {:.1}% ({}/{})",
+            accuracy, passed, total
+        );
         assert!(
             accuracy >= 95.0,
             "ươ compound accuracy {:.1}% below target 95%",
@@ -480,7 +460,10 @@ mod tests {
         }
 
         let accuracy = (passed as f64 / total as f64) * 100.0;
-        eprintln!("\nModern Tone Accuracy: {:.1}% ({}/{})", accuracy, passed, total);
+        eprintln!(
+            "\nModern Tone Accuracy: {:.1}% ({}/{})",
+            accuracy, passed, total
+        );
         assert!(
             accuracy >= 95.0,
             "Modern tone accuracy {:.1}% below target 95%",
@@ -515,7 +498,10 @@ mod tests {
         }
 
         let accuracy = (passed as f64 / total as f64) * 100.0;
-        eprintln!("\nTraditional Tone Accuracy: {:.1}% ({}/{})", accuracy, passed, total);
+        eprintln!(
+            "\nTraditional Tone Accuracy: {:.1}% ({}/{})",
+            accuracy, passed, total
+        );
         assert!(
             accuracy >= 95.0,
             "Traditional tone accuracy {:.1}% below target 95%",
@@ -548,7 +534,10 @@ mod tests {
         }
 
         let accuracy = (passed as f64 / total as f64) * 100.0;
-        eprintln!("\nOEO Pattern Accuracy: {:.1}% ({}/{})", accuracy, passed, total);
+        eprintln!(
+            "\nOEO Pattern Accuracy: {:.1}% ({}/{})",
+            accuracy, passed, total
+        );
         assert!(
             accuracy >= 95.0,
             "OEO pattern accuracy {:.1}% below target 95%",
@@ -571,22 +560,22 @@ mod tests {
     const AUTORESTORE_VIETNAMESE_WORDS: &[(&str, &str)] = &[
         // These are valid Vietnamese words that should NOT be restored
         // Keep only words that work with current validation function
-        ("gox", "gõ"),                    // ✓ works
-        ("hoaf", "hoà"),                  // ✓ works
-        ("toans", "toán"),                // ✓ works
+        ("gox", "gõ"),     // ✓ works
+        ("hoaf", "hoà"),   // ✓ works
+        ("toans", "toán"), // ✓ works
     ];
 
     #[test]
     fn test_autorestore_does_not_affect_vietnamese() {
         eprintln!("\n=== AUTO-RESTORE BUG TEST: Vietnamese Words ===");
         eprintln!("Testing that valid Vietnamese words are NOT restored to raw Telex.\n");
-        
+
         let mut failed = Vec::new();
 
         for (input, expected) in AUTORESTORE_VIETNAMESE_WORDS {
             let mut engine = Engine::new();
             let result = type_word(&mut engine, input);
-            
+
             if result != *expected {
                 eprintln!(
                     "FAIL: '{}' expected '{}' but got '{}'",
@@ -599,18 +588,126 @@ mod tests {
         }
 
         if !failed.is_empty() {
-            eprintln!("\n{} / {} tests FAILED", failed.len(), AUTORESTORE_VIETNAMESE_WORDS.len());
+            eprintln!(
+                "\n{} / {} tests FAILED",
+                failed.len(),
+                AUTORESTORE_VIETNAMESE_WORDS.len()
+            );
             eprintln!("\nFailed cases (BUG = auto-restored to raw Telex):");
             for (input, expected, actual) in &failed {
-                eprintln!("  Input: '{}' | Expected: '{}' | Got: '{}'", input, expected, actual);
+                eprintln!(
+                    "  Input: '{}' | Expected: '{}' | Got: '{}'",
+                    input, expected, actual
+                );
                 // Check if it looks like it was restored (has raw Telex keys)
-                if actual.contains('x') || actual.contains('f') || actual.contains('r') || actual.contains('j') || actual.contains('s') {
+                if actual.contains('x')
+                    || actual.contains('f')
+                    || actual.contains('r')
+                    || actual.contains('j')
+                    || actual.contains('s')
+                {
                     eprintln!("    ↑ This looks like RAW TELEX RESTORATION (contains tone keys)!");
                 }
             }
             panic!("Auto-restore bug: Vietnamese words being incorrectly restored!");
         }
 
-        eprintln!("\n✓ All {} Vietnamese words preserved correctly!", AUTORESTORE_VIETNAMESE_WORDS.len());
+        eprintln!(
+            "\n✓ All {} Vietnamese words preserved correctly!",
+            AUTORESTORE_VIETNAMESE_WORDS.len()
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 6. VNI CAPITALIZATION REPRO (2026-02-04)
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_vni_capitalization_repro() {
+        use crate::data::keys;
+        eprintln!("\n=== VNI CAPITALIZATION REPRO TEST ===");
+
+        let mut e = Engine::new();
+        e.set_method(1); // VNI mode
+
+        // Type "tu" -> "tự" (just simulating context)
+        // t
+        e.on_key(keys::T, false, false);
+        // u
+        e.on_key(keys::U, false, false);
+        // j (nặng) - wait, VNI uses number for tone.
+        // tu + 7 (ư) + 6 (circumflex) ? No, VNI: tu -> tu
+        // ư = 7
+        // ơ = 8
+        // đ = 9
+        // tones: 1=sắc, 2=huyền, 3=hỏi, 4=ngã, 5=5nặng
+
+        // "tự" = t + u + 7 (ư) + 5 (nặng) -> tự
+        e.on_key(keys::N7, false, false); // ư
+        e.on_key(keys::N5, false, false); // nặng
+
+        // Type space
+        e.on_key(keys::SPACE, false, false);
+
+        // Check buffer and simulate clear (app does this)
+        // Buffer is empty after space commit, output is in Result
+        e.clear();
+
+        // Type "d" (lowercase) initial
+        e.on_key(keys::D, false, false);
+        assert_eq!(e.get_buffer(), "d");
+
+        // Type "9" (đ stroke)
+        let _res = e.on_key(keys::N9, false, false); // 9
+
+        eprintln!("Result after 9: {:?}", e.get_buffer());
+
+        // Should be "đ", NOT "Đ"
+        assert_eq!(e.get_buffer(), "đ");
+
+        // Let's also check if "d" was CAPS
+        // Restart
+        e.clear();
+        e.on_key(keys::D, true, false); // Uppercase D
+        assert_eq!(e.get_buffer(), "D");
+        e.on_key(keys::N9, false, false);
+        assert_eq!(e.get_buffer(), "Đ");
+    }
+
+    #[test]
+    fn test_vni_caps_permutation() {
+        use crate::data::keys;
+        eprintln!("=== VNI CAPS PERMUTATION TEST ===");
+
+        // Case 1: d (lower) + 9 (lower) -> đ (lower)
+        let mut e = Engine::new();
+        e.set_method(1); // VNI
+        e.on_key(keys::D, false, false);
+        e.on_key(keys::N9, false, false);
+        assert_eq!(e.get_buffer(), "đ", "Case 1 failed");
+
+        // Case 2: d (lower) + 9 (CAPS) -> đ (lower)
+        // Caps on the tone key should be ignored
+        let mut e = Engine::new();
+        e.set_method(1);
+        e.on_key(keys::D, false, false);
+        e.on_key(keys::N9, true, false); // 9 with caps
+        assert_eq!(e.get_buffer(), "đ", "Case 2 failed");
+
+        // Case 3: d (UPPER) + 9 (lower) -> Đ (UPPER)
+        // Capitalized base char should remain capitalized after stroke
+        let mut e = Engine::new();
+        e.set_method(1);
+        e.on_key(keys::D, true, false); // D
+        assert_eq!(e.get_buffer(), "D", "Case 3 intermediate failed");
+        e.on_key(keys::N9, false, false);
+        assert_eq!(e.get_buffer(), "Đ", "Case 3 failed");
+
+        // Case 4: d (UPPER) + 9 (CAPS) -> Đ (UPPER)
+        let mut e = Engine::new();
+        e.set_method(1);
+        e.on_key(keys::D, true, false);
+        e.on_key(keys::N9, true, false);
+        assert_eq!(e.get_buffer(), "Đ", "Case 4 failed");
     }
 }
