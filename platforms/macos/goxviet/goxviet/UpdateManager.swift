@@ -415,71 +415,6 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         return false
     }
 
-    // MARK: - Homebrew Helpers
-
-    private func resolveBrewPath() -> String? {
-        let candidates = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
-            return path
-        }
-        return nil
-    }
-
-    private func runProcess(executable: String, arguments: [String]) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
-
-        process.waitUntilExit()
-
-        if process.terminationStatus != 0 {
-            return false
-        }
-
-        return true
-    }
-
-    private func downloadAndOpenInstaller(from url: URL) {
-        DispatchQueue.main.async {
-            self.isChecking = true
-            self.statusMessage = "Downloading update..."
-        }
-
-        makeAPISession().downloadTask(with: url) { [weak self] tempURL, response, error in
-            guard let self = self else { return }
-
-            if let error = error {
-                self.finishCheckWithError("Download failed: \(error.localizedDescription)", userInitiated: true)
-                return
-            }
-
-            guard let tempURL = tempURL else {
-                self.finishCheckWithError("Download failed: no data", userInitiated: true)
-                return
-            }
-
-            let destination = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-            try? FileManager.default.removeItem(at: destination)
-
-            do {
-                try FileManager.default.moveItem(at: tempURL, to: destination)
-                self.installDMG(at: destination)
-            } catch {
-                self.finishCheckWithError("Cannot save installer", userInitiated: true)
-            }
-        }.resume()
-    }
-
     private func installDMG(at dmgURL: URL) {
         DispatchQueue.global(qos: .userInitiated).async {
             let mountPoint = FileManager.default.temporaryDirectory.appendingPathComponent("goxviet-mount-\(UUID().uuidString)")
@@ -536,8 +471,12 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
             self.statusMessage = "Installing..."
         }
 
-        let destApp = "/Applications/goxviet.app"
-        let script = "sleep 0.5 && rm -rf '\(destApp)' && mv '\(tempApp)' '\(destApp)' && open '\(destApp)'"
+        let destApp = Bundle.main.bundlePath
+        // CRITICAL FIX: Use rsync for in-place update instead of rm -rf
+        // This preserves the TCC (Accessibility) permissions of the app bundle
+        // by keeping the directory inode intact and only updating contents.
+        // We use 'rsync -a --delete' to mirror the new app into the existing one.
+        let script = "sleep 0.5 && rsync -a --delete '\(tempApp)/' '\(destApp)/' && rm -rf '\(tempApp)' && open '\(destApp)'"
 
         let task = Process()
         task.launchPath = "/bin/sh"

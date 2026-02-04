@@ -174,7 +174,8 @@ pub fn auto_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Result 
     raw_chars.push(' ');
 
     // Backspace count = current buffer length (displayed chars)
-    let backspace = buf.len() as u8;
+    // SAFETY: Clamp to u8::MAX to prevent overflow
+    let backspace = buf.len().min(u8::MAX as usize) as u8;
 
     Result::send(backspace, &raw_chars)
 }
@@ -229,7 +230,8 @@ pub fn instant_restore_english(buf: &Buffer, raw_input: &RawInputBuffer) -> Resu
     // This handles edge cases where buf.len() might be erroneously larger than the word
     // (e.g. due to lingering state or compound transforms)
     // English words generally shouldn't expand (like shortcuts), so this is safe.
-    let backspace = (buf.len()).min(raw_input.len()) as u8;
+    // SAFETY: Also clamp to u8::MAX to prevent overflow
+    let backspace = buf.len().min(raw_input.len()).min(u8::MAX as usize) as u8;
 
     Result::send(backspace, &raw_chars)
 }
@@ -282,7 +284,8 @@ pub fn restore_to_raw(buf: &Buffer, raw_input: &RawInputBuffer) -> Result {
     }
 
     // Backspace count = current buffer length (displayed chars)
-    let backspace = buf.len() as u8;
+    // SAFETY: Clamp to u8::MAX to prevent overflow
+    let backspace = buf.len().min(u8::MAX as usize) as u8;
 
     Result::send(backspace, &raw_chars)
 }

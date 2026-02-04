@@ -232,7 +232,8 @@ pub fn rebuild_from(buf: &Buffer, from_pos: usize) -> Result {
 
     // Backspace count = number of old screen chars at and after position
     // Since we're rebuilding from the same buffer, this equals the new count
-    Result::send(screen_chars as u8, &new_chars)
+    // SAFETY: Clamp to u8::MAX to prevent overflow
+    Result::send(screen_chars.min(u8::MAX as usize) as u8, &new_chars)
 }
 
 /// Rebuild displayed text with explicit backspace count
@@ -263,7 +264,8 @@ pub fn rebuild_from_with_backspace(
     old_screen_length: usize,
 ) -> Result {
     let new_chars = render_range(buf, from_pos, buf.len());
-    Result::send(old_screen_length as u8, &new_chars)
+    // SAFETY: Clamp to u8::MAX to prevent overflow
+    Result::send(old_screen_length.min(u8::MAX as usize) as u8, &new_chars)
 }
 
 /// Rebuild entire buffer and return the result

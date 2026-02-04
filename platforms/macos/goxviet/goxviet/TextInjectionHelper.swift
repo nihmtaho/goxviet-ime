@@ -454,7 +454,7 @@ private struct BundleConstants {
         // Code Editors
         "com.microsoft.VSCode", "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3",
         "com.panic.Nova", "com.github.atom", "com.github.GitHubClient", "com.coteditor.CotEditor",
-        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview",
+        "com.microsoft.VSCodeInsiders", "com.vscodium", "dev.zed.preview", "com.google.antigravity",
         // Text Editors
         "com.apple.TextEdit", "com.apple.Notes", "com.apple.mail",
         // Note-taking apps
