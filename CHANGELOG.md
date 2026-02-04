@@ -2,7 +2,12 @@
 
 ## [2.0.6] - 2026-02-04
 
-- Release preparation and version bump
+### ✨ Features
+- **Update State Refactor**: Cấu trúc lại hệ thống trạng thái cập nhật (UpdateState) sử dụng associated values, thêm trạng thái `installing` để theo dõi quá trình cài đặt chi tiết.
+
+### 🔧 Refactoring
+- **UpdateManager Centralization**: Tập trung quản lý trạng thái cập nhật vào `UpdateManager`, tách riêng logic kiểm tra cập nhật vào `UpdateChecker` để code modularity tốt hơn.
+- **UI Components Update**: Cập nhật các component UI để phản ánh các trạng thái cập nhật mới, cải thiện UX khi theo dõi tiến trình cập nhật.
 
 ---
 
