@@ -9,8 +9,8 @@
 
 # Documentation & Examples (không track)
 # .github/
-docs/
-!docs/release-note/
+# docs/
+# !docs/release-note/
 example-project/
 scripts/
 !scripts/calc_hash.py

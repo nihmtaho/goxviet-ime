@@ -1,3 +1,24 @@
+# CHANGELOG
+
+## [2.0.4] - 2026-02-04
+
+### Added
+- **AGENT.override.md Guidelines**: Thêm hướng dẫn chi tiết cho platform (macOS, Windows) và core engine, giúp contributor hiểu rõ architecture và best practices.
+- **macOS App Updates**: Triển khai hệ thống cập nhật macOS dựa trên rsync, cho phép incremental updates và giảm kích thước download.
+- **Tone & Circumflex Transform**: Cải tiến hỗ trợ đặt dấu thanh và dấu ^ (circumflex) sau nguyên âm và phụ âm cuối, tăng độ chính xác xử lý các pattern phức tạp (#50).
+- **Phase 2 macOS UI Redesign**: Thiết kế lại giao diện macOS với các tính năng beta mới, tối ưu UX trên macOS 12.0+ (#49).
+- **Phase 1 Core Features**: Triển khai các tính năng Phase 1 bao gồm keyboard shortcuts, Shift+Backspace xóa từ, và hỗ trợ multi-encoding (UTF-8, TCVN3, VNI, CP1258) (#44).
+
+### Changed
+- **Buffer & Restore Optimization**: Tối ưu logic buffer và restore với inlining, `copy_within`, và pre-allocation để giảm latency và memory usage.
+- **Core Engine u8 Handling**: Thêm clamping cho u8 overflow trong core engine, tăng độ ổn định khi xử lý dữ liệu cạnh.
+
+### Performance
+- **Latency**: Giảm độ trễ xử lý nhờ optimize buffer operations (< 3ms hot path).
+- **Memory**: Giảm memory allocation trong restore logic nhờ pre-allocation strategy.
+
+---
+
 # Changelog - Gõ Việt (GoxViet)
 
 ## [Unreleased]
