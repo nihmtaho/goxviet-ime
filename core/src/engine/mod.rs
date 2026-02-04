@@ -264,7 +264,8 @@ impl Engine {
                 // Restore previous word from history
                 if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
                     // Calculate the full word length to delete
-                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    // SAFETY: Clamp to u8::MAX to prevent overflow
+                    let word_len = restored_buf.to_full_string().chars().count().min(u8::MAX as usize) as u8;
                     // Don't restore - just return total delete count (spaces + word)
                     return Result::send(spaces_to_delete + word_len, &[]);
                 }
@@ -278,7 +279,8 @@ impl Engine {
                 self.break_after_commit = 0;
 
                 if let Some((restored_buf, _)) = self.word_history.pop() {
-                    let word_len = restored_buf.to_full_string().chars().count() as u8;
+                    // SAFETY: Clamp to u8::MAX to prevent overflow
+                    let word_len = restored_buf.to_full_string().chars().count().min(u8::MAX as usize) as u8;
                     return Result::send(breaks_to_delete + word_len, &[]);
                 }
 
@@ -290,7 +292,8 @@ impl Engine {
 
         // Calculate the displayed word length (full Vietnamese string with diacritics)
         let displayed_word = self.buf.to_full_string();
-        let char_count = displayed_word.chars().count() as u8;
+        // SAFETY: Clamp to u8::MAX to prevent overflow
+        let char_count = displayed_word.chars().count().min(u8::MAX as usize) as u8;
 
         // Clear everything
         self.buf.clear();
@@ -1030,7 +1033,8 @@ impl Engine {
             let output = self.buf.to_full_string();
             let final_output = format!("{} ", output);
             let final_chars: Vec<char> = final_output.chars().collect();
-            return Result::send(output.chars().count() as u8, &final_chars);
+            // SAFETY: Clamp to u8::MAX to prevent overflow
+            return Result::send(output.chars().count().min(u8::MAX as usize) as u8, &final_chars);
         }
 
         // Don't trigger shortcut if word has non-letter prefix
@@ -1062,7 +1066,8 @@ impl Engine {
         let output = self.buf.to_full_string();
         let final_output = format!("{} ", output);
         let final_chars: Vec<char> = final_output.chars().collect();
-        Result::send(output.chars().count() as u8, &final_chars)
+        // SAFETY: Clamp to u8::MAX to prevent overflow
+        Result::send(output.chars().count().min(u8::MAX as usize) as u8, &final_chars)
     }
 
     /// Try "w" as vowel "ư" in Telex mode
@@ -2281,7 +2286,8 @@ impl Engine {
     /// Common revert logic: clear modifier, add key to buffer, rebuild output
     fn revert_and_rebuild(&mut self, pos: usize, key: u16, caps: bool) -> Result {
         // Calculate backspace BEFORE adding key (based on old buffer state)
-        let backspace = (self.buf.len() - pos) as u8;
+        // SAFETY: Clamp to u8::MAX to prevent overflow
+        let backspace = (self.buf.len() - pos).min(u8::MAX as usize) as u8;
 
         // Add the reverted key to buffer so validation sees the full sequence
         self.buf.push(Char::new(key, caps));
@@ -2776,7 +2782,8 @@ impl Engine {
         let mut output = Vec::with_capacity(self.buf.len() - from);
         // Backspace = number of chars from `from` to BEFORE the new char
         // The new char (last in buffer) hasn't been displayed yet
-        let backspace = (self.buf.len().saturating_sub(1).saturating_sub(from)) as u8;
+        // SAFETY: Clamp to u8::MAX to prevent overflow
+        let backspace = self.buf.len().saturating_sub(1).saturating_sub(from).min(u8::MAX as usize) as u8;
 
         for i in from..self.buf.len() {
             if let Some(c) = self.buf.get(i) {
@@ -3227,7 +3234,8 @@ impl Engine {
         }
 
         let chars: Vec<char> = self.buf.to_full_string().chars().collect();
-        Result::send(buf_len as u8, &chars)
+        // SAFETY: Clamp to u8::MAX to prevent overflow
+        Result::send(buf_len.min(u8::MAX as usize) as u8, &chars)
     }
 
     /// Advanced phonotactic analysis for English detection
