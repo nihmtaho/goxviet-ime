@@ -10,7 +10,7 @@ import SwiftUI
 struct AboutSettingsView: View {
     @EnvironmentObject var updateManager: UpdateManager
     @State private var showChangelog = false
-    @State private var showUpdateWindow = false
+
     
     var body: some View {
         ScrollView {
@@ -282,7 +282,6 @@ struct AboutSettingsView: View {
                             if case .available = updateManager.state {
                                 Button {
                                     updateManager.downloadUpdate()
-                                    showUpdateWindow = true
                                 } label: {
                                     Label("Update Now", systemImage: "arrow.down.circle.fill")
                                 }
@@ -338,10 +337,6 @@ struct AboutSettingsView: View {
                 } label: {
                     Label("Software Update", systemImage: "arrow.down.circle")
                         .font(.system(size: 14, weight: .semibold))
-                }
-                .sheet(isPresented: $showUpdateWindow) {
-                    UpdateWindowView()
-                        .environmentObject(updateManager)
                 }
                 
                 Spacer()
