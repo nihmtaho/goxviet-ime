@@ -599,7 +599,8 @@ fn debug_basic_vietnamese_typing() {
 // AUTO-RESTORE ON SPACE TEST
 // =============================================================================
 
-/// Test that English words are auto-restored to raw ASCII when space is pressed
+/// Test that English words are NOT auto-restored when space is pressed
+/// (Auto-restore feature has been removed as per user request)
 #[test]
 fn test_english_auto_restore_on_space() {
     use goxviet_core::data::keys;
@@ -607,15 +608,14 @@ fn test_english_auto_restore_on_space() {
     let mut engine = Engine::new();
     engine.set_method(0); // Telex
 
-    println!("\n=== Testing English auto-restore on space ===");
+    println!("\n=== Testing NO auto-restore on space ===");
 
-    // Test 1: "fix" + space → should restore to "fix " (3-char word in early pattern)
+    // Test 1: "fix" + space → should NOT restore (feature removed)
     engine.clear();
     engine.on_key(keys::F, false, false);
     engine.on_key(keys::I, false, false);
     engine.on_key(keys::X, false, false);
 
-    // Press space - should trigger auto-restore
     let result = engine.on_key(keys::SPACE, false, false);
 
     println!(
@@ -623,19 +623,14 @@ fn test_english_auto_restore_on_space() {
         result.action, result.backspace, result.count
     );
 
-    if result.action == 1 {
-        let output: String = (0..result.count as usize)
-            .filter_map(|i| char::from_u32(result.as_slice()[i]))
-            .collect();
-        println!("Output: {:?}", output);
-        assert_eq!(output, "fix ", "Should restore to 'fix ' with auto-space");
-    } else {
-        // "fix" transforms to "fĩ" - if not in common word list, may not restore
-        // For now, accept either behavior (fix is a short word)
-        println!("Note: 'fix' may transform to 'fĩ' and not restore (short word)");
-    }
+    // Should NOT restore - just send space
+    assert_eq!(
+        result.backspace, 0,
+        "Should not backspace (no auto-restore)"
+    );
+    println!("✓ 'fix' not auto-restored (feature removed)");
 
-    // Test 2: "text" + space → should restore (common English word)
+    // Test 2: "text" + space → should NOT restore
     engine.clear();
     engine.on_key(keys::T, false, false);
     engine.on_key(keys::E, false, false);
@@ -649,19 +644,14 @@ fn test_english_auto_restore_on_space() {
         result.action, result.backspace, result.count
     );
 
-    if result.action == 1 {
-        let output: String = (0..result.count as usize)
-            .filter_map(|i| char::from_u32(result.as_slice()[i]))
-            .collect();
-        assert_eq!(output, "text ", "Should restore to 'text '");
-        println!("✓ English word 'text' auto-restored correctly");
-    } else {
-        println!("✓ 'text' passed through (may or may not have transforms)");
-    }
+    // Should NOT restore - just send space
+    assert_eq!(
+        result.backspace, 0,
+        "Should not backspace (no auto-restore)"
+    );
+    println!("✓ 'text' not auto-restored (feature removed)");
 
-    // Test 3: "test" + space → should NOT restore (Vietnamese word "tét")
-    // t-e-s-t where 's' is tone modifier creates "tét" with sắc tone
-    // "tét" is a valid Vietnamese word, so we preserve it
+    // Test 3: "test" + space → should NOT restore (Vietnamese "tét" preserved)
     engine.clear();
     engine.on_key(keys::T, false, false);
     engine.on_key(keys::E, false, false);
@@ -675,13 +665,12 @@ fn test_english_auto_restore_on_space() {
         result.action, result.backspace, result.count
     );
 
-    // Should NOT restore because "tét" is a valid Vietnamese word
-    // Note: "test" was removed from common word list to allow "tét"
+    // Should NOT restore
     assert_eq!(
-        result.action, 0,
-        "Vietnamese 'tét' should not auto-restore on space"
+        result.backspace, 0,
+        "Vietnamese 'tét' should not be restored"
     );
-    println!("✓ Vietnamese word 'tét' preserved (not auto-restored to 'test')");
+    println!("✓ Vietnamese word 'tét' preserved");
 
     // Test 4: Vietnamese word "mix" → "mĩ" should NOT restore
     engine.clear();
@@ -693,13 +682,13 @@ fn test_english_auto_restore_on_space() {
 
     println!("\nTest 'mix + space': action={}", result.action);
 
-    // Should NOT restore (Vietnamese "mĩ" is valid)
+    // Should NOT restore
     assert_eq!(
-        result.action, 0,
-        "Vietnamese 'mĩ' should not auto-restore on space"
+        result.backspace, 0,
+        "Vietnamese 'mĩ' should not be restored"
     );
 
-    println!("\n✓ All auto-restore tests passed!");
+    println!("\n✓ All tests passed - auto-restore feature removed!");
 }
 
 /// Test comprehensive list of English words with auto-space

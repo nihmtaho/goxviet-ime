@@ -405,7 +405,7 @@ mod tests {
     fn test_full_string_conversions_and_unmapped() {
         let mut converter = EncodingConverter::new();
         let sample = "Việt Nam";
-        
+
         // TCVN3 Full String
         converter.set_encoding(OutputEncoding::TCVN3);
         // Correct bytes for "Việt Nam": V-i-ệ-t- -N-a-m
@@ -413,7 +413,10 @@ mod tests {
         assert_eq!(converter.convert_string(sample), expected_tcvn3);
 
         // TCVN3 Unmapped Character
-        assert_eq!(converter.convert_string("Hello €"), vec![b'H', b'e', b'l', b'l', b'o', b' ', b'?']);
+        assert_eq!(
+            converter.convert_string("Hello €"),
+            vec![b'H', b'e', b'l', b'l', b'o', b' ', b'?']
+        );
 
         // TCVN3 Uppercase
         let sample_upper = "VIỆT NAM";
@@ -424,7 +427,7 @@ mod tests {
         // VNI (should be passthrough for now)
         converter.set_encoding(OutputEncoding::VNI);
         assert_eq!(converter.convert_string(sample), sample.as_bytes().to_vec());
-        
+
         // CP1258 Full String (based on current implementation)
         converter.set_encoding(OutputEncoding::CP1258);
         // "Việt" -> V, i, ệ(passthrough), t

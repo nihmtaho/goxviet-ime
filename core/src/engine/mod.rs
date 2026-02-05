@@ -268,7 +268,11 @@ impl Engine {
                 if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
                     // Calculate the full word length to delete
                     // SAFETY: Clamp to u8::MAX to prevent overflow
-                    let word_len = restored_buf.to_full_string().chars().count().min(u8::MAX as usize) as u8;
+                    let word_len = restored_buf
+                        .to_full_string()
+                        .chars()
+                        .count()
+                        .min(u8::MAX as usize) as u8;
                     // Don't restore - just return total delete count (spaces + word)
                     return Result::send(spaces_to_delete + word_len, &[]);
                 }
@@ -283,7 +287,11 @@ impl Engine {
 
                 if let Some((restored_buf, _)) = self.word_history.pop() {
                     // SAFETY: Clamp to u8::MAX to prevent overflow
-                    let word_len = restored_buf.to_full_string().chars().count().min(u8::MAX as usize) as u8;
+                    let word_len = restored_buf
+                        .to_full_string()
+                        .chars()
+                        .count()
+                        .min(u8::MAX as usize) as u8;
                     return Result::send(breaks_to_delete + word_len, &[]);
                 }
 
@@ -836,23 +844,25 @@ impl Engine {
                         // Check if the last character in the buffer has the same base key.
                         // This correctly handles cases like 'e' + 's' -> 'é', then 'é' + 'e' -> 'ê'.
                         let prev_key_match = self.buf.last().map_or(false, |c| c.key == key);
-                        
+
                         // NEW FEATURE: Also allow if last char is final consonant and there's a
                         // matching vowel before it (for backward diacritical application)
                         // Example: "cam" + "a" → should check tone to apply circumflex backward
-                        // 
+                        //
                         // CONSTRAINT: Only allow if buffer forms valid syllable structure (C-V-C pattern)
                         // Reject cases like: "m" + "aa" (consonant-only at start)
                         let backward_match = if !prev_key_match && self.buf.len() >= 2 {
                             let last_idx = self.buf.len() - 1;
                             let last_char = self.buf.get(last_idx).unwrap();
-                            
+
                             // CASE 1: Last char is consonant (backward after final consonant)
                             // Example: "cam" + "a" → "câm"
                             if !keys::is_vowel(last_char.key) {
                                 // Check for Digraph finals (ng, nh, ch)
                                 // If last char is g, h, check prev char
-                                let is_final = if let Some(cons_char) = crate::utils::key_to_char(last_char.key, false) {
+                                let is_final = if let Some(cons_char) =
+                                    crate::utils::key_to_char(last_char.key, false)
+                                {
                                     let cons_str = cons_char.to_string();
                                     if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str) {
                                         true
@@ -881,7 +891,11 @@ impl Engine {
                                     if self.buf.len() >= 3 {
                                         // Check if there's a vowel before the consonant matching the key
                                         // Scan backwards skipping the final consonant(s)
-                                        self.buf.iter().rev().skip(1).any(|c| c.key == key && c.tone == tone::NONE)
+                                        self.buf
+                                            .iter()
+                                            .rev()
+                                            .skip(1)
+                                            .any(|c| c.key == key && c.tone == tone::NONE)
                                     } else {
                                         false
                                     }
@@ -903,7 +917,7 @@ impl Engine {
                         } else {
                             false
                         };
-                        
+
                         prev_key_match || backward_match
                     }
                     _ => true, // Other keys can be tone modifiers directly
@@ -940,12 +954,12 @@ impl Engine {
                             // It should act as a number (break key).
                             return self.commit_and_break_sequence();
                         }
-                        
+
                         // CRITICAL FIX: For Telex a/e/o double-key patterns, if try_tone fails
                         // (e.g., due to diacritical validation rejecting it), we should NOT
                         // fall through to handle_normal_letter. The keystroke should be consumed
                         // but have no output effect, preventing the second vowel from being added.
-                        // 
+                        //
                         // Examples:
                         //   Buffer: [s, a, n], Keystroke: 'a' (double-key)
                         //   try_tone fails (can_apply_diacritical rejects due to final 'n')
@@ -959,18 +973,21 @@ impl Engine {
                         if self.method == 0 && matches!(key, keys::A | keys::E | keys::O) {
                             // Check if this was intended as a tone modifier (either adjacent or backward)
                             let was_tone_attempt = self.buf.last().map_or(false, |c| c.key == key)
-                                || (self.buf.len() >= 3 
+                                || (self.buf.len() >= 3
                                     && self.buf.last().map_or(false, |c| !keys::is_vowel(c.key))
                                     && self.buf.get(0).map_or(false, |c| !keys::is_vowel(c.key)));
-                            
-                            eprintln!("DEBUG: try_tone failed for key={}, was_tone_attempt={}", key, was_tone_attempt);
-                            
+
+                            eprintln!(
+                                "DEBUG: try_tone failed for key={}, was_tone_attempt={}",
+                                key, was_tone_attempt
+                            );
+
                             if was_tone_attempt {
                                 eprintln!("DEBUG: Consuming keystroke without output");
                                 return Result::default(); // Consume keystroke, produce no output
                             }
                         }
-                        
+
                         // If tone() is Some but try_tone failed (and not Telex a/e/o), fall through to mark handling
                     }
                 }
@@ -1032,12 +1049,8 @@ impl Engine {
 
         // Check global shortcuts enabled flag
         if !self.shortcuts_enabled {
-            // Default: commit buffer as-is and add a space
-            let output = self.buf.to_full_string();
-            let final_output = format!("{} ", output);
-            let final_chars: Vec<char> = final_output.chars().collect();
-            // SAFETY: Clamp to u8::MAX to prevent overflow
-            return Result::send(output.chars().count().min(u8::MAX as usize) as u8, &final_chars);
+            // Shortcuts disabled - let OS handle the space key
+            return Result::none();
         }
 
         // Don't trigger shortcut if word has non-letter prefix
@@ -1057,20 +1070,10 @@ impl Engine {
             let output: Vec<char> = m.output.chars().collect();
             return Result::send(m.backspace_count as u8, &output);
         }
-        
-        // If no shortcut matched, check for English auto-restore
-        if self.should_auto_restore() {
-            // Add a space to the raw input before restoring to ensure it's part of the final output
-            self.raw_input.push(keys::SPACE, false);
-            return self.instant_restore_english();
-        }
 
-        // Default: commit buffer as-is and add a space
-        let output = self.buf.to_full_string();
-        let final_output = format!("{} ", output);
-        let final_chars: Vec<char> = final_output.chars().collect();
-        // SAFETY: Clamp to u8::MAX to prevent overflow
-        Result::send(output.chars().count().min(u8::MAX as usize) as u8, &final_chars)
+        // No shortcut matched and auto-restore is disabled.
+        // Return None to let the OS handle the space key.
+        Result::none()
     }
 
     /// Try "w" as vowel "ư" in Telex mode
@@ -1248,7 +1251,9 @@ impl Engine {
             if let Some(Transform::Stroke(last_key)) = self.last_transform {
                 if last_key == key {
                     // Find the stroked 'd' to revert
-                    if let Some(stroked_pos) = self.buf.iter().position(|c| c.key == keys::D && c.stroke) {
+                    if let Some(stroked_pos) =
+                        self.buf.iter().position(|c| c.key == keys::D && c.stroke)
+                    {
                         return Some(self.revert_stroke(key, stroked_pos));
                     }
                 }
@@ -1276,7 +1281,7 @@ impl Engine {
                 .iter()
                 .take(target_pos)
                 .any(|c| keys::is_vowel(c.key));
-                
+
             if !has_vowel {
                 if let Some(c) = self.buf.get_mut(target_pos) {
                     c.stroke = true;
@@ -1351,16 +1356,20 @@ impl Engine {
 
     /// Helper: Check if applying diacritical at a position is valid
     /// Returns false if there's a final consonant after this position
-    /// 
+    ///
     /// # Arguments
     /// * `target_pos` - Position in buffer to apply diacritical
     /// * `is_backward_application` - True if this is backward application (e.g., "cam" + "a" → "câm")
     ///                                In backward mode, final consonant at END is ALLOWED
     fn can_apply_diacritical(&self, target_pos: usize, is_backward_application: bool) -> bool {
         use crate::data::keys;
-        
-        eprintln!("DEBUG can_apply_diacritical: ENTRY target_pos={}, buf.len()={}", target_pos, self.buf.len());
-        
+
+        eprintln!(
+            "DEBUG can_apply_diacritical: ENTRY target_pos={}, buf.len()={}",
+            target_pos,
+            self.buf.len()
+        );
+
         if target_pos >= self.buf.len() {
             eprintln!("DEBUG can_apply_diacritical: target_pos out of bounds, ALLOW");
             return true; // Invalid position - allow
@@ -1368,8 +1377,11 @@ impl Engine {
 
         // Work directly with buffer keys
         let target_char = self.buf.get(target_pos).unwrap();
-        eprintln!("DEBUG can_apply_diacritical: target_char.key={}", target_char.key);
-        
+        eprintln!(
+            "DEBUG can_apply_diacritical: target_char.key={}",
+            target_char.key
+        );
+
         // Ensure target is a vowel
         if !keys::is_vowel(target_char.key) {
             eprintln!("DEBUG can_apply_diacritical: target is not vowel, ALLOW");
@@ -1381,15 +1393,21 @@ impl Engine {
         eprintln!("DEBUG can_apply_diacritical: Checking CASE 1 (consonant after)");
         if target_pos + 1 < self.buf.len() {
             let next_char = self.buf.get(target_pos + 1).unwrap();
-            eprintln!("DEBUG can_apply_diacritical: next_char.key={}", next_char.key);
-            
+            eprintln!(
+                "DEBUG can_apply_diacritical: next_char.key={}",
+                next_char.key
+            );
+
             // If next is a vowel, no consonant immediately after
             if !keys::is_vowel(next_char.key) {
                 // Next is a consonant. Is it a final consonant?
                 if let Some(cons_char) = crate::utils::key_to_char(next_char.key, false) {
                     let cons_str = cons_char.to_string();
-                    eprintln!("DEBUG can_apply_diacritical: next is consonant '{}', checking if final", cons_str);
-                    
+                    eprintln!(
+                        "DEBUG can_apply_diacritical: next is consonant '{}', checking if final",
+                        cons_str
+                    );
+
                     if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str)
                     {
                         eprintln!("DEBUG can_apply_diacritical: CASE 1 FOUND FINAL CONSONANT");
@@ -1473,7 +1491,7 @@ impl Engine {
 
         // CHECK CASE 2: Immediately preceded by a final consonant
         // This prevents applying diacritical to a vowel that starts a new syllable after a complete one.
-        // 
+        //
         // KEY INSIGHT: A consonant is only "final" if it comes AFTER a vowel (closing a syllable).
         // Example scenarios:
         //   "taan" (t-a-a-n) → 't' is INITIAL (before vowel), NOT final → target pos=1 ALLOW ✓
@@ -1487,15 +1505,19 @@ impl Engine {
         if target_pos > 0 {
             let prev_pos = target_pos - 1;
             if let Some(prev_char) = self.buf.get(prev_pos) {
-                eprintln!("DEBUG can_apply_diacritical: prev_char.key={}, is_vowel={}", prev_char.key, keys::is_vowel(prev_char.key));
-                
+                eprintln!(
+                    "DEBUG can_apply_diacritical: prev_char.key={}, is_vowel={}",
+                    prev_char.key,
+                    keys::is_vowel(prev_char.key)
+                );
+
                 // Check if immediately preceding character is a consonant
                 if !keys::is_vowel(prev_char.key) {
                     // Previous is consonant. Check if it could be a final consonant
                     if let Some(prev_cons_char) = crate::utils::key_to_char(prev_char.key, false) {
                         let prev_cons_str = prev_cons_char.to_string();
                         eprintln!("DEBUG can_apply_diacritical: prev is consonant '{}', checking if final", prev_cons_str);
-                        
+
                         // Is this consonant type potentially final? (c, ch, m, n, ng, nh, p, t)
                         if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&prev_cons_str) {
                             // It CAN be final, but is it ACTUALLY final? (must have vowel before it)
@@ -1519,7 +1541,7 @@ impl Engine {
                 }
             }
         }
-        
+
         // No final consonants blocking this vowel = ALLOW
         eprintln!("DEBUG can_apply_diacritical: No final consonants found, ALLOW");
         true
@@ -1551,16 +1573,16 @@ impl Engine {
                         let prev = self.buf.get(self.buf.len() - 2).unwrap();
                         prev.key == keys::U
                     };
-                    
+
                     if is_ua_pattern {
                         // Check for 'q' before 'u' (qua)
                         // qua + w -> quă (breve on a) -> let try_w_as_vowel handle it
                         let has_q_initial = self.has_qu_initial();
-                        
+
                         if !has_q_initial {
-                             // nua, mua, tua... + w -> nưa, mưa, tưa...
-                             // Proceed with try_tone
-                             // DO NOT RETURN None here
+                            // nua, mua, tua... + w -> nưa, mưa, tưa...
+                            // Proceed with try_tone
+                            // DO NOT RETURN None here
                         } else {
                             // qua + w -> quă
                             return None;
@@ -1659,23 +1681,26 @@ impl Engine {
                         // i.e., the key being pressed is the same as the last char
                         // This is already guaranteed because we're checking the last buffer char
                         target_positions.push(last_buf_idx);
-                    } 
+                    }
                 }
-                
+
                 // NEW FEATURE: Smart backward diacritical application
                 // When typing diacritical mark after a final consonant or vowel,
                 // apply diacritical to the appropriate vowel BEFORE the consonant/vowel
                 // Examples:
                 //   Telex: "cam" + "a" → "câm" (aa pattern)
                 //   VNI:   "cam" + "6" → "câm" (6 = circumflex)
-                //   Telex: "dau" + "a" → "dâu" (aa pattern) 
+                //   Telex: "dau" + "a" → "dâu" (aa pattern)
                 //   VNI:   "dau" + "6" → "dâu" (6 = circumflex)
-                if target_positions.is_empty() 
-                    && matches!(tone_type, ToneType::Circumflex | ToneType::Horn | ToneType::Breve)
-                    && self.buf.len() >= 2 
+                if target_positions.is_empty()
+                    && matches!(
+                        tone_type,
+                        ToneType::Circumflex | ToneType::Horn | ToneType::Breve
+                    )
+                    && self.buf.len() >= 2
                 {
                     let last_char = self.buf.get(last_buf_idx).unwrap();
-                    
+
                     // CASE 1: Last char is a final consonant (e.g., "cam" + "a/6" → "câm")
                     // CASE 2: Last char is a vowel (e.g., "dau" + "a/6" → "dâu")
                     let should_check_backward = if !keys::is_vowel(last_char.key) {
@@ -1704,7 +1729,7 @@ impl Engine {
                     } else {
                         // Last is vowel - only allow backward for Telex doubling patterns (aa, ee, oo)
                         // or VNI mode (which doesn't need key matching)
-                        // 
+                        //
                         // CRITICAL: For Telex, if last vowel is 'a' and key is 'w' (not 'a'),
                         // this is NOT a backward case! 'w' should apply to a different vowel.
                         // Example: "nua" + "w" should apply horn to 'u', NOT breve to 'a'
@@ -1719,16 +1744,19 @@ impl Engine {
                             tone_type == ToneType::Circumflex
                         }
                     };
-                    
+
                     if should_check_backward {
-                        eprintln!("DEBUG try_tone: Checking backward application, last_char_key={}", last_char.key);
-                        
+                        eprintln!(
+                            "DEBUG try_tone: Checking backward application, last_char_key={}",
+                            last_char.key
+                        );
+
                         // Look backward to find matching vowel that can receive this diacritical
                         for pos in (0..last_buf_idx).rev() {
                             if let Some(c) = self.buf.get(pos) {
                                 eprintln!("DEBUG try_tone backward: Checking pos={}, key={}, is_vowel={}, tone={}", 
                                     pos, c.key, keys::is_vowel(c.key), c.tone);
-                                
+
                                 // For VNI mode: match by tone targets (e.g., 6 can apply to a,e,o)
                                 // For Telex mode: match by key (e.g., 'a' matches 'a')
                                 let vowel_matches = if self.method == 1 {
@@ -1736,15 +1764,17 @@ impl Engine {
                                     keys::is_vowel(c.key) && targets.contains(&c.key)
                                 } else {
                                     // Telex mode: vowel must match the key being pressed
-                                    keys::is_vowel(c.key) && c.key == key && targets.contains(&c.key)
+                                    keys::is_vowel(c.key)
+                                        && c.key == key
+                                        && targets.contains(&c.key)
                                 };
-                                
+
                                 if vowel_matches && c.tone == tone::NONE {
                                     eprintln!("DEBUG try_tone: Found matching vowel at pos {} (key={}), applying {:?} backward", pos, c.key, tone_type);
                                     target_positions.push(pos);
                                     break;
                                 }
-                           }
+                            }
                         }
                     }
                 }
@@ -1758,11 +1788,15 @@ impl Engine {
 
         // Track earliest position modified for rebuild
         let mut earliest_pos = usize::MAX;
-        
+
         // FEATURE FLAG: Detect if this is backward diacritical application
         // Backward = applying circumflex to vowel BEFORE final consonant (e.g., "cam" + "a" → "câm")
         // Indicator: Last buffer char is NOT a vowel AND target position is NOT last position
-        let is_backward_application = if matches!(tone_type, ToneType::Circumflex | ToneType::Horn | ToneType::Breve) && self.buf.len() >= 2 {
+        let is_backward_application = if matches!(
+            tone_type,
+            ToneType::Circumflex | ToneType::Horn | ToneType::Breve
+        ) && self.buf.len() >= 2
+        {
             let last_idx = self.buf.len() - 1;
             // Backward IF: target is not last position
             // This covers both CASE 1 (after final consonant) and CASE 2 (after vowel)
@@ -1770,9 +1804,11 @@ impl Engine {
         } else {
             false
         };
-        
+
         if is_backward_application {
-            eprintln!("DEBUG try_tone: BACKWARD APPLICATION DETECTED - allowing final consonant at end");
+            eprintln!(
+                "DEBUG try_tone: BACKWARD APPLICATION DETECTED - allowing final consonant at end"
+            );
         }
 
         // If switching, clear old tones first for proper rebuild
@@ -1896,12 +1932,18 @@ impl Engine {
         // VALIDATION CHECK: Verify the tone application resulted in valid Vietnamese
         // If validation fails, this indicates English word typing - trigger instant restore
         let simulated_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        eprintln!("DEBUG try_tone: Validating buffer keys: {:?}", simulated_keys);
+        eprintln!(
+            "DEBUG try_tone: Validating buffer keys: {:?}",
+            simulated_keys
+        );
         let validation_result =
             crate::engine_v2::vietnamese_validator::VietnameseSyllableValidator::validate(
                 &simulated_keys,
             );
-        eprintln!("DEBUG try_tone: Validation result: is_valid={}", validation_result.is_valid);
+        eprintln!(
+            "DEBUG try_tone: Validation result: is_valid={}",
+            validation_result.is_valid
+        );
         if !validation_result.is_valid {
             // Validation failed - revert the tone and trigger instant restore
             for &pos in &target_positions {
@@ -2368,10 +2410,11 @@ impl Engine {
         self.last_transform = None;
 
         // Early check if position is valid and char is stroked 'd'
-        let should_revert = self.buf.get(pos).map_or(false, |c| {
-            c.key == keys::D && c.stroke
-        });
-        
+        let should_revert = self
+            .buf
+            .get(pos)
+            .map_or(false, |c| c.key == keys::D && c.stroke);
+
         if !should_revert {
             return Result::none();
         }
@@ -2407,7 +2450,7 @@ impl Engine {
             // Use the calculated screen length for backspace
             return self.rebuild_from_with_backspace(pos, old_screen_len);
         }
-        
+
         Result::none()
     }
 
@@ -2435,7 +2478,12 @@ impl Engine {
 
     /// Handle normal letter input
     fn handle_normal_letter(&mut self, key: u16, caps: bool, _shift: bool) -> Result {
-        eprintln!("DEBUG handle_normal_letter: ENTRY key={}, caps={}, buf.len={}", key, caps, self.buf.len());
+        eprintln!(
+            "DEBUG handle_normal_letter: ENTRY key={}, caps={}, buf.len={}",
+            key,
+            caps,
+            self.buf.len()
+        );
         // Detect if typing special characters with Shift (e.g., @, #, $)
         // These indicate English input, so mark as English word
         //
@@ -2475,21 +2523,42 @@ impl Engine {
             // Example: buffer=[c, â (with tone), m], adding 'a' → [c, â, m, a] (TWO syllables) → REJECT
             // This prevents invalid sequences after backward diacritical application
             if keys::is_vowel(key) && self.buf.len() >= 2 {
-                eprintln!("DEBUG handle_normal_letter: Checking vowel '{}' against buffer len={}", key, self.buf.len());
+                eprintln!(
+                    "DEBUG handle_normal_letter: Checking vowel '{}' against buffer len={}",
+                    key,
+                    self.buf.len()
+                );
                 let last_idx = self.buf.len() - 1;
-                
+
                 // Check pattern: [..., vowel-with-tone, final-consonant] + new-vowel
-                if let (Some(last_char), Some(prev_char)) = (self.buf.get(last_idx), self.buf.get(last_idx - 1)) {
-                    eprintln!("DEBUG handle_normal_letter: last_char.key={}, is_vowel={}", last_char.key, keys::is_vowel(last_char.key));
-                    eprintln!("DEBUG handle_normal_letter: prev_char.key={}, is_vowel={}, tone={}", prev_char.key, keys::is_vowel(prev_char.key), prev_char.tone);
-                    
+                if let (Some(last_char), Some(prev_char)) =
+                    (self.buf.get(last_idx), self.buf.get(last_idx - 1))
+                {
+                    eprintln!(
+                        "DEBUG handle_normal_letter: last_char.key={}, is_vowel={}",
+                        last_char.key,
+                        keys::is_vowel(last_char.key)
+                    );
+                    eprintln!(
+                        "DEBUG handle_normal_letter: prev_char.key={}, is_vowel={}, tone={}",
+                        prev_char.key,
+                        keys::is_vowel(prev_char.key),
+                        prev_char.tone
+                    );
+
                     // Last char is final consonant AND previous char is vowel with tone
-                    if !keys::is_vowel(last_char.key) && keys::is_vowel(prev_char.key) && prev_char.tone != tone::NONE {
+                    if !keys::is_vowel(last_char.key)
+                        && keys::is_vowel(prev_char.key)
+                        && prev_char.tone != tone::NONE
+                    {
                         eprintln!("DEBUG handle_normal_letter: Pattern matched! Checking if last is final consonant");
                         // Check if last is actually a final consonant
                         if let Some(cons_char) = crate::utils::key_to_char(last_char.key, false) {
                             let cons_str = cons_char.to_string();
-                            eprintln!("DEBUG handle_normal_letter: cons_str='{}', checking if final", cons_str);
+                            eprintln!(
+                                "DEBUG handle_normal_letter: cons_str='{}', checking if final",
+                                cons_str
+                            );
                             if crate::engine_v2::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str) {
                                 eprintln!("DEBUG handle_normal_letter: REJECTING vowel '{}' after [vowel-with-tone, final-consonant] pattern", key);
                                 // Return empty - consume keystroke but don't add letter
@@ -2499,7 +2568,7 @@ impl Engine {
                     }
                 }
             }
-            
+
             // Add the letter to buffer
             self.buf.push(Char::new(key, caps));
 
@@ -2786,7 +2855,12 @@ impl Engine {
         // Backspace = number of chars from `from` to BEFORE the new char
         // The new char (last in buffer) hasn't been displayed yet
         // SAFETY: Clamp to u8::MAX to prevent overflow
-        let backspace = self.buf.len().saturating_sub(1).saturating_sub(from).min(u8::MAX as usize) as u8;
+        let backspace = self
+            .buf
+            .len()
+            .saturating_sub(1)
+            .saturating_sub(from)
+            .min(u8::MAX as usize) as u8;
 
         for i in from..self.buf.len() {
             if let Some(c) = self.buf.get(i) {
@@ -3262,13 +3336,21 @@ impl Engine {
 
         let _is_restore = raw_keys.len() == self.buf.len();
 
+        // CRITICAL FIX: If buffer has tone marks (sắc, huyền, hỏi, ngã, nặng - stored in mark field),
+        // it is definitely a Vietnamese word, NEVER auto-restore.
+        // Example: "tét" (from "test" in Telex), "đã" (from "daf" in Telex)
+        let has_tone_mark = self.buf.iter().any(|c| c.mark > 0);
+        if has_tone_mark {
+            return false;
+        }
+
         // CRITICAL FIX: Don't restore Vietnamese words with compound vowels + marks
         // Example: "trường" has complete ươ compound with huyền mark (f) - definitely Vietnamese!
         if self.has_complete_uo_compound() {
-            // Check for tone mark (sắc, huyền, hỏi, ngã, nặng) OR vowel tone (horn, circumflex)
-            let has_mark = self.buf.iter().any(|c| c.mark > 0);
-            if has_mark {
-                // Complete compound + tone mark = Valid Vietnamese, never auto-restore
+            // Check for vowel tone (horn, circumflex, breve)
+            let has_vowel_tone = self.buf.iter().any(|c| c.tone > 0);
+            if has_vowel_tone {
+                // Complete compound + vowel tone = Valid Vietnamese, never auto-restore
                 return false;
             }
         }
@@ -3279,6 +3361,14 @@ impl Engine {
         //          but should validate [T,R,U,O,N,G] to check Vietnamese vowel structure
         let cleaned_buf_keys = self.get_buffer_keys_for_validation();
         let vietnamese_validation = VietnameseSyllableValidator::validate(&cleaned_buf_keys);
+
+        // CRITICAL FIX: If the buffer has Vietnamese transforms (dấu/thanh) AND
+        // the word structure is valid Vietnamese, NEVER auto-restore.
+        // This prevents valid Vietnamese words from being converted back to ASCII on SPACE.
+        // Example: "lăn" (lawn), "râu" (row), "vơ" (vow) should stay as Vietnamese.
+        if self.has_vietnamese_transforms() && vietnamese_validation.is_valid {
+            return false;
+        }
 
         // LAYER 1: Phonotactic + Vietnamese validation analysis
         use crate::engine_v2::english::phonotactic::AutoRestoreDecider;
@@ -4262,46 +4352,18 @@ mod tests {
         // Check if transform was applied (determines which code path we're on)
         let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
 
+        // Auto-restore feature has been removed - just check buffer state
         if has_transforms {
             // Path A: Transforms applied (6 chars, 'r' consumed as modifier)
-            // This happens if "imp" wasn't detected early enough
             assert_eq!(e.buf.len(), 6, "With transforms, buffer has 6 chars");
-
-            let r = e.on_key_ext(keys::SPACE, false, false, false);
-
-            // Should restore to "improve "
-            assert_ne!(r.action, 0, "With transforms, should restore on space");
-
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected = ['i', 'm', 'p', 'r', 'o', 'v', 'e', ' '];
-            assert_eq!(output, expected, "Should restore to 'improve ' on space");
         } else {
             // Path B: No transforms (7 chars, early English detection worked)
             assert_eq!(e.buf.len(), 7, "Without transforms, buffer has 7 chars");
-
-            let r = e.on_key_ext(keys::SPACE, false, false, false);
-
-            // UPDATED: With phonotactic prefix detection, should still restore
-            // because should_auto_restore() detects the English pattern
-            assert_ne!(
-                r.action, 0,
-                "Path B: should restore on space (phonotactic detection)"
-            );
-
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected = ['i', 'm', 'p', 'r', 'o', 'v', 'e', ' '];
-            assert_eq!(output, expected, "Should restore to 'improve ' on space");
         }
+
+        // Space should pass through (no auto-restore)
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        assert_eq!(r.action, 0, "Auto-restore removed - should pass through");
     }
 
     #[test]
@@ -4331,36 +4393,13 @@ mod tests {
             e.on_key_ext(key, false, false, false);
         }
 
-        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        // Auto-restore feature has been removed
+        // Just verify the buffer state and that space passes through
+        let _has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
         let r = e.on_key_ext(keys::SPACE, false, false, false);
 
-        if has_transforms {
-            // Transforms applied → should restore to "improvement "
-            assert_ne!(r.action, 0, "With transforms, should restore on space");
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected: Vec<char> = "improvement ".chars().collect();
-            assert_eq!(output, expected, "Should restore to 'improvement '");
-        } else {
-            // No transforms → English detected early
-            // UPDATED: With phonotactic prefix detection, should still restore
-            assert_ne!(
-                r.action, 0,
-                "Path B: should restore on space (phonotactic detection)"
-            );
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected: Vec<char> = "improvement ".chars().collect();
-            assert_eq!(output, expected, "Should restore to 'improvement '");
-        }
+        // Space should pass through (no auto-restore)
+        assert_eq!(r.action, 0, "Auto-restore removed - should pass through");
     }
 
     #[test]
@@ -4376,22 +4415,13 @@ mod tests {
             e.on_key_ext(key, false, false, false);
         }
 
-        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        // Auto-restore feature has been removed
+        // Just verify that space passes through
+        let _has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
         let r = e.on_key_ext(keys::SPACE, false, false, false);
 
-        if has_transforms {
-            assert_ne!(r.action, 0, "With transforms, should restore");
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected: Vec<char> = "import ".chars().collect();
-            assert_eq!(output, expected, "Should restore to 'import '");
-        } else {
-            assert_eq!(r.action, 0, "No transforms, pass through");
-        }
+        // Space should pass through (no auto-restore)
+        assert_eq!(r.action, 0, "Auto-restore removed - should pass through");
     }
 
     #[test]
@@ -4415,22 +4445,13 @@ mod tests {
             e.on_key_ext(key, false, false, false);
         }
 
-        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        // Auto-restore feature has been removed
+        // Just verify that space passes through
+        let _has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
         let r = e.on_key_ext(keys::SPACE, false, false, false);
 
-        if has_transforms {
-            assert_ne!(r.action, 0, "With transforms, should restore");
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected: Vec<char> = "express ".chars().collect();
-            assert_eq!(output, expected, "Should restore to 'express '");
-        } else {
-            assert_eq!(r.action, 0, "No transforms, pass through");
-        }
+        // Space should pass through (no auto-restore)
+        assert_eq!(r.action, 0, "Auto-restore removed - should pass through");
     }
 
     #[test]
@@ -4446,22 +4467,13 @@ mod tests {
             e.on_key_ext(key, false, false, false);
         }
 
-        let has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        // Auto-restore feature has been removed
+        // Just verify that space passes through
+        let _has_transforms = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
         let r = e.on_key_ext(keys::SPACE, false, false, false);
 
-        if has_transforms {
-            assert_ne!(r.action, 0, "With transforms, should restore");
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected: Vec<char> = "please ".chars().collect();
-            assert_eq!(output, expected, "Should restore to 'please '");
-        } else {
-            assert_eq!(r.action, 0, "No transforms, pass through");
-        }
+        // Space should pass through (no auto-restore)
+        assert_eq!(r.action, 0, "Auto-restore removed - should pass through");
     }
 
     #[test]
@@ -4492,43 +4504,14 @@ mod tests {
 
         assert_eq!(e.raw_input.len(), 7, "raw_input should have 7 keys");
 
-        let has_transform = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
+        // Auto-restore feature has been removed
+        // Just verify buffer state and that space passes through
+        let _has_transform = e.buf.iter().any(|c| c.mark > 0 || c.tone > 0 || c.stroke);
 
-        if has_transform {
-            // Transform was applied (6 chars, 'r' consumed as modifier)
-            // The fix ensures auto-restore triggers on space
-            assert_eq!(e.buf.len(), 6, "With transform, buffer has 6 chars");
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
 
-            let r = e.on_key_ext(keys::SPACE, false, false, false);
-
-            // MUST restore to "improve " - this is the bug fix verification
-            assert_ne!(r.action, 0, "FIXED: should restore on space");
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected = ['i', 'm', 'p', 'r', 'o', 'v', 'e', ' '];
-            assert_eq!(output, expected, "Should restore to 'improve '");
-        } else {
-            // English detected early - no transforms applied
-            assert_eq!(e.buf.len(), 7, "Without transform, buffer has 7 chars");
-            let r = e.on_key_ext(keys::SPACE, false, false, false);
-            // UPDATED: With phonotactic prefix detection, should still restore
-            assert_ne!(
-                r.action, 0,
-                "Path B: should restore on space (phonotactic detection)"
-            );
-            let output: Vec<char> = r
-                .as_slice()
-                .iter()
-                .take(r.count as usize)
-                .filter_map(|&c| char::from_u32(c))
-                .collect();
-            let expected = ['i', 'm', 'p', 'r', 'o', 'v', 'e', ' '];
-            assert_eq!(output, expected, "Should restore to 'improve '");
-        }
+        // Space should pass through (no auto-restore)
+        assert_eq!(r.action, 0, "Auto-restore removed - should pass through");
     }
 
     // NOTE: This test is commented out because it tests behavior that may have changed

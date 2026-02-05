@@ -80,7 +80,16 @@ pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8) -> Tra
         TransformResult::none()
     } else {
         // After adding tone, reposition mark if needed (Rule 1: diacritic priority)
-        tone_positioning::reposition_mark(buf);
+        if let Some((old_pos, new_pos)) = tone_positioning::reposition_mark(buf) {
+            // Mark moved: add both old and new positions to modified list
+            // to ensure UI updates both characters
+            if !positions.contains(&old_pos) {
+                positions.push(old_pos);
+            }
+            if !positions.contains(&new_pos) {
+                positions.push(new_pos);
+            }
+        }
         TransformResult::success(positions)
     }
 }
