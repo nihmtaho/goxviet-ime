@@ -54,6 +54,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Zen Browser Duplication Bug**: Sửa lỗi gõ tiếng Việt trên Zen Browser (issue #54). Chuyển sang sử dụng phương thức `AX API Direct` kết hợp với logic fallback tối ưu. Code fallback được viết lại để xử lý nhanh hơn: thoát ngay nếu phát hiện browser override (autocomplete) và chỉ retry khi gặp lỗi kết nối AX. Đặc biệt: Đã xử lý triệt để case gõ "đ" (dđ) bằng logic workaround thông minh (Type -> Left -> Backspace -> Right) với độ trễ tối ưu 1ms.
+- **Proxy Event Injection**: Sửa lỗi `TextInjectionHelper` không sử dụng proxy khi fallback, đảm bảo tính ổn định khi inject text trong các trường hợp AX API thất bại.
+- **UI Layout Recursion**: Sửa warning `_NSDetectedLayoutRecursion` bằng cách refactor `MenuToggleView` sử dụng `ObservableObject` thay vì thay thế SwiftUI RootView liên tục.
+- **Build Stability**: Sửa các lỗi biên dịch thiếu import `Combine` và thiếu định nghĩa `KeyCode`.
+
 ### Added
 - **Shift+Backspace**: Thêm phím tắt Shift+Backspace để xóa cả từ, sử dụng native macOS Option+Backspace shortcut cho tính nhất quán (#TBD).
 - **Output Encoding UI**: Thêm picker cho Output Encoding trong Advanced Settings với 4 tùy chọn: Unicode (UTF-8), TCVN3, VNI Windows, CP1258. Hiển thị cảnh báo và confirmation dialog cho legacy encodings (#TBD).

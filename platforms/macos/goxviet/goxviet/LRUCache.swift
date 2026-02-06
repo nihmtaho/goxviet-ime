@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Combine
 
 /// Generic LRU cache with automatic eviction
 final class LRUCache<Key: Hashable, Value> {
