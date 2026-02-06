@@ -102,11 +102,18 @@ final class SettingsManager: ObservableObject {
     @Published var textExpansionEnabled: Bool = true {
         didSet {
             saveToDefaults(Keys.textExpansionEnabled, value: textExpansionEnabled)
+            RustBridge.shared.setShortcutsEnabled(textExpansionEnabled)
             postNotification(.textExpansionEnabledChanged, value: textExpansionEnabled)
             Log.info("Text Expansion \(textExpansionEnabled ? "enabled" : "disabled")")
         }
     }
     
+    // MARK: - Shortcuts (Text Expansion)
+    
+    /// Source of truth for shortcuts - stored in UserDefaults and synced to Rust engine
+    @Published var shortcuts: [TextShortcutItem] = []
+    
+    /// Track if shortcuts have been loaded from storage
     @Published var shortcutsLoaded: Bool = false
     
     // MARK: - Runtime State (Not Persisted)
@@ -138,6 +145,9 @@ final class SettingsManager: ObservableObject {
         static let outputEncoding = "com.goxviet.ime.outputEncoding"
         static let shiftBackspaceEnabled = "com.goxviet.ime.shiftBackspaceEnabled"
         static let textExpansionEnabled = "com.goxviet.ime.textExpansionEnabled"
+        
+        // Shortcuts key
+        static let shortcuts = "com.goxviet.ime.shortcuts"
     }
     
     // MARK: - Initialization
@@ -481,69 +491,159 @@ final class SettingsManager: ObservableObject {
         return bundleId
     }
     
-    // MARK: - Shortcut Persistence
+    // MARK: - Shortcuts Management
     
-    private var shortcutsFileURL: URL? {
-        guard let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return nil
-        }
-        let dir = appSupportURL.appendingPathComponent("GoxViet")
-        return dir.appendingPathComponent("shortcuts.json")
-    }
-
-    public func saveShortcuts() {
+    /// Add a new shortcut
+    func addShortcut(trigger: String, replacement: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         
-        guard let json = RustBridge.shared.exportShortcutsJSON() else {
-            Log.error("Failed to export shortcuts to save.")
-            return
+        let trimmedTrigger = trigger.trimmingCharacters(in: .whitespaces)
+        guard !trimmedTrigger.isEmpty && !replacement.isEmpty else { return false }
+        
+        // Check for duplicates
+        if shortcuts.contains(where: { $0.trigger == trimmedTrigger }) {
+            Log.warning("Shortcut '\(trimmedTrigger)' already exists")
+            return false
         }
         
-        guard let url = shortcutsFileURL else {
-            Log.error("Could not get shortcuts file URL.")
-            return
-        }
-
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-            try json.write(to: url, atomically: true, encoding: .utf8)
-            Log.info("Saved shortcuts to file: \(url.path)")
+        let newShortcut = TextShortcutItem(trigger: trimmedTrigger, replacement: replacement, isEnabled: true)
+        shortcuts.append(newShortcut)
+        Log.info("Added shortcut: \(trimmedTrigger) → \(replacement)")
+        return true
+    }
+    
+    /// Update an existing shortcut
+    func updateShortcut(oldTrigger: String, newTrigger: String, replacement: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        let trimmedNewTrigger = newTrigger.trimmingCharacters(in: .whitespaces)
+        guard !trimmedNewTrigger.isEmpty && !replacement.isEmpty else { return false }
+        
+        // Remove old
+        shortcuts.removeAll { $0.trigger == oldTrigger }
+        
+        // Add new
+        let updatedShortcut = TextShortcutItem(trigger: trimmedNewTrigger, replacement: replacement, isEnabled: true)
+        shortcuts.append(updatedShortcut)
+        Log.info("Updated shortcut: \(oldTrigger) → \(trimmedNewTrigger): \(replacement)")
+        return true
+    }
+    
+    /// Remove a shortcut by trigger
+    func removeShortcut(trigger: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        shortcuts.removeAll { $0.trigger == trigger }
+        Log.info("Removed shortcut: \(trigger)")
+    }
+    
+    /// Get all shortcuts as array of tuples for RustBridge
+    func getShortcutsForEngine() -> [(key: String, value: String, enabled: Bool)] {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        return shortcuts.map { ($0.trigger, $0.replacement, $0.isEnabled) }
+    }
+    
+    /// Sync all enabled shortcuts to Rust engine
+    func syncShortcutsToEngine() {
+        let enabledShortcuts = getShortcutsForEngine().filter { $0.enabled }
+        RustBridge.shared.syncShortcuts(enabledShortcuts)
+        Log.info("Synced \(enabledShortcuts.count) enabled shortcuts to engine")
+    }
+    
+    /// Import shortcuts from custom format
+    /// Format: "trigger:replacement" per line, or ";comment" for comments
+    func importShortcuts(from content: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        let lines = content.components(separatedBy: .newlines)
+        var imported = 0
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix(";"),
+                  let colonIndex = trimmed.firstIndex(of: ":") else { continue }
             
-            // Post notification for debug UI
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .didSaveShortcuts, object: Date())
+            let trigger = String(trimmed[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+            let replacement = String(trimmed[trimmed.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+            
+            guard !trigger.isEmpty else { continue }
+            
+            // Update existing or add new
+            if let idx = shortcuts.firstIndex(where: { $0.trigger == trigger }) {
+                shortcuts[idx].replacement = replacement
+                shortcuts[idx].isEnabled = true
+            } else {
+                shortcuts.append(TextShortcutItem(trigger: trigger, replacement: replacement, isEnabled: true))
             }
-        } catch {
-            Log.error("Failed to save shortcuts to file: \(error.localizedDescription)")
+            imported += 1
+        }
+        
+        Log.info("Imported \(imported) shortcuts")
+        return imported
+    }
+    
+    /// Export shortcuts to custom format
+    func exportShortcutsToString() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        var lines = [";Gõ Việt - Bảng gõ tắt"]
+        for shortcut in shortcuts where !shortcut.trigger.isEmpty {
+            lines.append("\(shortcut.trigger):\(shortcut.replacement)")
+        }
+        return lines.joined(separator: "\n")
+    }
+    
+    // MARK: - Private Shortcuts Helpers
+    
+    private func loadShortcutsFromDefaults() {
+        if let data = userDefaults.data(forKey: Keys.shortcuts),
+           let saved = try? JSONDecoder().decode([TextShortcutItem].self, from: data) {
+            shortcuts = saved
+            Log.info("Loaded \(shortcuts.count) shortcuts from UserDefaults")
+        } else {
+            // No saved shortcuts - start with empty array
+            shortcuts = []
+            Log.info("No saved shortcuts found, starting fresh")
+        }
+        
+        // Sync to engine (will be called again when engine is ready via InputManager)
+        syncShortcutsToEngine()
+        
+        // Mark as loaded
+        DispatchQueue.main.async {
+            self.shortcutsLoaded = true
         }
     }
-
-    private func loadShortcuts() {
-        lock.lock()
-        defer {
-            lock.unlock()
-            DispatchQueue.main.async {
-                self.shortcutsLoaded = true
+    
+    private func setupShortcutsObserver() {
+        // Auto-save and sync to engine when shortcuts change
+        $shortcuts
+            .dropFirst() // Skip initial value
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                
+                // Save to UserDefaults
+                if let data = try? JSONEncoder().encode(self.shortcuts) {
+                    self.userDefaults.set(data, forKey: Keys.shortcuts)
+                }
+                
+                // Sync to Rust engine
+                self.syncShortcutsToEngine()
+                
+                // Post notification
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .didSaveShortcuts, object: Date())
+                }
             }
-        }
-        
-        guard let url = shortcutsFileURL, FileManager.default.fileExists(atPath: url.path) else {
-            Log.info("No shortcuts file found to load.")
-            return
-        }
-
-        do {
-            let json = try String(contentsOf: url, encoding: .utf8)
-            let count = RustBridge.shared.importShortcutsJSON(json)
-            if count >= 0 {
-                Log.info("Loaded \(count) shortcuts from file.")
-            } else {
-                Log.error("Failed to import shortcuts from file.")
-            }
-        } catch {
-            Log.error("Failed to read shortcuts file: \(error.localizedDescription)")
-        }
+            .store(in: &cancellables)
     }
 
     // MARK: - Settings Import/Export
@@ -657,7 +757,7 @@ final class SettingsManager: ObservableObject {
         shiftBackspaceEnabled = userDefaults.bool(forKey: Keys.shiftBackspaceEnabled)
         textExpansionEnabled = userDefaults.bool(forKey: Keys.textExpansionEnabled)
         
-        loadShortcuts()
+        loadShortcutsFromDefaults()
 
         // Mark as launched after loading
         if !hasLaunchedBefore {
@@ -720,6 +820,9 @@ final class SettingsManager: ObservableObject {
         // This is critical because SettingsManager is a singleton
         cancellables.removeAll()
         
+        // Setup shortcuts auto-save and sync
+        setupShortcutsObserver()
+        
         // Observe external changes (from settings window, menu, etc.)
         NotificationCenter.default.publisher(for: .inputMethodChanged)
             .compactMap { $0.object as? Int }
@@ -760,3 +863,19 @@ final class SettingsManager: ObservableObject {
     }
 }
 
+// MARK: - Text Shortcut Item Model
+
+/// Represents a single text expansion shortcut
+struct TextShortcutItem: Identifiable, Codable, Equatable {
+    let id: UUID
+    var trigger: String
+    var replacement: String
+    var isEnabled: Bool
+    
+    init(id: UUID = UUID(), trigger: String, replacement: String, isEnabled: Bool = true) {
+        self.id = id
+        self.trigger = trigger
+        self.replacement = replacement
+        self.isEnabled = isEnabled
+    }
+}

@@ -702,8 +702,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ aNotification: Notification) {
         Log.info("Application terminating")
         
-        // Save shortcuts before termination
-        SettingsManager.shared.saveShortcuts()
+        // Note: Shortcuts are auto-saved via Combine observer in SettingsManager
+        // No need to manually call saveShortcuts()
 
         // CRITICAL: Guard against premature termination when just closing a window
         // Only terminate if truly exiting the app, not just closing a window
