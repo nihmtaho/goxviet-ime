@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [2.0.8] - 2026-02-06
+
+### 🐛 Bug Fixes
+- **Zen Browser Duplication Bug**: Sửa lỗi gõ tiếng Việt trên Zen Browser (issue #54). Chuyển sang sử dụng phương thức `AX API Direct` kết hợp với logic fallback tối ưu. Code fallback được viết lại để xử lý nhanh hơn: thoát ngay nếu phát hiện browser override (autocomplete) và chỉ retry khi gặp lỗi kết nối AX. Đặc biệt: Đã xử lý triệt để case gõ "đ" (dđ) bằng logic workaround thông minh (Type -> Left -> Backspace -> Right) với độ trễ tối ưu 1ms.
+- **Proxy Event Injection**: Sửa lỗi `TextInjectionHelper` không sử dụng proxy khi fallback, đảm bảo tính ổn định khi inject text trong các trường hợp AX API thất bại.
+- **UI Layout Recursion**: Sửa warning `_NSDetectedLayoutRecursion` bằng cách refactor `MenuToggleView` sử dụng `ObservableObject` thay vì thay thế SwiftUI RootView liên tục.
+- **Build Stability**: Sửa các lỗi biên dịch thiếu import `Combine` và thiếu định nghĩa `KeyCode`.
+- **Tone Repositioning**: Sửa lỗi transform khi SPACE khiến việc gõ không thoải mái.
+
+---
+
+
 ## [2.0.7] - 2026-02-04
 
 ### 🔧 Chores
