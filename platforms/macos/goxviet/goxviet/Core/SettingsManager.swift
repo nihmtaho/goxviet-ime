@@ -716,6 +716,10 @@ final class SettingsManager: ObservableObject {
     }
     
     private func setupObservers() {
+        // Cancel any existing subscriptions to prevent memory leaks
+        // This is critical because SettingsManager is a singleton
+        cancellables.removeAll()
+        
         // Observe external changes (from settings window, menu, etc.)
         NotificationCenter.default.publisher(for: .inputMethodChanged)
             .compactMap { $0.object as? Int }
@@ -737,6 +741,22 @@ final class SettingsManager: ObservableObject {
                 self?.setSmartModeEnabled(enabled)
             }
             .store(in: &cancellables)
+    }
+    
+    /// Clean up all observers and subscriptions
+    /// Call this when app is terminating to prevent memory leaks
+    func cleanup() {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        // Cancel all Combine subscriptions
+        cancellables.removeAll()
+        
+        // Cancel pending debounce work
+        setEnabledDebounceWork?.cancel()
+        setEnabledDebounceWork = nil
+        
+        Log.info("SettingsManager cleaned up")
     }
 }
 

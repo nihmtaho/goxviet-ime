@@ -727,6 +727,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Cleanup ResourceManager
         ResourceManager.shared.cleanup()
         
+        // Cleanup SettingsManager (clears Combine subscriptions)
+        SettingsManager.shared.cleanup()
+        
         Log.info("Application cleanup completed")
     }
     
