@@ -26,6 +26,7 @@ enum KeyCode {
     static let backspace: CGKeyCode = 51
     static let forwardDelete: CGKeyCode = 117
     static let leftArrow: CGKeyCode = 123
+    static let rightArrow: CGKeyCode = 124
 }
 
 // MARK: - Text Injector
@@ -46,7 +47,8 @@ class TextInjector {
     // MARK: - Public API
     
     /// Synchronous text injection with app-specific optimization
-    func injectSync(bs: Int, text: String, method: InjectionMethod, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy) {
+    /// Synchronous text injection with app-specific optimization
+    func injectSync(bs: Int, text: String, method: InjectionMethod, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy, bundleId: String? = nil) {
         semaphore.wait()
         defer { semaphore.signal() }
         
@@ -58,9 +60,9 @@ class TextInjector {
         case .selection:
             injectViaSelection(bs: bs, text: text, delays: delays)
         case .autocomplete:
-            injectViaAutocomplete(bs: bs, text: text, proxy: proxy)
+            injectViaAutocomplete(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
         case .axDirect:
-            injectViaAXWithFallback(bs: bs, text: text, proxy: proxy)
+            injectViaAXWithFallback(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
         }
     }
     
@@ -108,15 +110,30 @@ class TextInjector {
     private func injectViaSelection(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
         guard let src = CGEventSource(stateID: .privateState) else { return }
         
-        let selDelay = delays.0 > 0 ? delays.0 : 1000
-        let waitDelay = delays.1 > 0 ? delays.1 : 3000
-        let textDelay = delays.2 > 0 ? delays.2 : 2000
+        // Optimized defaults: 200us selection, 500us wait, 200us text
+        // Fast enough to feel instant, slow enough for modern apps to process
+        let selDelay = delays.0 > 0 ? delays.0 : 200
+        let waitDelay = delays.1 > 0 ? delays.1 : 500
+        let textDelay = delays.2 > 0 ? delays.2 : 200
         
-        for _ in 0..<bs {
-            postKey(KeyCode.leftArrow, source: src, flags: .maskShift)
-            usleep(selDelay)
+        if bs > 0 {
+            // If text is empty (backspace-only, no replacement), use backspace to properly delete spaces/punctuation
+            // This fixes issue where Shift+Left selects space instead of deleting it
+            if text.isEmpty {
+                // Backspace-only: use backspace for all deletions
+                for _ in 0..<bs {
+                    postKey(KeyCode.backspace, source: src)
+                    usleep(selDelay)
+                }
+            } else {
+                // Text replacement: use Shift+Left to select (normal selection method)
+                for _ in 0..<bs {
+                    postKey(KeyCode.leftArrow, source: src, flags: .maskShift)
+                    usleep(selDelay)
+                }
+            }
+            usleep(waitDelay)
         }
-        if bs > 0 { usleep(waitDelay) }
         
         postText(text, source: src, delay: textDelay)
         Log.send("sel", bs, text)
@@ -125,45 +142,51 @@ class TextInjector {
     /// Autocomplete injection: Forward Delete to clear suggestion, then backspace + text via proxy
     /// Used for Spotlight and browser address bars where autocomplete auto-selects suggestion text after cursor
     /// Strategy:
-    /// - If suggestion exists (selection > 0): Forward Delete removes it
-    /// - Then backspace removes user-typed chars
-    /// - Then type replacement text
-    private func injectViaAutocomplete(bs: Int, text: String, proxy: CGEventTapProxy) {
+    /// - Forward Delete clears auto-selected suggestion
+    /// - Backspace removes typed characters
+    /// - Type replacement text
+    private func injectViaAutocomplete(bs: Int, text: String, proxy: CGEventTapProxy, bundleId: String? = nil) {
         guard let src = CGEventSource(stateID: .privateState) else { return }
         
-        // Check if suggestion is present
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedRef: CFTypeRef?
-        var hasSuggestion = false
-        
-        if AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
-           let ref = focusedRef {
-            let axEl = ref as! AXUIElement
-            var rangeRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
-               let axRange = rangeRef {
-                var range = CFRange()
-                if AXValueGetValue(axRange as! AXValue, .cfRange, &range) {
-                    hasSuggestion = range.length > 0  // selection.length > 0 means suggestion exists
-                }
-            }
+        // Special case for Zen Browser 'đ' bug (Issue #54)
+        // When typing 'd' then 'd', browser often produces "dđ" due to autocomplete race.
+        // Fix: Type "đ" (result "dđ") -> Left (betw d,đ) -> Backspace (delete d) -> Right (restore cursor)
+        if bundleId == "app.zen-browser.zen" && text == "đ" && bs == 1 {
+            Log.info("Zen: Applying special fix for 'đ'")
+            
+            // 1. Type "đ" (result likely "dđ")
+            postText("đ", source: src, proxy: proxy)
+            usleep(1000)
+            
+            // 2. Left Arrow (move cursor between d and đ)
+            postKey(KeyCode.leftArrow, source: src, proxy: proxy)
+            usleep(1000)
+            
+            // 3. Backspace (delete the first 'd')
+            postKey(KeyCode.backspace, source: src, proxy: proxy)
+            usleep(1000)
+            
+            // 4. Right Arrow (move cursor back to end)
+            postKey(KeyCode.rightArrow, source: src, proxy: proxy)
+            
+            Log.send("auto:zen:dd", bs, text)
+            return
         }
         
-        // Step 1: Clear suggestion if it exists
-        if hasSuggestion {
-            postKey(KeyCode.forwardDelete, source: src, proxy: proxy)
-            usleep(3000)  // CRITICAL: 3ms delay for Spotlight to process suggestion removal
-            Log.info("autocomplete: cleared suggestion via Forward Delete")
-        }
+        // Standard Autocomplete Logic
         
-        // Step 2: Backspaces remove user-typed characters
+        // Forward Delete clears auto-selected suggestion
+        postKey(KeyCode.forwardDelete, source: src, proxy: proxy)
+        usleep(3000)
+        
+        // Backspaces remove typed characters
         for _ in 0..<bs {
             postKey(KeyCode.backspace, source: src, proxy: proxy)
             usleep(1000)
         }
-        if bs > 0 { usleep(5000) }  // CRITICAL: 5ms delay after backspaces for stable rendering
+        if bs > 0 { usleep(5000) }
         
-        // Step 3: Type replacement text
+        // Type replacement text
         postText(text, source: src, proxy: proxy)
         Log.send("auto", bs, text)
     }
@@ -286,39 +309,35 @@ class TextInjector {
     /// 
     /// IMPROVEMENT: Added retry logic (3 attempts, 5ms delay) to handle temporary AX API failures
     /// when Spotlight is busy with searches. Based on proven pattern from reference implementation.
-    private func injectViaAXWithFallback(bs: Int, text: String, proxy: CGEventTapProxy) {
-        // Try AX API injection with retries
+    /// Try AX injection with optimized retry/fallback logic
+    /// Try AX injection with optimized retry/fallback logic
+    /// Try AX injection with optimized retry/fallback logic
+    private func injectViaAXWithFallback(bs: Int, text: String, proxy: CGEventTapProxy, bundleId: String? = nil) {
+        // Retry loop for transient AX failures (busy system/Spotlight)
         for attempt in 0..<3 {
-            if attempt > 0 {
-                usleep(5000)  // 5ms delay before retry
-                Log.info("AX: retry attempt \(attempt + 1)/3")
-            }
+            if attempt > 0 { usleep(5000) } // 5ms backoff
             
-            // Try AX injection (will verify and detect if browser re-adds content)
-            let result = injectViaAX(bs: bs, text: text)
-            
-            switch result {
+            switch injectViaAX(bs: bs, text: text) {
             case .success:
-                Log.info("AX: success - text is clean")
-                return
+                Log.info("AX: attempt \(attempt) success")
+                return // Fast exit on success
+                
             case .browserOverride:
-                // Browser autocomplete is too aggressive for AX API
-                Log.info("AX: detected browser override - switching to fallback method")
-                // For Spotlight/native apps: fallback to autocomplete method
-                injectViaAutocomplete(bs: bs, text: text, proxy: proxy)
+                // Immediate fallback if browser interferes (don't retry)
+                Log.info("AX: attempt \(attempt) override detected -> fallback")
+                injectViaAutocomplete(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
                 return
+                
             case .axFailure:
-                // AX API returned error or was unavailable
-                if attempt == 2 {
-                    // Final attempt failed - fallback
-                    Log.info("AX: final attempt failed - falling back to autocomplete method")
-                    injectViaAutocomplete(bs: bs, text: text, proxy: proxy)
-                    return
-                }
-                // Otherwise retry
+                // Transient failure -> retry
+                Log.info("AX: attempt \(attempt) ax failure")
                 continue
             }
         }
+        
+        // Retries exhausted -> Fallback
+        Log.info("AX: retries exhausted -> fallback")
+        injectViaAutocomplete(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
     }
     
 
@@ -391,7 +410,6 @@ class TextInjector {
     }
     
     /// Post text in chunks (CGEvent has 20-char limit)
-    /// CRITICAL: Never use proxy - causes event loop and duplicate keystrokes
     private func postText(_ text: String, source: CGEventSource, delay: UInt32 = 0, proxy: CGEventTapProxy? = nil) {
         let utf16 = Array(text.utf16)
         var offset = 0
@@ -407,9 +425,13 @@ class TextInjector {
             dn.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
             up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
             
-            // ALWAYS post via cgSessionEventTap - never via proxy to avoid event loop
-            dn.post(tap: .cgSessionEventTap)
-            up.post(tap: .cgSessionEventTap)
+            if let proxy = proxy {
+                dn.tapPostEvent(proxy)
+                up.tapPostEvent(proxy)
+            } else {
+                dn.post(tap: .cgSessionEventTap)
+                up.post(tap: .cgSessionEventTap)
+            }
             
             if delay > 0 { usleep(delay) }
             offset = end
@@ -442,7 +464,7 @@ private struct BundleConstants {
         "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
         "org.waterfoxproject.waterfox", "io.gitlab.librewolf-community.librewolf",
         "one.ablaze.floorp", "org.torproject.torbrowser", "net.mullvad.mullvadbrowser",
-        "app.zen-browser.zen"
+        "app.zen-browser.zen"  // Zen Browser - treated as regular Firefox browser
     ]
     
     static let safariBrowsers: Set<String> = [
@@ -581,9 +603,14 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
         return cached(.selection, (0, 0, 0), "sel:chromium-addr")
     }
     
-    // Firefox-based browsers - selection for address bar, slow for content
+    // Firefox-based browsers (including Zen Browser) - selection for address bar, slow for content
     if BundleConstants.firefoxBrowsers.contains(bundleId) {
-        if role == "AXTextField" {
+        if role == "AXTextField" || role == "AXWindow" || role == "AXTextArea" {
+            if bundleId == "app.zen-browser.zen" {
+                // Use axDirect method with fallback to optimized autocomplete
+                // 1ms selection, 2ms wait, 1ms type - balanced for speed and correctness
+                return cached(.axDirect, (0, 0, 0), "ax:zen")
+            }
             return cached(.selection, (0, 0, 0), "sel:firefox-addr")
         } else {
             return cached(.slow, (3000, 8000, 3000), "slow:firefox")

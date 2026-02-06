@@ -5,15 +5,29 @@
 //  Custom view for menu item with SwiftUI Toggle
 //  Memory-optimized: proper cleanup of NSHostingView resources
 //
+//  Fixed: Layout recursion warning by using ObservableObject instead of replacing rootView
+//
 
 import Cocoa
 import SwiftUI
+import Combine
 
 class MenuToggleView: NSView {
     
+    // ViewModel to handle state changes without rebuilding view hierarchy
+    class ViewModel: ObservableObject {
+        @Published var isOn: Bool
+        var onToggle: ((Bool) -> Void)?
+        
+        init(isOn: Bool) {
+            self.isOn = isOn
+        }
+    }
+    
     private var hostingView: NSHostingView<AnyView>?
     private let label: NSTextField
-    private let onToggle: (Bool) -> Void
+    private let viewModel: ViewModel
+    
     private var currentState: Bool
     
     var isOn: Bool {
@@ -21,14 +35,16 @@ class MenuToggleView: NSView {
         set {
             if currentState != newValue {
                 currentState = newValue
-                updateToggleView()
+                // Update ViewModel instead of replacing RootView
+                viewModel.isOn = newValue
             }
         }
     }
     
     init(labelText: String, isOn: Bool, onToggle: @escaping (Bool) -> Void) {
-        self.onToggle = onToggle
         self.currentState = isOn
+        self.viewModel = ViewModel(isOn: isOn)
+        self.viewModel.onToggle = onToggle
         
         label = NSTextField(labelWithString: labelText)
         label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -61,31 +77,27 @@ class MenuToggleView: NSView {
         createToggleView()
     }
     
-    private func updateToggleView() {
-        guard let hostingView = hostingView else {
-            createToggleView()
-            return
-        }
+    // Internal SwiftUI View that observes the ViewModel
+    struct ToggleWrapper: View {
+        @ObservedObject var viewModel: ViewModel
         
-        // Efficiently update existing hosting view's root view
-        hostingView.rootView = AnyView(makeToggleView())
-    }
-    
-    private func makeToggleView() -> some View {
-        Toggle("", isOn: Binding(
-            get: { [weak self] in self?.currentState ?? false },
-            set: { [weak self] newValue in
-                self?.currentState = newValue
-                self?.onToggle(newValue)
-            }
-        ))
-        .toggleStyle(.switch)
-        .labelsHidden()
-        .scaleEffect(0.8)
+        var body: some View {
+            Toggle("", isOn: Binding(
+                get: { viewModel.isOn },
+                set: { newValue in
+                    viewModel.isOn = newValue
+                    viewModel.onToggle?(newValue)
+                }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .scaleEffect(0.8)
+        }
     }
     
     private func createToggleView() {
-        let hosting = NSHostingView(rootView: AnyView(makeToggleView()))
+        let rootView = ToggleWrapper(viewModel: viewModel)
+        let hosting = NSHostingView(rootView: AnyView(rootView))
         hosting.frame = NSRect(x: 162, y: 2, width: 50, height: 28)
         
         hostingView = hosting
@@ -98,6 +110,7 @@ class MenuToggleView: NSView {
     }
     
     func cleanup() {
+        viewModel.onToggle = nil
         releaseHostingView()
     }
     
@@ -121,9 +134,6 @@ class MenuToggleView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         label.textColor = .labelColor
-        
-        DispatchQueue.main.async { [weak self] in
-            self?.updateToggleView()
-        }
+        // No need to rebuild view here anymore
     }
 }
