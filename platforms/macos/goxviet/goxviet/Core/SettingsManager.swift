@@ -861,6 +861,30 @@ final class SettingsManager: ObservableObject {
         
         Log.info("SettingsManager cleaned up")
     }
+    
+    // MARK: - Memory Cleanup
+    
+    /// Clear temporary caches to free memory
+    /// Call this when settings window closes to reduce memory footprint
+    func clearCaches() {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        // Remove all cancellables to release observer references
+        cancellables.removeAll()
+        
+        // Re-setup essential observers only
+        setupObservers()
+        
+        // Reset debounce work
+        setEnabledDebounceWork?.cancel()
+        setEnabledDebounceWork = nil
+        
+        // Clear any pending notifications
+        NotificationCenter.default.removeObserver(self)
+        
+        Log.info("SettingsManager caches cleared")
+    }
 }
 
 // MARK: - Text Shortcut Item Model

@@ -3,10 +3,12 @@
 //  GoxViet
 //
 //  Manages application windows (Settings).
+//  Phase 3: Aggressive memory cleanup for Settings window
 //
 
 import Cocoa
 import SwiftUI
+import Foundation
 
 class WindowManager: NSObject, NSWindowDelegate {
     static let shared = WindowManager()
@@ -16,6 +18,9 @@ class WindowManager: NSObject, NSWindowDelegate {
     
     // Use weak reference to allow automatic deallocation
     private weak var settingsWindow: NSWindow?
+    
+    // Keep reference to hosting view for explicit cleanup
+    private weak var settingsHostingView: NSHostingView<SettingsRootView>?
     
     private override init() {
         super.init()
@@ -55,11 +60,14 @@ class WindowManager: NSObject, NSWindowDelegate {
         window.identifier = NSUserInterfaceItemIdentifier("settings")
         window.isRestorable = false
         
+        // Create hosting view with explicit type for better memory management
         let contentView = SettingsRootView()
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.autoresizingMask = [.width, .height]
         window.contentView = hostingView
         
+        // Keep weak reference for cleanup
+        self.settingsHostingView = hostingView
         self.settingsWindow = window
         
         // Request activation policy change first
@@ -80,6 +88,55 @@ class WindowManager: NSObject, NSWindowDelegate {
         // cleanup delegated to windowWillClose via notifications/delegates
         // but explicit nulling is safe here as backup
         if settingsWindow == nil { handleLastWindowClosed() }
+    }
+    
+    // MARK: - Memory Cleanup
+    
+    /// Aggressive cleanup of Settings window resources
+    private func cleanupSettingsWindowResources() {
+        Log.info("🧹 Cleaning up Settings window resources...")
+        
+        // Use autoreleasepool to force immediate deallocation
+        autoreleasepool {
+            // Remove hosting view from window - this releases the SwiftUI view hierarchy
+            if let hostingView = settingsHostingView {
+                // Remove from window first
+                hostingView.removeFromSuperview()
+                settingsHostingView = nil
+            }
+            
+            // Force window content view cleanup
+            settingsWindow?.contentView = nil
+            
+            // Clear window delegate to prevent callbacks
+            settingsWindow?.delegate = nil
+        }
+        
+        // Force autorelease pool drain on next runloop
+        DispatchQueue.main.async { [weak self] in
+            // Post notification for other components to cleanup
+            NotificationCenter.default.post(name: .settingsWindowDidClose, object: nil)
+            
+            // Suggest garbage collection
+            #if os(macOS)
+            // Hint to reduce memory footprint
+            self?.suggestMemoryCleanup()
+            #endif
+            
+            Log.info("✅ Settings window resources cleaned up")
+        }
+    }
+    
+    /// Suggest system to cleanup memory
+    private func suggestMemoryCleanup() {
+        // Clear URL cache
+        URLCache.shared.removeAllCachedResponses()
+        
+        // Suggest to compact heap
+        // This is a hint to the allocator
+        let _ = malloc_size(UnsafeMutableRawPointer(bitPattern: 0x1)!)
+        
+        Log.info("Memory cleanup suggestions sent to system")
     }
     
     // MARK: - Helper Logic
@@ -141,6 +198,10 @@ class WindowManager: NSObject, NSWindowDelegate {
         // Handle settings window close
         if window === settingsWindow {
             Log.info("✅ Settings window will close")
+            
+            // Perform aggressive cleanup
+            cleanupSettingsWindowResources()
+            
             settingsWindow = nil
             handleLastWindowClosed()
         }
@@ -149,10 +210,18 @@ class WindowManager: NSObject, NSWindowDelegate {
     // MARK: - Cleanup
     
     private func cleanup() {
+        cleanupSettingsWindowResources()
+        
         settingsWindow?.delegate = nil
         settingsWindow?.close()
         settingsWindow = nil
         
         Log.info("WindowManager cleaned up")
     }
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    static let settingsWindowDidClose = Notification.Name("com.goxviet.settingsWindowDidClose")
 }

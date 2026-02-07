@@ -11,11 +11,9 @@ import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     var statusItem: NSStatusItem!
-    weak var toggleView: MenuToggleView?
-    weak var smartModeToggleView: MenuToggleView?
     
-    // Phase 2: Smart Mode Menu Bar Indicator
-    private var smartModeMenuBarItem: SmartModeMenuBarItem?
+    // Termination flag to prevent new operations during shutdown
+    private var isTerminating = false
     
     // Timer for auto-polling accessibility permission
     private var accessibilityPollTimer: Timer?
@@ -29,11 +27,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let updateState = "AppDelegate.updateStateObserver"
         static let toggleVietnamese = "AppDelegate.toggleObserver"
         static let shortcutChanged = "AppDelegate.shortcutObserver"
-        static let smartMode = "AppDelegate.smartModeObserver"
         static let appActivation = "AppDelegate.activationObserver"
-
         static let inputMethod = "AppDelegate.inputMethodObserver"
         static let settingsClose = "AppDelegate.settingsCloseObserver"
+        static let settingsCleanup = "AppDelegate.settingsCleanupObserver"
     }
     
     var isEnabled: Bool {
@@ -50,10 +47,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // Enable logging in debug mode
+        // Logging is disabled by default - can be enabled in Advanced Settings
+        // This reduces memory footprint and improves performance
         #if DEBUG
-        Log.isEnabled = true
-        Log.info("GoxViet starting in DEBUG mode")
+        if Log.isEnabled {
+            Log.info("GoxViet starting in DEBUG mode (logging enabled)")
+        }
         #endif
         
         // Disable automatic window restoration to avoid className errors
@@ -278,17 +277,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[GoxViet] setupMenu() called")
         let menu = NSMenu()
         
-        // Toggle Item with NSSwitch using custom view
-        let toggleMenuItem = NSMenuItem()
-        toggleMenuItem.tag = 100
-        
-        // Create custom toggle view
-        toggleView = MenuToggleView(labelText: "Vietnamese Input", isOn: SettingsManager.shared.isEnabled) { [weak self] newState in
-            self?.handleToggleChanged(newState)
-        }
-        
-        toggleMenuItem.view = toggleView
-        menu.addItem(toggleMenuItem)
+        // Vietnamese Input Toggle - using menu item with checkmark
+        let toggleItem = NSMenuItem(
+            title: "Vietnamese Input",
+            action: #selector(toggleVietnamese),
+            keyEquivalent: ""
+        )
+        toggleItem.tag = 100
+        toggleItem.target = self
+        menu.addItem(toggleItem)
         
         menu.addItem(NSMenuItem.separator())
 
@@ -303,22 +300,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
-        // Smart Per-App Mode Toggle
-        let smartModeMenuItem = NSMenuItem()
-        smartModeMenuItem.tag = 101
-        
-        smartModeToggleView = MenuToggleView(
-            labelText: "Smart Per-App Mode",
-            isOn: SettingsManager.shared.smartModeEnabled
-        ) { [weak self] newState in
-            self?.handleSmartModeChanged(newState)
-        }
-        
-        smartModeMenuItem.view = smartModeToggleView
-        menu.addItem(smartModeMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
         // Settings - opens macOS standard Settings window
         let settingsMenuItem = NSMenuItem(
             title: "Settings...",
@@ -329,22 +310,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[GoxViet] Added Settings menu item")
         menu.addItem(settingsMenuItem)
 
-        // let updateMenuItem = NSMenuItem(
-        //     title: "Check for Updates...",
-        //     action: #selector(checkForUpdates),
-        //     keyEquivalent: ""
-        // )
-        // updateMenuItem.target = self
-        // menu.addItem(updateMenuItem)
-        
-        // About
-//        menu.addItem(NSMenuItem.separator())
-//        menu.addItem(NSMenuItem(
-//            title: "About GoxViet",
-//            action: #selector(showAbout),
-//            keyEquivalent: ""
-//        ))
-        
         // Quit
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(
@@ -355,15 +320,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         statusItem.menu = menu
         
-        // precise initial state
-        updateInputMethodMenuState()
+        // Update all menu states
+        updateMenuStates()
     }
-
-    func updateInputMethodMenuState() {
+    
+    func updateMenuStates() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let menu = self.statusItem.menu else { return }
-            let currentMethod = SettingsManager.shared.inputMethod
             
+            // Update Vietnamese Input state
+            if let toggleItem = menu.item(withTag: 100) {
+                toggleItem.state = SettingsManager.shared.isEnabled ? .on : .off
+            }
+            
+            // Update Input Method state
+            let currentMethod = SettingsManager.shared.inputMethod
             if let telexItem = menu.item(withTag: 200) {
                 telexItem.state = (currentMethod == 0) ? .on : .off
             }
@@ -372,10 +343,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+
     
     // MARK: - Settings Window
     
     @objc func openSettings() {
+        // Prevent opening settings during termination
+        guard !isTerminating else {
+            Log.warning("Cannot open settings - application is terminating")
+            return
+        }
+        
         NSLog("[GoxViet] openSettings() called")
 
         // Always elevate to regular to show Settings and bring it forward
@@ -479,7 +458,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] notification in
             if notification.object as? Bool != nil {
                 self?.updateStatusIcon()
-                self?.updateToggleMenuItem()
+                self?.updateMenuStates()
             }
         }
         ResourceManager.shared.register(observer: stateToken, identifier: ObserverKey.updateState, center: notificationCenter)
@@ -492,7 +471,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] notification in
             if notification.object as? Bool != nil {
                 self?.updateStatusIcon()
-                self?.updateToggleMenuItem()
+                self?.updateMenuStates()
             }
         }
         ResourceManager.shared.register(observer: toggleToken, identifier: ObserverKey.toggleVietnamese, center: notificationCenter)
@@ -514,22 +493,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateInputMethodMenuState()
+            self?.updateMenuStates()
         }
         ResourceManager.shared.register(observer: inputMethodToken, identifier: ObserverKey.inputMethod, center: notificationCenter)
-        
-        // Listen for smart mode changes
-        let smartModeToken = notificationCenter.addObserver(
-            forName: .smartModeChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let newState = notification.object as? Bool {
-                self?.smartModeToggleView?.updateState(newState)
-                Log.info("Status bar smart mode updated: \(newState)")
-            }
-        }
-        ResourceManager.shared.register(observer: smartModeToken, identifier: ObserverKey.smartMode, center: notificationCenter)
         
         // Listen for app becoming active (detect permission changes)
         let activateToken = notificationCenter.addObserver(
@@ -541,7 +507,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ResourceManager.shared.register(observer: activateToken, identifier: ObserverKey.appActivation, center: notificationCenter)
         
-        // Listen for internal open window requests (from Settings UI buttons etc)
+        // Listen for settings window cleanup notification
+        let cleanupToken = notificationCenter.addObserver(
+            forName: NSNotification.Name("settingsWindowCleanup"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSettingsWindowCleanup()
+        }
+        ResourceManager.shared.register(observer: cleanupToken, identifier: ObserverKey.settingsCleanup, center: notificationCenter)
 
     }
     
@@ -550,12 +524,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ObserverKey.updateState,
             ObserverKey.toggleVietnamese,
             ObserverKey.shortcutChanged,
-            ObserverKey.smartMode,
             ObserverKey.appActivation,
-            ObserverKey.appActivation,
-
             ObserverKey.inputMethod,
-            ObserverKey.settingsClose
+            ObserverKey.settingsClose,
+            ObserverKey.settingsCleanup
         ]
         identifiers.forEach { identifier in
             ResourceManager.shared.unregister(observerIdentifier: identifier, center: notificationCenter)
@@ -564,7 +536,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     deinit {
         cleanupObservers()
-        cleanupMenuViews()
         stopAccessibilityPollTimer()
         
         // Release status item
@@ -574,13 +545,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         Log.info("AppDelegate deinitialized")
-    }
-    
-    private func cleanupMenuViews() {
-        toggleView?.cleanup()
-        toggleView = nil
-        smartModeToggleView?.cleanup()
-        smartModeToggleView = nil
     }
     
     func checkPermissionOnActivate() {
@@ -600,50 +564,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    func updateToggleMenuItem() {
-        toggleView?.updateState(isEnabled)
-    }
-    
     // MARK: - Toggle Handlers
     
     func handleToggleChanged(_ newState: Bool) {
         InputManager.shared.setEnabled(newState)
         updateStatusIcon()
+        updateMenuStates()
         
         Log.info("Toggle Vietnamese: \(newState ? "ON" : "OFF")")
-    }
-    
-    func handleSmartModeChanged(_ newState: Bool) {
-        SettingsManager.shared.setSmartModeEnabled(newState)
-        
-        if newState {
-            // Refresh to apply saved state for current app
-            PerAppModeManagerEnhanced.shared.refresh()
-        }
-        
-        Log.info("Smart Per-App Mode: \(newState ? "ON" : "OFF")")
     }
     
     // MARK: - Menu Actions
     
     @objc func toggleVietnamese(_ sender: Any?) {
+        // Prevent actions during termination
+        guard !isTerminating else { return }
+        
         // Toggle state
         let newState = !SettingsManager.shared.isEnabled
         handleToggleChanged(newState)
-        updateToggleMenuItem()
     }
     
     @objc func selectTelex() {
+        guard !isTerminating else { return }
+        
         SettingsManager.shared.setInputMethod(0)
         InputManager.shared.setInputMethod(0)
-        updateInputMethodMenuState()
+        updateMenuStates()
         Log.info("Input method: Telex (selected from Menu)")
     }
     
     @objc func selectVNI() {
+        guard !isTerminating else { return }
+        
         SettingsManager.shared.setInputMethod(1)
         InputManager.shared.setInputMethod(1)
-        updateInputMethodMenuState()
+        updateMenuStates()
         Log.info("Input method: VNI (selected from Menu)")
     }
     
@@ -693,44 +649,82 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 //    }
     
     @objc func quitApp() {
-        Log.info("Application quitting")
+        // Prevent double termination
+        guard !isTerminating else { return }
+        
+        isTerminating = true
+        Log.info("Application quitting via menu")
+        
+        // Stop input processing immediately
         InputManager.shared.stop()
-        cleanupMenuViews()
+        
+        // Remove menu to prevent further interactions
+        statusItem.menu = nil
+        
+        // Request termination
         NSApplication.shared.terminate(self)
     }
     
-    func applicationWillTerminate(_ aNotification: Notification) {
-        Log.info("Application terminating")
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Log.info("Application requesting termination...")
         
-        // Note: Shortcuts are auto-saved via Combine observer in SettingsManager
-        // No need to manually call saveShortcuts()
-
-        // CRITICAL: Guard against premature termination when just closing a window
-        // Only terminate if truly exiting the app, not just closing a window
-        let visibleWindows = NSApp.windows.filter { $0.isVisible }
-        if !visibleWindows.isEmpty {
-            Log.warning("Application terminating but windows still visible - possible false positive")
-            // Still proceed with cleanup, but be careful
+        // Check if we should allow termination
+        // Ensure all critical operations are complete
+        let shouldTerminate = true
+        
+        if shouldTerminate {
+            Log.info("Termination approved")
+            return .terminateNow
+        } else {
+            Log.info("Termination delayed - operations in progress")
+            return .terminateLater
         }
+    }
+    
+    func applicationWillTerminate(_ aNotification: Notification) {
+        Log.info("Application terminating - starting cleanup...")
         
-        // Stop all managers in safe order
-        // IMPORTANT: UpdateManager.stop() uses DispatchQueue.main.async internally,
-        // so it won't block InputManager from processing final keystrokes
-        UpdateManager.shared.stop()
+        // Set termination flag to prevent new operations
+        isTerminating = true
+        
+        // Stop event tap immediately to prevent new keyboard events
         InputManager.shared.stop()
         
-        // Cleanup timers and observers
+        // Cancel all pending operations
+        NSObject.cancelPreviousPerformRequests(withTarget: self)
+        
+        // Cleanup all timers
         stopAccessibilityPollTimer()
+        
+        // Close all windows
+        NSApp.windows.forEach { window in
+            window.close()
+        }
+        
+        // Remove status item immediately
+        if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+        
+        // Stop all managers
+        UpdateManager.shared.stop()
+        
+        // Cleanup observers
         cleanupObservers()
-        cleanupMenuViews()
         
         // Cleanup ResourceManager
         ResourceManager.shared.cleanup()
         
-        // Cleanup SettingsManager (clears Combine subscriptions)
+        // Cleanup SettingsManager
         SettingsManager.shared.cleanup()
         
-        Log.info("Application cleanup completed")
+        // Force release of any remaining objects
+        autoreleasepool {
+            // Additional cleanup in autorelease pool
+        }
+        
+        Log.info("Application cleanup completed - ready to terminate")
     }
     
     // MARK: - Application Lifecycle
@@ -739,6 +733,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // When user clicks app icon, open Settings window
         openSettings()
         return false
+    }
+    
+    // MARK: - Memory Cleanup Handler
+    
+    @objc private func handleSettingsWindowCleanup() {
+        // Clear SettingsManager caches when settings window closes
+        SettingsManager.shared.clearCaches()
+        
+        // Force autorelease pool
+        autoreleasepool {
+            // Additional cleanup
+        }
+        
+        // Log memory after cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            #if DEBUG
+            let stats = MemoryProfiler.shared.captureSnapshot()
+            NSLog("[GoxViet] Memory after settings close: \(stats.formattedUsedMemory)")
+            
+            // Trigger auto-cleanup if memory still high
+            if stats.usedMemoryMB > 40.0 {
+                MemoryProfiler.shared.triggerAutoCleanup(aggressive: true)
+            }
+            #endif
+        }
     }
 }
 

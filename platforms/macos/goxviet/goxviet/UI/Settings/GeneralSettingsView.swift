@@ -331,6 +331,12 @@ struct GeneralSettingsView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onDisappear {
+            // Cleanup to reduce memory footprint
+            showResetConfirmation = false
+            showImportExport = false
+            isRecordingShortcut = false
+        }
     }
     
     private func resetToDefaults() {
