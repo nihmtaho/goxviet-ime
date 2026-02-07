@@ -73,6 +73,9 @@ class InputManager: LifecycleManaged {
         // Load and apply saved settings from SettingsManager
         loadSavedSettings()
         
+        // Sync shortcuts to engine after initialization
+        SettingsManager.shared.syncShortcutsToEngine()
+        
         // Setup observers for configuration changes
         setupObservers()
     }

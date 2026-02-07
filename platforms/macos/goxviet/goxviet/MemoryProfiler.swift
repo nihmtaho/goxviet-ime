@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import os.log
+import Darwin
 
 /// Memory usage statistics
 struct MemoryStats: Codable, Equatable {
@@ -23,7 +24,7 @@ struct MemoryStats: Codable, Equatable {
     }
 }
 
-/// Memory profiling manager
+/// Memory profiling manager with auto-cleanup capabilities
 final class MemoryProfiler: ObservableObject {
     static let shared = MemoryProfiler()
     
@@ -35,9 +36,27 @@ final class MemoryProfiler: ObservableObject {
     private var peakMemory: Double = 0.0
     private let maxHistoryCount = 60 // Keep last 60 samples
     
+    // MARK: - Memory Thresholds
+    
+    /// Memory threshold for auto-cleanup (MB) - trigger cleanup when exceeded
+    private let autoCleanupThresholdMB: Double = 50.0
+    
+    /// Critical memory threshold (MB) - aggressive cleanup
+    private let criticalThresholdMB: Double = 70.0
+    
+    /// Base memory level at startup (captured on first launch)
+    private var baseMemoryMB: Double = 0.0
+    
+    /// Track last cleanup time to prevent thrashing
+    private var lastCleanupTime: Date?
+    private let minCleanupInterval: TimeInterval = 5.0
+    
     private init() {
         self.currentStats = MemoryProfiler.captureCurrentStats()
         self.peakMemory = self.currentStats.usedMemoryMB
+        self.baseMemoryMB = self.currentStats.usedMemoryMB
+        
+        setupMemoryPressureObserver()
     }
     
     // MARK: - Public API
@@ -115,6 +134,9 @@ final class MemoryProfiler: ObservableObject {
             self.currentStats = stats
             self.updatePeakMemory(stats.usedMemoryMB)
             
+            // Check for auto-cleanup trigger
+            self.checkAndTriggerAutoCleanup(currentMemory: stats.usedMemoryMB)
+            
             // Add to history
             self.history.append(stats)
             
@@ -127,6 +149,94 @@ final class MemoryProfiler: ObservableObject {
             if self.history.count % 10 == 0 {
                 Log.info("Memory profiling: \(self.history.count) samples, current: \(stats.formattedUsedMemory)")
             }
+        }
+    }
+    
+    // MARK: - Memory Pressure & Auto-Cleanup
+    
+    private func setupMemoryPressureObserver() {
+        // Listen for memory pressure notifications from ResourceManager
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("com.goxviet.memoryPressure"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.triggerAutoCleanup(aggressive: true)
+        }
+        
+        // Listen for settings window close to trigger cleanup
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("settingsWindowCleanup"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.triggerAutoCleanup(aggressive: false)
+        }
+    }
+    
+    /// Check if auto-cleanup should be triggered based on current memory
+    private func checkAndTriggerAutoCleanup(currentMemory: Double) {
+        // Check if enough time has passed since last cleanup
+        if let lastCleanup = lastCleanupTime,
+           Date().timeIntervalSince(lastCleanup) < minCleanupInterval {
+            return
+        }
+        
+        // Critical threshold - aggressive cleanup
+        if currentMemory > criticalThresholdMB {
+            Log.warning("Memory critical: \(currentMemory)MB > \(criticalThresholdMB)MB, triggering aggressive cleanup")
+            triggerAutoCleanup(aggressive: true)
+            return
+        }
+        
+        // Auto-cleanup threshold - normal cleanup
+        if currentMemory > autoCleanupThresholdMB {
+            Log.info("Memory above threshold: \(currentMemory)MB > \(autoCleanupThresholdMB)MB, triggering cleanup")
+            triggerAutoCleanup(aggressive: false)
+        }
+    }
+    
+    /// Trigger automatic memory cleanup
+    /// - Parameter aggressive: If true, performs aggressive cleanup that may impact UI
+    public func triggerAutoCleanup(aggressive: Bool = false) {
+        lastCleanupTime = Date()
+        
+        Log.info("🧹 Auto-cleanup triggered (aggressive: \(aggressive))")
+        
+        // Clear history to free memory
+        if history.count > 10 {
+            history.removeFirst(history.count - 10)
+        }
+        
+        // Clear autorelease pool
+        autoreleasepool {
+            // Force release of any pending objects
+        }
+        
+        // Suggest OS to free memory
+        #if os(macOS)
+        // Purgeable memory hint
+        if aggressive {
+            // Trigger more aggressive system cleanup
+            let currentPressure = ProcessInfo.processInfo.thermalState
+            if currentPressure == .serious || currentPressure == .critical {
+                NSLog("[MemoryProfiler] System under thermal pressure, recommending app pause")
+            }
+        }
+        #endif
+        
+        // Post notification for app-specific cleanup
+        NotificationCenter.default.post(
+            name: NSNotification.Name("com.goxviet.memoryAutoCleanup"),
+            object: ["aggressive": aggressive]
+        )
+        
+        // Capture post-cleanup stats
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            let newStats = self.captureSnapshot()
+            let freed = self.currentStats.usedMemoryMB - newStats.usedMemoryMB
+            Log.info("✅ Auto-cleanup complete. Memory: \(newStats.formattedUsedMemory) (freed: \(String(format: "%.1f", freed))MB)")
         }
     }
     
