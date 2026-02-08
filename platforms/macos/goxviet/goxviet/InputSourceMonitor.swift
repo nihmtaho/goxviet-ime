@@ -169,10 +169,11 @@ class InputSourceMonitor: LifecycleManaged {
         }
         
         // Register with ResourceManager for automatic cleanup
+        // Note: DistributedNotificationCenter is a subclass of NotificationCenter
         ResourceManager.shared.register(
             observer: observer,
             identifier: "InputSourceMonitor.inputSourceObserver",
-            center: DistributedNotificationCenter.default() as! NotificationCenter
+            center: DistributedNotificationCenter.default()
         )
         
         isRunning = true
@@ -188,7 +189,7 @@ class InputSourceMonitor: LifecycleManaged {
         // Unregister observer via ResourceManager
         ResourceManager.shared.unregister(
             observerIdentifier: "InputSourceMonitor.inputSourceObserver",
-            center: DistributedNotificationCenter.default() as! NotificationCenter
+            center: DistributedNotificationCenter.default()
         )
         
         // Restore state if temporarily disabled
