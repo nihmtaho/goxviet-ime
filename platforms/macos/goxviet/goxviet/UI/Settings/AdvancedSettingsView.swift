@@ -22,6 +22,7 @@ struct AdvancedSettingsView: View {
     @State private var autoRefresh = false
     @State private var refreshTimer: Timer?
     @State private var currentMetrics: EngineMetrics
+    @State private var loggingEnabled: Bool = Log.isEnabled
     
     init(metrics: EngineMetrics, resetAction: @escaping () -> Void, openLogAction: @escaping () -> Void) {
         self.metrics = metrics
@@ -223,45 +224,84 @@ struct AdvancedSettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Application Logs")
                                     .font(.system(size: 13, weight: .medium))
-                                Text("View detailed logging information")
+                                Text("Enable logging for debugging purposes")
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }
                             
                             Spacer()
                             
+                            Toggle("", isOn: $loggingEnabled)
+                                .toggleStyle(.switch)
+                                .onChange(of: loggingEnabled) { _, newValue in
+                                    if newValue {
+                                        Log.enableLogging(reason: "User enabled in Advanced Settings")
+                                    } else {
+                                        Log.disableLogging(reason: "User disabled in Advanced Settings")
+                                    }
+                                }
+                        }
+                        
+                        Divider()
+                        
+                        // Log file actions
+                        HStack {
                             Button {
                                 openLogAction()
                             } label: {
                                 Label("Open Log File", systemImage: "doc.text.magnifyingglass")
                             }
-                            .buttonStyle(.borderedProminent)
-                        }
-                        
-                        Divider()
-                        
-                        HStack {
-                            Image(systemName: "folder")
-                                .foregroundColor(.secondary)
-                            Text("~/Library/Logs/GoxViet/")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
+                            .buttonStyle(.bordered)
+                            .disabled(!loggingEnabled && !FileManager.default.fileExists(atPath: Log.logPath.path))
                             
                             Spacer()
                             
                             Button {
                                 copyLogPath()
                             } label: {
-                                Image(systemName: "doc.on.doc")
+                                Label("Copy Path", systemImage: "doc.on.doc")
                             }
-                            .buttonStyle(.plain)
-                            .help("Copy log path")
+                            .buttonStyle(.bordered)
+                            
+                            Button {
+                                clearLogs()
+                            } label: {
+                                Label("Clear Logs", systemImage: "trash")
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundColor(.red)
+                        }
+                        
+                        // Log path display
+                        HStack {
+                            Image(systemName: "folder")
+                                .foregroundColor(.secondary)
+                            Text("~/Library/Logs/GoxViet/keyboard.log")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
                         }
                         .padding(8)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(Color(nsColor: .textBackgroundColor))
                         )
+                        
+                        // Logging status
+                        HStack {
+                            Image(systemName: loggingEnabled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(loggingEnabled ? .green : .secondary)
+                            Text(loggingEnabled ? "Logging is enabled" : "Logging is disabled")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if loggingEnabled {
+                                Text("May impact performance")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.orange)
+                            }
+                        }
                     }
                     .padding(8)
                 } label: {
@@ -347,9 +387,16 @@ struct AdvancedSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             refreshMetrics()
+            // Sync logging state on appear
+            loggingEnabled = Log.isEnabled
         }
         .onDisappear {
             stopAutoRefresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("com.goxviet.loggingStateChanged"))) { notification in
+            if let enabled = notification.object as? Bool {
+                loggingEnabled = enabled
+            }
         }
     }
     
@@ -398,6 +445,17 @@ struct AdvancedSettingsView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString("~/Library/Logs/GoxViet/", forType: .string)
+    }
+    
+    private func clearLogs() {
+        Log.clearLogs()
+        // Show confirmation
+        let alert = NSAlert()
+        alert.messageText = "Logs Cleared"
+        alert.informativeText = "All log files have been removed."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
     
     private func openShortcutsManager() {
