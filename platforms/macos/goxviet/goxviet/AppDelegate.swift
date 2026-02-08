@@ -31,7 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let shortcutChanged = "AppDelegate.shortcutObserver"
         static let smartMode = "AppDelegate.smartModeObserver"
         static let appActivation = "AppDelegate.activationObserver"
-
+        static let openUpdateWindow = "AppDelegate.openUpdateObserver"
         static let inputMethod = "AppDelegate.inputMethodObserver"
         static let settingsClose = "AppDelegate.settingsCloseObserver"
     }
@@ -542,7 +542,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ResourceManager.shared.register(observer: activateToken, identifier: ObserverKey.appActivation, center: notificationCenter)
         
         // Listen for internal open window requests (from Settings UI buttons etc)
-
+        let openUpdateToken = notificationCenter.addObserver(
+            forName: .openUpdateWindow,
+            object: nil,
+            queue: .main
+        ) { _ in
+            WindowManager.shared.showSettingsWindow()
+        }
+        ResourceManager.shared.register(observer: openUpdateToken, identifier: ObserverKey.openUpdateWindow, center: notificationCenter)
     }
     
     private func cleanupObservers() {
@@ -553,7 +560,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ObserverKey.smartMode,
             ObserverKey.appActivation,
             ObserverKey.appActivation,
-
+            ObserverKey.openUpdateWindow,
             ObserverKey.inputMethod,
             ObserverKey.settingsClose
         ]

@@ -372,7 +372,7 @@ extension Notification.Name {
     static let outputEncodingChanged = Notification.Name("com.goxviet.outputEncodingChanged")
     static let shiftBackspaceEnabledChanged = Notification.Name("com.goxviet.shiftBackspaceEnabledChanged")
     static let textExpansionEnabledChanged = Notification.Name("com.goxviet.ime.textExpansionEnabledChanged")
-
+    static let openUpdateWindow = Notification.Name("com.goxviet.ime.openUpdateWindow")
     
     // Debugging
     static let didSaveShortcuts = Notification.Name("com.goxviet.ime.didSaveShortcuts")
