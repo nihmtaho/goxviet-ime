@@ -188,22 +188,12 @@ struct TextExpansionSettingsTab: View {
 struct AdvancedSettingsTab: View {
     var body: some View {
         AdvancedSettingsView(
-            metrics: getMetrics(),
-            resetAction: resetMetrics,
             openLogAction: openLog
         )
         .environmentObject(SettingsManager.shared)
         .tabItem {
             Label("Advanced", systemImage: "slider.horizontal.3")
         }
-    }
-    
-    private func getMetrics() -> EngineMetrics {
-        EngineMetrics(totalKeystrokes: 0, backspaceCount: 0, avgBufferLength: 0.0)
-    }
-    
-    private func resetMetrics() {
-        Log.info("Metrics reset requested (not yet wired to Rust core)")
     }
     
     private func openLog() {
