@@ -10,25 +10,23 @@ import ApplicationServices
 
 // MARK: - Break Key Detection
 
+// OPTIMIZATION: Static Sets avoid reallocating on every call
+private let standardBreakKeys: Set<CGKeyCode> = [
+    31, 48, 36, 76, 53,  // space, tab, return, enter, esc
+    123, 124, 125, 126,  // left, right, down, up arrows
+    47, 43, 44, 41, 39, 33, 30, 42, 24, 27, 50  // punctuation: . , / ; ' [ ] \ = - `
+]
+
+private let  numberKeys: Set<CGKeyCode> = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25]
+
 /// Check if key is a break key (space, punctuation, arrows, etc.)
 /// When shift=true, also treat number keys as break (they produce !@#$%^&*())
+@inline(__always)
 private func isBreakKey(_ keyCode: CGKeyCode, shift: Bool) -> Bool {
-    // Standard break keys: space, tab, return, arrows, punctuation
-    let standardBreak: Set<CGKeyCode> = [
-        31, 48, 36, 76, 53,  // space, tab, return, enter, esc
-        123, 124, 125, 126,  // left, right, down, up arrows
-        47, 43, 44, 41, 39, 33, 30, 42, 24, 27, 50  // punctuation: . , / ; ' [ ] \ = - `
-    ]
-    
-    if standardBreak.contains(keyCode) { return true }
+    if standardBreakKeys.contains(keyCode) { return true }
     
     // Shifted number keys produce symbols: !@#$%^&*()
-    if shift {
-        let numberKeys: Set<CGKeyCode> = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25]
-        return numberKeys.contains(keyCode)
-    }
-    
-    return false
+    return shift && numberKeys.contains(keyCode)
 }
 
 // MARK: - Input Manager
@@ -110,11 +108,6 @@ class InputManager: LifecycleManaged {
         // Apply saved text expansion enabled setting
         RustBridge.shared.setShortcutsEnabled(settings.textExpansionEnabled)
         Log.info("Loaded text expansion: \(settings.textExpansionEnabled ? "enabled" : "disabled")")
-        
-        // Sync shortcuts from SettingsManager to Rust engine
-        // UI is source of truth, engine receives updates
-        settings.syncShortcutsToEngine()
-        Log.info("Synced \(settings.shortcuts.count) shortcuts to engine")
         
         // Set initial enabled state (will be overridden by per-app mode if enabled)
         ime_enabled(settings.isEnabled)
@@ -442,7 +435,17 @@ class InputManager: LifecycleManaged {
         let rightShift: CGKeyCode = 60
         let leftDown = CGEventSource.keyState(.combinedSessionState, key: leftShift)
         let rightDown = CGEventSource.keyState(.combinedSessionState, key: rightShift)
-        let shift = shiftFlag || leftDown || rightDown
+        
+        // FIX: The original code `shift = shiftFlag || leftDown || rightDown` caused
+        // intermittent auto-capitalization issues because it overrode the OS event flags 
+        // for normal typing if the global key state was stale (stuck key).
+        // We now enforce that for normal keys, we trust the event flags.
+        // We only fallback to physical key state for Backspace where robust Shift detection
+        // is critical for the Shift+Backspace (Word Delete) feature.
+        let isBackspace = (keyCode == 51)
+        let physicalShift = leftDown || rightDown
+        let shift = shiftFlag || (isBackspace && physicalShift)
+        
         let caps = capsLock != shift
         
         let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
@@ -637,11 +640,16 @@ class InputManager: LifecycleManaged {
 
     
     /// Create String from chars array, using pool for common single chars
-    private static func makeString(from chars: [Character]) -> String {
+    @inline(__always)
+    private static func makeString(from chars: [ Character]) -> String {
+        // Fast path: empty array
+        if chars.isEmpty { return "" }
+        
         // Use pool for single common characters
         if chars.count == 1, let pooled = commonCharPool[chars[0]] {
             return pooled
         }
+        
         // Fallback to normal String construction
         return String(chars)
     }
@@ -678,15 +686,18 @@ class InputManager: LifecycleManaged {
         return nil
     }
     
+    @inline(__always)
     private func extractChars(from result: ImeResult) -> [Character] {
-        var chars: [Character] = []
         let count = Int(result.count)
         
-        // IMPORTANT: result.chars is now a heap-allocated pointer (*mut u32)
-        // We must access it as a pointer, not as an array
+        // Fast path: empty result
         guard count > 0, result.chars != nil else {
-            return chars
+            return []
         }
+        
+        // OPTIMIZATION: Pre-allocate with exact capacity
+        var chars = [Character]()
+        chars.reserveCapacity(count)
         
         // Access heap-allocated chars via pointer
         for i in 0..<count {

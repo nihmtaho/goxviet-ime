@@ -109,17 +109,6 @@ final class SettingsManager: ObservableObject {
     
     @Published var shortcutsLoaded: Bool = false
     
-    /// Text expansion shortcuts - UserDefaults is source of truth
-    /// Auto-synced to Rust engine via Combine
-    @Published var shortcuts: [TextShortcutItem] = [] {
-        didSet {
-            // Auto-save to UserDefaults when shortcuts change
-            if let data = try? JSONEncoder().encode(shortcuts) {
-                userDefaults.set(data, forKey: Keys.shortcuts)
-            }
-        }
-    }
-    
     // MARK: - Runtime State (Not Persisted)
     
     /// Whether Vietnamese input is currently enabled (runtime state, not persisted)
@@ -149,7 +138,6 @@ final class SettingsManager: ObservableObject {
         static let outputEncoding = "com.goxviet.ime.outputEncoding"
         static let shiftBackspaceEnabled = "com.goxviet.ime.shiftBackspaceEnabled"
         static let textExpansionEnabled = "com.goxviet.ime.textExpansionEnabled"
-        static let shortcuts = "com.goxviet.ime.shortcuts"
     }
     
     // MARK: - Initialization
@@ -503,36 +491,58 @@ final class SettingsManager: ObservableObject {
         return dir.appendingPathComponent("shortcuts.json")
     }
 
-    /// Legacy method - now auto-saved via didSet
-    /// Kept for API compatibility
     public func saveShortcuts() {
-        // Shortcuts are auto-saved via didSet on shortcuts property
-        // and auto-synced to engine via Combine
-        Log.info("saveShortcuts() called - now auto-saved")
-    }
-
-    /// Load shortcuts from UserDefaults (source of truth)
-    /// Initializes with defaults if no saved data exists
-    private func loadShortcutsFromDefaults() {
-        if let data = userDefaults.data(forKey: Keys.shortcuts),
-           let saved = try? JSONDecoder().decode([TextShortcutItem].self, from: data) {
-            shortcuts = saved
-            Log.info("Loaded \(shortcuts.count) shortcuts from UserDefaults")
-        } else {
-            // Initialize with default shortcuts
-            shortcuts = [
-                TextShortcutItem(key: "vn", value: "Việt Nam", isEnabled: false),
-                TextShortcutItem(key: "hn", value: "Hà Nội", isEnabled: false),
-                TextShortcutItem(key: "hcm", value: "Hồ Chí Minh", isEnabled: false),
-                TextShortcutItem(key: "tphcm", value: "Thành phố Hồ Chí Minh", isEnabled: false),
-            ]
-            Log.info("Initialized default shortcuts")
+        lock.lock()
+        defer { lock.unlock() }
+        
+        guard let json = RustBridge.shared.exportShortcutsJSON() else {
+            Log.error("Failed to export shortcuts to save.")
+            return
         }
         
-        // Sync to engine after loading
-        DispatchQueue.main.async { [weak self] in
-            self?.syncShortcutsToEngine()
-            self?.shortcutsLoaded = true
+        guard let url = shortcutsFileURL else {
+            Log.error("Could not get shortcuts file URL.")
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+            try json.write(to: url, atomically: true, encoding: .utf8)
+            Log.info("Saved shortcuts to file: \(url.path)")
+            
+            // Post notification for debug UI
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .didSaveShortcuts, object: Date())
+            }
+        } catch {
+            Log.error("Failed to save shortcuts to file: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadShortcuts() {
+        lock.lock()
+        defer {
+            lock.unlock()
+            DispatchQueue.main.async {
+                self.shortcutsLoaded = true
+            }
+        }
+        
+        guard let url = shortcutsFileURL, FileManager.default.fileExists(atPath: url.path) else {
+            Log.info("No shortcuts file found to load.")
+            return
+        }
+
+        do {
+            let json = try String(contentsOf: url, encoding: .utf8)
+            let count = RustBridge.shared.importShortcutsJSON(json)
+            if count >= 0 {
+                Log.info("Loaded \(count) shortcuts from file.")
+            } else {
+                Log.error("Failed to import shortcuts from file.")
+            }
+        } catch {
+            Log.error("Failed to read shortcuts file: \(error.localizedDescription)")
         }
     }
 
@@ -621,12 +631,6 @@ final class SettingsManager: ObservableObject {
                 Keys.outputEncoding: OutputEncoding.unicode.rawValue,
                 Keys.shiftBackspaceEnabled: false,
                 Keys.textExpansionEnabled: true,
-                Keys.shortcuts: try? JSONEncoder().encode([
-                    TextShortcutItem(key: "vn", value: "Việt Nam", isEnabled: false),
-                    TextShortcutItem(key: "hn", value: "Hà Nội", isEnabled: false),
-                    TextShortcutItem(key: "hcm", value: "Hồ Chí Minh", isEnabled: false),
-                    TextShortcutItem(key: "tphcm", value: "Thành phố Hồ Chí Minh", isEnabled: false)
-                ]),
                 "hasLaunchedBefore": true
             ]
             userDefaults.register(defaults: defaults)
@@ -653,8 +657,7 @@ final class SettingsManager: ObservableObject {
         shiftBackspaceEnabled = userDefaults.bool(forKey: Keys.shiftBackspaceEnabled)
         textExpansionEnabled = userDefaults.bool(forKey: Keys.textExpansionEnabled)
         
-        // Load shortcuts from UserDefaults (source of truth)
-        loadShortcutsFromDefaults()
+        loadShortcuts()
 
         // Mark as launched after loading
         if !hasLaunchedBefore {
@@ -734,41 +737,6 @@ final class SettingsManager: ObservableObject {
                 self?.setSmartModeEnabled(enabled)
             }
             .store(in: &cancellables)
-        
-        // Auto-sync shortcuts to engine with 300ms debounce
-        $shortcuts
-            .dropFirst()  // Skip initial empty array
-            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.syncShortcutsToEngine()
-            }
-            .store(in: &cancellables)
-    }
-    
-    /// Sync shortcuts from UI to Rust engine
-    /// UI is source of truth, engine receives updates
-    func syncShortcutsToEngine() {
-        // Clear and re-add all enabled shortcuts
-        RustBridge.shared.clearShortcuts()
-        for shortcut in shortcuts where shortcut.isEnabled && !shortcut.key.isEmpty {
-            RustBridge.shared.addShortcut(trigger: shortcut.key, replacement: shortcut.value)
-        }
-        Log.info("Synced \(shortcuts.filter { $0.isEnabled }.count) shortcuts to engine")
-    }
-}
-
-// MARK: - Text Shortcut Model
-
-/// Text expansion shortcut item
-/// Stored in UserDefaults as source of truth
-struct TextShortcutItem: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var key: String
-    var value: String
-    var isEnabled: Bool = true
-    
-    static func == (lhs: TextShortcutItem, rhs: TextShortcutItem) -> Bool {
-        lhs.id == rhs.id && lhs.key == rhs.key && lhs.value == rhs.value && lhs.isEnabled == rhs.isEnabled
     }
 }
 
