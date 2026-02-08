@@ -90,20 +90,32 @@ struct TextExpansionSettingsTab: View {
     var body: some View {
         TextExpansionSettingsView()
             .tabItem {
-                Label("Text Expransion", systemImage: "text.badge.plus")
+                Label("Text Expansion", systemImage: "text.badge.plus")
             }
     }
 }
 
 struct AdvancedSettingsTab: View {
     var body: some View {
-        AdvancedSettingsView(openLogAction: openLog)
-            .environmentObject(SettingsManager.shared)
-            .tabItem {
-                Label("Advanced", systemImage: "slider.horizontal.3")
-            }
+        AdvancedSettingsView(
+            metrics: getMetrics(),
+            resetAction: resetMetrics,
+            openLogAction: openLog
+        )
+        .environmentObject(SettingsManager.shared)
+        .tabItem {
+            Label("Advanced", systemImage: "slider.horizontal.3")
+        }
     }
-
+    
+    private func getMetrics() -> EngineMetrics {
+        EngineMetrics(totalKeystrokes: 0, backspaceCount: 0, avgBufferLength: 0.0)
+    }
+    
+    private func resetMetrics() {
+        Log.info("Metrics reset requested (not yet wired to Rust core)")
+    }
+    
     private func openLog() {
         if FileManager.default.fileExists(atPath: Log.logPath.path) {
             NSWorkspace.shared.open(Log.logPath)

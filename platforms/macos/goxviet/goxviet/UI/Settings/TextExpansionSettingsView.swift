@@ -15,9 +15,10 @@ struct TextExpansionSettingsView: View {
     // MARK: - Properties
     
     @ObservedObject private var settingsManager = SettingsManager.shared
+    @State private var shortcuts: [(trigger: String, replacement: String)] = []
     @State private var searchText = ""
     @State private var showingAddSheet = false
-    @State private var editingShortcut: TextShortcutItem? = nil
+    @State private var editingShortcut: (trigger: String, replacement: String)? = nil
     
     // Computed property to track edit sheet state
     private var isEditSheetPresented: Bool {
@@ -25,29 +26,30 @@ struct TextExpansionSettingsView: View {
     }
     
     @State private var showingDeleteConfirmation = false
-    @State private var shortcutToDelete: TextShortcutItem? = nil
+    @State private var shortcutToDelete: String? = nil
     @State private var showingImportError = false
     @State private var importErrorMessage = ""
     @State private var showingExportSuccess = false
+    @State private var lastSaveTime: Date? = nil
 
     // MARK: - Computed Properties
     
-    private var filteredShortcuts: [TextShortcutItem] {
+    private var filteredShortcuts: [(trigger: String, replacement: String)] {
         if searchText.isEmpty {
-            return settingsManager.shortcuts.sorted { $0.key < $1.key }
+            return shortcuts.sorted { $0.trigger < $1.trigger }
         }
-        return settingsManager.shortcuts.filter { shortcut in
-            shortcut.key.localizedCaseInsensitiveContains(searchText) ||
-            shortcut.value.localizedCaseInsensitiveContains(searchText)
-        }.sorted { $0.key < $1.key }
+        return shortcuts.filter { shortcut in
+            shortcut.trigger.localizedCaseInsensitiveContains(searchText) ||
+            shortcut.replacement.localizedCaseInsensitiveContains(searchText)
+        }.sorted { $0.trigger < $1.trigger }
     }
     
     private var shortcutCount: Int {
-        settingsManager.shortcuts.filter { $0.isEnabled }.count
+        RustBridge.shared.getShortcutsCount()
     }
     
     private var shortcutCapacity: Int {
-        100 // Default capacity
+        RustBridge.shared.getShortcutsCapacity()
     }
     
     // MARK: - Body
@@ -73,30 +75,59 @@ struct TextExpansionSettingsView: View {
             .padding()
         }
         .frame(minWidth: 600, minHeight: 500)
-        .onAppear {
-            // Sync enabled state to engine when view appears
-            RustBridge.shared.setShortcutsEnabled(settingsManager.textExpansionEnabled)
+        .onReceive(NotificationCenter.default.publisher(for: .didSaveShortcuts)) { notification in
+            if let date = notification.object as? Date {
+                self.lastSaveTime = date
+            }
+        }
+        .onChange(of: settingsManager.shortcutsLoaded) { _, loaded in
+            if loaded {
+                // Sync enabled state to engine
+                RustBridge.shared.setShortcutsEnabled(settingsManager.textExpansionEnabled)
+                loadShortcuts()
+            }
+        }
+        .onChange(of: showingAddSheet) { _, newValue in
+            // Refresh list when sheet dismisses
+            if !newValue {
+                // Add small delay to ensure sheet animation completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    loadShortcuts()
+                }
+            }
         }
         .sheet(isPresented: $showingAddSheet) {
             ShortcutEditorSheet(
                 isPresented: $showingAddSheet,
-                existingShortcuts: settingsManager.shortcuts.map { $0.key },
+                existingShortcuts: shortcuts.map { $0.trigger },
                 onSave: { trigger, replacement in
                     addShortcut(trigger: trigger, replacement: replacement)
                 }
             )
         }
-        .sheet(item: $editingShortcut) { shortcut in
+        .onChange(of: isEditSheetPresented) { _, newValue in
+            // Refresh list when edit sheet dismisses
+            if !newValue {
+                // Add small delay to ensure sheet animation completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    loadShortcuts()
+                }
+            }
+        }
+        .sheet(item: Binding(
+            get: { editingShortcut.map { EditableShortcut(trigger: $0.trigger, replacement: $0.replacement) } },
+            set: { editingShortcut = $0.map { ($0.trigger, $0.replacement) } }
+        )) { shortcut in
             ShortcutEditorSheet(
                 isPresented: Binding(
                     get: { editingShortcut != nil },
                     set: { if !$0 { editingShortcut = nil } }
                 ),
-                existingShortcuts: settingsManager.shortcuts.map { $0.key }.filter { $0 != shortcut.key },
-                editingTrigger: shortcut.key,
-                editingReplacement: shortcut.value,
+                existingShortcuts: shortcuts.map { $0.trigger }.filter { $0 != shortcut.trigger },
+                editingTrigger: shortcut.trigger,
+                editingReplacement: shortcut.replacement,
                 onSave: { trigger, replacement in
-                    updateShortcut(oldId: shortcut.id, newKey: trigger, newValue: replacement)
+                    updateShortcut(oldTrigger: shortcut.trigger, newTrigger: trigger, replacement: replacement)
                 }
             )
         }
@@ -105,14 +136,14 @@ struct TextExpansionSettingsView: View {
                 shortcutToDelete = nil
             }
             Button("Xóa", role: .destructive) {
-                if let shortcut = shortcutToDelete {
-                    deleteShortcut(shortcut)
+                if let trigger = shortcutToDelete {
+                    deleteShortcut(trigger: trigger)
                 }
                 shortcutToDelete = nil
             }
         } message: {
-            if let shortcut = shortcutToDelete {
-                Text("Bạn có chắc muốn xóa gõ tắt '\(shortcut.key)'?")
+            if let trigger = shortcutToDelete {
+                Text("Bạn có chắc muốn xóa gõ tắt '\(trigger)'?")
             }
         }
         .alert("Lỗi nhập dữ liệu", isPresented: $showingImportError) {
@@ -233,7 +264,7 @@ struct TextExpansionSettingsView: View {
     
     private var shortcutsListSection: some View {
         GroupBox {
-            if settingsManager.shortcuts.isEmpty {
+            if shortcuts.isEmpty {
                 emptyStateView
             } else if filteredShortcuts.isEmpty {
                 noResultsView
@@ -311,7 +342,7 @@ struct TextExpansionSettingsView: View {
             // Table rows
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(filteredShortcuts) { shortcut in
+                    ForEach(filteredShortcuts, id: \.trigger) { shortcut in
                         shortcutRow(shortcut)
                         Divider()
                     }
@@ -323,16 +354,16 @@ struct TextExpansionSettingsView: View {
         .cornerRadius(8)
     }
     
-    private func shortcutRow(_ shortcut: TextShortcutItem) -> some View {
+    private func shortcutRow(_ shortcut: (trigger: String, replacement: String)) -> some View {
         HStack(alignment: .top, spacing: 12) {
             // Trigger
-            Text(shortcut.key)
+            Text(shortcut.trigger)
                 .font(.system(.body, design: .monospaced))
                 .fontWeight(.medium)
                 .frame(width: 150, alignment: .leading)
             
             // Replacement
-            Text(shortcut.value)
+            Text(shortcut.replacement)
                 .font(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(2)
@@ -348,7 +379,7 @@ struct TextExpansionSettingsView: View {
                 .help("Sửa gõ tắt")
                 
                 Button {
-                    shortcutToDelete = shortcut
+                    shortcutToDelete = shortcut.trigger
                     showingDeleteConfirmation = true
                 } label: {
                     Image(systemName: "trash")
@@ -369,9 +400,15 @@ struct TextExpansionSettingsView: View {
                 Text("\(shortcutCount) / \(shortcutCapacity) gõ tắt")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                Text("Auto-saved")
-                    .font(.caption)
-                    .foregroundColor(.green)
+                if let date = lastSaveTime {
+                    Text("Last Saved: \(date, formatter: itemFormatter)")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                } else {
+                    Text("Last Saved: Never")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
             }
             
             Spacer()
@@ -390,121 +427,152 @@ struct TextExpansionSettingsView: View {
     
     // MARK: - Actions
     
-    /// Add new shortcut - modifies settingsManager.shortcuts directly
-    /// Auto-saved via didSet and auto-synced to engine via Combine
+    private func loadShortcuts() {
+        guard let json = RustBridge.shared.exportShortcutsJSON() else {
+            Log.error("Failed to export shortcuts JSON from engine")
+            self.shortcuts = []
+            return
+        }
+        
+        Log.info("Exported JSON from engine: \(json)")
+        
+        guard let data = json.data(using: .utf8) else {
+            Log.error("Failed to convert JSON string to data")
+            self.shortcuts = []
+            return
+        }
+        
+        do {
+            let exportData = try JSONDecoder().decode(ShortcutsExport.self, from: data)
+            Log.info("Loaded \(exportData.shortcuts.count) shortcuts from engine (version \(exportData.version))")
+            DispatchQueue.main.async {
+                self.shortcuts = exportData.shortcuts.map { (trigger: $0.trigger, replacement: $0.replacement) }
+                Log.info("Updated shortcuts state: \(self.shortcuts.count) items")
+            }
+        } catch {
+            Log.error("Failed to decode shortcuts JSON: \(error)")
+            self.shortcuts = []
+        }
+    }
+    
     private func addShortcut(trigger: String, replacement: String) {
-        guard !trigger.isEmpty else { return }
-        
-        // Check for duplicates
-        if let index = settingsManager.shortcuts.firstIndex(where: { $0.key == trigger }) {
-            // Update existing
-            settingsManager.shortcuts[index].value = replacement
-            settingsManager.shortcuts[index].isEnabled = true
-            Log.info("Updated shortcut: \(trigger)")
-        } else {
-            // Add new
-            let newShortcut = TextShortcutItem(key: trigger, value: replacement, isEnabled: true)
-            settingsManager.shortcuts.append(newShortcut)
+        let success = RustBridge.shared.addShortcut(trigger: trigger, replacement: replacement)
+        if success {
             Log.info("Added shortcut: \(trigger) → \(replacement)")
+            SettingsManager.shared.saveShortcuts()
+            // List will be refreshed by .onChange(of: showingAddSheet)
+        } else {
+            Log.error("Failed to add shortcut: \(trigger)")
         }
     }
     
-    /// Update existing shortcut by ID
-    private func updateShortcut(oldId: UUID, newKey: String, newValue: String) {
-        guard !newKey.isEmpty else { return }
-        
-        if let index = settingsManager.shortcuts.firstIndex(where: { $0.id == oldId }) {
-            settingsManager.shortcuts[index].key = newKey
-            settingsManager.shortcuts[index].value = newValue
-            Log.info("Updated shortcut at index \(index)")
+    private func updateShortcut(oldTrigger: String, newTrigger: String, replacement: String) {
+        // Remove old, add new
+        RustBridge.shared.removeShortcut(trigger: oldTrigger)
+        let success = RustBridge.shared.addShortcut(trigger: newTrigger, replacement: replacement)
+        if success {
+            Log.info("Updated shortcut: \(oldTrigger) → \(newTrigger): \(replacement)")
+            SettingsManager.shared.saveShortcuts()
+            // List will be refreshed by .onChange(of: isEditSheetPresented)
+        } else {
+            Log.error("Failed to update shortcut: \(oldTrigger) → \(newTrigger)")
         }
     }
     
-    /// Delete shortcut
-    private func deleteShortcut(_ shortcut: TextShortcutItem) {
-        settingsManager.shortcuts.removeAll { $0.id == shortcut.id }
-        Log.info("Deleted shortcut: \(shortcut.key)")
+    private func deleteShortcut(trigger: String) {
+        RustBridge.shared.removeShortcut(trigger: trigger)
+        Log.info("Deleted shortcut: \(trigger)")
+        SettingsManager.shared.saveShortcuts()
+        // Refresh immediately for delete since no sheet is involved
+        DispatchQueue.main.async {
+            loadShortcuts()
+        }
     }
     
-    /// Import shortcuts from custom text format
     private func importShortcuts() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText]
+        panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.message = "Chọn file chứa danh sách gõ tắt"
+        panel.message = "Chọn file JSON chứa danh sách gõ tắt"
         
-        panel.begin { [weak settingsManager] response in
+        panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             
             do {
-                let content = try String(contentsOf: url, encoding: .utf8)
-                let imported = self.parseShortcuts(from: content)
+                let json = try String(contentsOf: url, encoding: .utf8)
+                let count = RustBridge.shared.importShortcutsJSON(json)
                 
-                // Merge imported with existing
-                for shortcut in imported {
-                    if let index = settingsManager?.shortcuts.firstIndex(where: { $0.key == shortcut.key }) {
-                        settingsManager?.shortcuts[index].value = shortcut.value
-                        settingsManager?.shortcuts[index].isEnabled = true
-                    } else {
-                        settingsManager?.shortcuts.append(shortcut)
-                    }
+                if count >= 0 {
+                    loadShortcuts()
+                    SettingsManager.shared.saveShortcuts()
+                    Log.info("Imported \(count) shortcuts from \(url.lastPathComponent)")
+                } else {
+                    importErrorMessage = "File JSON không đúng định dạng"
+                    showingImportError = true
                 }
-                
-                Log.info("Imported \(imported.count) shortcuts from \(url.lastPathComponent)")
             } catch {
-                self.importErrorMessage = "Không thể đọc file: \(error.localizedDescription)"
-                self.showingImportError = true
+                importErrorMessage = "Không thể đọc file: \(error.localizedDescription)"
+                showingImportError = true
             }
         }
     }
     
-    /// Parse shortcuts from custom text format
-    private func parseShortcuts(from content: String) -> [TextShortcutItem] {
-        var shortcuts: [TextShortcutItem] = []
-        let lines = content.components(separatedBy: .newlines)
-        
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix(";"),
-                  let colonIndex = trimmed.firstIndex(of: ":") else { continue }
-            
-            let key = String(trimmed[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-            let value = String(trimmed[trimmed.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
-            
-            guard !key.isEmpty else { continue }
-            shortcuts.append(TextShortcutItem(key: key, value: value, isEnabled: true))
-        }
-        
-        return shortcuts
-    }
-    
-    /// Export shortcuts to custom text format
     private func exportShortcuts() {
-        var lines = [";Gõ Việt - Bảng gõ tắt"]
-        for shortcut in settingsManager.shortcuts where !shortcut.key.isEmpty {
-            lines.append("\(shortcut.key):\(shortcut.value)")
+        guard let json = RustBridge.shared.exportShortcutsJSON() else {
+            importErrorMessage = "Không thể xuất dữ liệu"
+            showingImportError = true
+            return
         }
-        let content = lines.joined(separator: "\n")
         
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = "goxviet-shortcuts.txt"
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "goxviet-shortcuts.json"
         panel.message = "Lưu danh sách gõ tắt"
         
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             
             do {
-                try content.write(to: url, atomically: true, encoding: .utf8)
-                self.showingExportSuccess = true
-                Log.info("Exported \(self.settingsManager.shortcuts.count) shortcuts to \(url.lastPathComponent)")
+                try json.write(to: url, atomically: true, encoding: .utf8)
+                showingExportSuccess = true
+                Log.info("Exported \(shortcutCount) shortcuts to \(url.lastPathComponent)")
             } catch {
-                self.importErrorMessage = "Không thể lưu file: \(error.localizedDescription)"
-                self.showingImportError = true
+                importErrorMessage = "Không thể lưu file: \(error.localizedDescription)"
+                showingImportError = true
             }
         }
     }
+}
+
+private let itemFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .medium
+    return formatter
+}()
+
+// MARK: - Supporting Types
+
+private struct EditableShortcut: Identifiable {
+    let id = UUID()
+    let trigger: String
+    let replacement: String
+}
+
+// MARK: - JSON Decoding Models
+
+private struct ShortcutsExport: Codable {
+    let version: Int
+    let shortcuts: [ShortcutItem]
+}
+
+private struct ShortcutItem: Codable {
+    let trigger: String
+    let replacement: String
+    let enabled: Bool
+    let method: String
+    let condition: String
 }
 
 // MARK: - Preview
