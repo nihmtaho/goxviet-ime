@@ -78,6 +78,7 @@ pub extern "C" fn ime_init() {
 /// use `ime_key_ext` with the shift parameter.
 #[no_mangle]
 #[inline]
+#[must_use = "The returned pointer must be freed with ime_free() to prevent memory leaks"]
 pub extern "C" fn ime_key(key: u16, caps: bool, ctrl: bool) -> *mut Result {
     let mut guard = lock_engine();
     match guard.as_mut() {
@@ -109,6 +110,7 @@ pub extern "C" fn ime_key(key: u16, caps: bool, ctrl: bool) -> *mut Result {
 /// - etc.
 #[no_mangle]
 #[inline]
+#[must_use = "The returned pointer must be freed with ime_free() to prevent memory leaks"]
 pub extern "C" fn ime_key_ext(key: u16, caps: bool, ctrl: bool, shift: bool) -> *mut Result {
     let mut guard = lock_engine();
     match guard.as_mut() {
@@ -271,27 +273,17 @@ pub extern "C" fn ime_clear_all() {
 /// * Do not use `r` after calling this function
 ///
 /// # Memory Management
-/// This function:
-/// 1. Reconstructs the Vec from raw parts (if chars is non-null)
-/// 2. Drops the Vec (freeing heap memory)
-/// 3. Drops the Box<Result> (freeing Result struct)
+/// This function takes ownership of the Result and drops it.
+/// The Result's Drop implementation automatically frees the heap-allocated
+/// chars array, preventing memory leaks.
 #[no_mangle]
 pub unsafe extern "C" fn ime_free(r: *mut Result) {
     if r.is_null() {
         return;
     }
 
-    // Take ownership of Result
-    let result = Box::from_raw(r);
-
-    // Reconstruct and drop Vec if chars were allocated
-    if !result.chars.is_null() && result.capacity > 0 {
-        // SAFETY: We created this Vec in Result::send()
-        // Reconstruct Vec with exact same parameters
-        let _ = Vec::from_raw_parts(result.chars, result.count as usize, result.capacity);
-        // Vec drops here, freeing heap memory
-    }
-    // Box<Result> drops here, freeing Result struct
+    // Take ownership of Result - Drop will automatically free the Vec when `result` goes out of scope
+    let _result = Box::from_raw(r);
 }
 
 // ============================================================
@@ -423,6 +415,7 @@ pub extern "C" fn ime_shortcuts_is_at_capacity() -> bool {
 /// # Safety
 /// Caller must free the returned string using `ime_free_string`.
 #[no_mangle]
+#[must_use = "The returned pointer must be freed with ime_free_string() to prevent memory leaks"]
 pub extern "C" fn ime_export_shortcuts_json() -> *mut std::os::raw::c_char {
     let guard = lock_engine();
     if let Some(ref e) = *guard {
@@ -541,6 +534,7 @@ pub extern "C" fn ime_get_encoding() -> u8 {
 /// # Safety
 /// Caller must free the returned buffer using `ime_free_bytes`.
 #[no_mangle]
+#[must_use = "The returned pointer must be freed with ime_free_bytes() to prevent memory leaks"]
 pub unsafe extern "C" fn ime_convert_encoding(input: *const std::os::raw::c_char) -> *mut u8 {
     if input.is_null() {
         return std::ptr::null_mut();

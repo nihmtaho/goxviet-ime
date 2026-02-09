@@ -202,6 +202,23 @@ impl Default for Result {
     }
 }
 
+impl Drop for Result {
+    /// Automatically free heap-allocated memory when Result goes out of scope.
+    ///
+    /// This ensures memory is freed in Rust test utilities. When using FFI,
+    /// the Result is boxed and returned as a pointer, so Drop is not called
+    /// until ime_free() reconstructs and drops the Box.
+    fn drop(&mut self) {
+        if !self.chars.is_null() && self.capacity > 0 {
+            // Reconstruct and drop the Vec to free heap memory
+            unsafe {
+                let _ = Vec::from_raw_parts(self.chars, self.count as usize, self.capacity);
+            }
+            // Vec is dropped here, freeing the memory
+        }
+    }
+}
+
 // ============================================================
 // Internal Transform Tracking
 // ============================================================
