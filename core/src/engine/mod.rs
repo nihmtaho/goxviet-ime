@@ -1634,19 +1634,11 @@ impl Engine {
         // Scan buffer for eligible target vowels
         let mut target_positions = Vec::new();
 
-        // Logic for specific tone keys (s/f/r/x/j/z or 1-5 for VNI)horn - find adjacent pair only
-        // But ONLY apply compound logic when BOTH vowels are plain (not when switching)
-        if tone_type == ToneType::Horn && !is_switching {
-            if let Some((pos1, pos2)) = self.find_uo_compound_positions() {
-                if let (Some(c1), Some(c2)) = (self.buf.get(pos1), self.buf.get(pos2)) {
-                    // Only apply compound when BOTH vowels have no tone
-                    if c1.tone == tone::NONE && c2.tone == tone::NONE {
-                        target_positions.push(pos1);
-                        target_positions.push(pos2);
-                    }
-                }
-            }
-        }
+        // REMOVED: Automatic u+o compound detection
+        // Issue: This was too aggressive and caused "khuow" → "khươ" instead of "khuơ"
+        // The compound rule should only apply in context-specific cases, not during
+        // general horn application. Use find_horn_target_with_switch instead which has
+        // better phonological awareness.
 
         // Normal case: find last matching target
         if target_positions.is_empty() {
@@ -1770,7 +1762,18 @@ impl Engine {
                                 };
 
                                 if vowel_matches && c.tone == tone::NONE {
-                                    eprintln!("DEBUG try_tone: Found matching vowel at pos {} (key={}), applying {:?} backward", pos, c.key, tone_type);
+                                    // CRITICAL FIX (Issue #2): Ensure no vowels between pos and end of buffer
+                                    // This prevents "oeo" from becoming "ôe" (o at pos=2 shouldn't get circumflex if e is at pos=3)
+                                    // When user types 'o' the second time, buffer is still [k,h,o,e], so we check (pos+1..buf.len())
+                                    let has_vowel_between = (pos + 1..self.buf.len()).any(|i| {
+                                        self.buf.get(i).map_or(false, |ch| keys::is_vowel(ch.key))
+                                    });
+                                    
+                                    if has_vowel_between {
+                                        // Vowel found between - invalid doubling pattern, stop searching
+                                        break;
+                                    }
+                                    
                                     target_positions.push(pos);
                                     break;
                                 }

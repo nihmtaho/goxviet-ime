@@ -74,6 +74,8 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
         // Check: U plain + O with horn → normalize to ươ (except after Q for "quơ")
         if k1 == keys::U && t1 == tone::NONE && k2 == keys::O && t2 == tone::HORN {
             let mut is_special_initial = false;
+            let mut should_skip = false;
+
             if i > 0 {
                 if let Some(prev) = buf.get(i - 1) {
                     if prev.key == keys::Q {
@@ -83,7 +85,27 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
                 }
             }
 
-            if !is_special_initial {
+            // BUGFIX: Do not normalize if 'u' is preceded by invalid initial consonant clusters
+            // Some initials are not phonotactically valid with ươ compound in Vietnamese:
+            // - "kh" (like in "khuơ") is NOT valid with ươ
+            // - "th" (like in "thuơ") is NOT valid with ươ → should remain as "thuở" not "thưở"
+            // - "ph" (like in "phuơ") is NOT valid with ươ
+            // - But "m" (like in "muơ") IS valid with ươ → "mương"
+            //
+            // Check for KH, TH, PH digraphs before U
+            if i >= 2 {
+                if let (Some(c1), Some(c2)) = (buf.get(i - 2), buf.get(i - 1)) {
+                    // Check for digraphs: K+H, T+H, P+H
+                    if (c1.key == keys::K && c2.key == keys::H)
+                        || (c1.key == keys::T && c2.key == keys::H)
+                        || (c1.key == keys::P && c2.key == keys::H)
+                    {
+                        should_skip = true;
+                    }
+                }
+            }
+
+            if !is_special_initial && !should_skip {
                 if let Some(c) = buf.get_mut(i) {
                     c.tone = tone::HORN;
                     return Some(i);

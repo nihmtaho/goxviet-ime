@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		964237712F178DA900F9DA20 /* libgoxviet_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 96DB42402F0B897C00C435C2 /* libgoxviet_core.a */; };
+		9642489C2F3B107300F9DA20 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 9642489B2F3B107300F9DA20 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +30,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				964237712F178DA900F9DA20 /* libgoxviet_core.a in Frameworks */,
+				9642489C2F3B107300F9DA20 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -80,6 +82,7 @@
 			);
 			name = goxviet;
 			packageProductDependencies = (
+				9642489B2F3B107300F9DA20 /* Sparkle */,
 			);
 			productName = VietnameseIMEFast;
 			productReference = 96A921572EF531D900BE0070 /* goxviet.app */;
@@ -109,6 +112,9 @@
 			);
 			mainGroup = 96A9214E2EF531D800BE0070;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9642489A2F3B107300F9DA20 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 96A921582EF531D900BE0070 /* Products */;
 			projectDirPath = "";
@@ -274,16 +280,21 @@
 				CURRENT_PROJECT_VERSION = 230;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = CRGFSFFZLQ;
-				ENABLE_APP_SANDBOX = NO;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = GoxViet;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -293,7 +304,7 @@
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/../../../core/target/release",
+					"$(SRCROOT)/../../../core/target/$(ARCHS:standardize)-apple-darwin/release",
 					"$(PROJECT_DIR)",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
@@ -333,16 +344,21 @@
 				CURRENT_PROJECT_VERSION = 230;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = CRGFSFFZLQ;
-				ENABLE_APP_SANDBOX = NO;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
 				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = GoxViet;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -352,7 +368,7 @@
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
-					"$(SRCROOT)/../../../core/target/release",
+					"$(SRCROOT)/../../../core/target/$(ARCHS:standardize)-apple-darwin/release",
 					"$(PROJECT_DIR)",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
@@ -400,6 +416,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9642489A2F3B107300F9DA20 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9642489B2F3B107300F9DA20 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9642489A2F3B107300F9DA20 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 96A9214F2EF531D800BE0070 /* Project object */;
 }

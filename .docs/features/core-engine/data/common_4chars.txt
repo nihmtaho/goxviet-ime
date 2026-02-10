@@ -3068,7 +3068,6 @@ lion
 lire
 lise
 lish
-liss
 lita
 lite
 lith
@@ -3259,7 +3258,6 @@ mart
 marv
 mash
 mask
-mass
 mata
 mate
 math
@@ -5088,7 +5086,6 @@ tera
 teri
 terr
 tert
-tess
 tete
 tewa
 text

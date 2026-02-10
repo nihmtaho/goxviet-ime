@@ -4,3 +4,4 @@ instructions/**
 agents/**
 copilot-instructions.md
 workflows/gemini-*.yml
+skills/**

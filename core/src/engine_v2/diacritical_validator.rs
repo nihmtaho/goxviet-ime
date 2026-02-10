@@ -1,5 +1,5 @@
 /// Diacritical Mark Validator for Vietnamese Input Method
-/// 
+///
 /// This module prevents invalid diacritical mark placement after Vietnamese final consonants.
 /// When a user tries to apply diacritical marks (dấu mũ, dấu móc, dấu trăng) via Telex or VNI
 /// after a word already ends with a consonant, the engine should intelligently reject the input.
@@ -22,9 +22,7 @@ pub struct DiacriticalValidator;
 
 impl DiacriticalValidator {
     /// List of valid Vietnamese final consonants
-    const FINAL_CONSONANTS: &'static [&'static str] = &[
-        "c", "ch", "m", "n", "ng", "nh", "p", "t",
-    ];
+    const FINAL_CONSONANTS: &'static [&'static str] = &["c", "ch", "m", "n", "ng", "nh", "p", "t"];
 
     /// Check if applying a diacritical mark is valid given current syllable state
     ///

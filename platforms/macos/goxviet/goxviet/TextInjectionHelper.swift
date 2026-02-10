@@ -631,7 +631,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     
     // Electron apps - higher delays
     if bundleId == "com.todesktop.230313mzl4w4u92" { return cached(.slow, (8000, 15000, 8000), "slow:claude") }
-    if bundleId == "notion.id" { return cached(.slow, (8000, 15000, 8000), "slow:notion") }
+    if bundleId == "notion.id" { return cached(.slow, (100, 200, 100), "slow:notion") }
     
     // Modern editors - instant method for speed
     if BundleConstants.modernEditors.contains(bundleId) { 

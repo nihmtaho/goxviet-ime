@@ -11,8 +11,6 @@ pub struct VietnameseSyllableValidator;
 impl VietnameseSyllableValidator {
     /// O(1) validation of Vietnamese syllable structure
     pub fn validate(keys: &[u16]) -> ValidationResult {
-        println!("DEBUG: validate() called with {:?}", keys);
-
         // Fast path: empty is valid
         if keys.is_empty() {
             return ValidationResult {
@@ -74,7 +72,6 @@ impl VietnameseSyllableValidator {
                 if (allowed_next & (1 << k2 as u128)) == 0 {
                     // Check if it's a known vowel compound or allowed cluster
                     if !Self::is_allowed_exception(k1, k2) {
-                        println!("DEBUG: Rule 2 Bigram failed for {:?} -> {:?}", k1, k2);
                         return ValidationResult {
                             is_valid: false,
                             confidence: 0,
@@ -656,7 +653,7 @@ impl VietnameseSyllableValidator {
             // U combinations
             | (keys::U, keys::A) | (keys::U, keys::E) | (keys::U, keys::I) | (keys::U, keys::O) | (keys::U, keys::U) | (keys::U, keys::Y)
             // Y combinations
-            | (keys::Y, keys::A) | (keys::Y, keys::E)
+            | (keys::Y, keys::A) | (keys::Y, keys::E) | (keys::Y, keys::U)  // Added Y + U for "uyu" triphthong
         )
     }
 
