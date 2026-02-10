@@ -102,7 +102,7 @@ final class SettingsManager: ObservableObject {
     @Published var textExpansionEnabled: Bool = true {
         didSet {
             saveToDefaults(Keys.textExpansionEnabled, value: textExpansionEnabled)
-            RustBridge.shared.setShortcutsEnabled(textExpansionEnabled)
+            _ = RustBridgeSafe.shared.setShortcutsEnabled(textExpansionEnabled)
             postNotification(.textExpansionEnabledChanged, value: textExpansionEnabled)
             Log.info("Text Expansion \(textExpansionEnabled ? "enabled" : "disabled")")
         }
@@ -551,7 +551,7 @@ final class SettingsManager: ObservableObject {
     /// Sync all enabled shortcuts to Rust engine
     func syncShortcutsToEngine() {
         let enabledShortcuts = getShortcutsForEngine().filter { $0.enabled }
-        RustBridge.shared.syncShortcuts(enabledShortcuts)
+        _ = RustBridgeSafe.shared.syncShortcuts(enabledShortcuts)
         Log.info("Synced \(enabledShortcuts.count) enabled shortcuts to engine")
     }
     

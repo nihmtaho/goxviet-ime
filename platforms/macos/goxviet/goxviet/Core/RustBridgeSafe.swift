@@ -123,7 +123,14 @@ final class RustBridgeSafe {
             try setInstantRestoreUnsafe(enabled)
         }
     }
-    
+
+    func setShortcutsEnabled(_ enabled: Bool) -> RustBridgeResult<Void> {
+        return performFFICall("setShortcutsEnabled") {
+            ime_set_shortcuts_enabled(enabled)
+            Log.info("Text expansion \(enabled ? "enabled" : "disabled")")
+        }
+    }
+
     func clearBuffer() -> RustBridgeResult<Void> {
         return performFFICall("clearBuffer") {
             ime_clear()
