@@ -3927,6 +3927,7 @@ parl
 pars
 part
 pass
+past
 pata
 pate
 path
@@ -4108,6 +4109,7 @@ port
 pose
 posh
 poss
+post
 posy
 pots
 pott
@@ -4402,7 +4404,6 @@ rile
 rill
 rima
 rime
-rims
 rina
 rind
 ring

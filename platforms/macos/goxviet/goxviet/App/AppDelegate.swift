@@ -559,7 +559,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func updateStatusIcon() {
         if let button = statusItem.button {
-            button.title = isEnabled ? "🇻🇳" : "EN"
+            button.title = isEnabled ? "VI" : "EN"
             button.toolTip = isEnabled ? "Gõ Việt (Enabled)" : "Gõ Việt (Disabled)"
         }
     }

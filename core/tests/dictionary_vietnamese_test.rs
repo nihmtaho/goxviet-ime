@@ -1,12 +1,80 @@
 //! Test Vietnamese 22k word list.
 //! Converts Vietnamese words to Telex/VNI input and verifies engine output.
+//! 
+//! Updated to use v2 API (Clean Architecture with Container/ProcessorService)
 
-use goxviet_core::engine::Engine;
-use goxviet_core::utils::type_word;
+use goxviet_core::application::dto::EngineConfig;
+use goxviet_core::domain::entities::key_event::{KeyEvent, Action};
+use goxviet_core::domain::ports::input::InputMethodId;
+use goxviet_core::domain::ports::transformation::ToneStrategy;
+use goxviet_core::presentation::di::Container;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
+
+/// Helper function to simulate typing using v2 Container API
+fn type_word(container: &mut Container, input: &str) -> String {
+    let mut screen = String::new();
+    
+    for ch in input.chars() {
+        // Convert character to macOS virtual keycode (not Unicode!)
+        let keycode = goxviet_core::utils::char_to_key(ch);
+        let is_shift = ch.is_uppercase();
+        
+        // Create KeyEvent with virtual keycode
+        let key_event = KeyEvent::new(
+            keycode, 
+            is_shift,  // shift
+            false,     // ctrl
+            false,     // alt
+            false      // meta
+        );
+        
+        // Process key via container's processor service
+        let process_result = {
+            let processor_arc = container.processor_service();
+            let mut processor_guard = processor_arc.lock().unwrap();
+            processor_guard.process_key(key_event)
+        };
+        
+        match process_result {
+            Ok(result) => {
+                let backspace = result.backspace_count();
+                let new_text = result.new_text().as_str();
+                let action = result.action();
+                
+                // Check if Engine returned text (action=Replace or Insert)
+                let has_transformation = matches!(action, Action::Replace { .. } | Action::Insert);
+                
+                // Apply backspaces
+                for _ in 0..backspace {
+                    screen.pop();
+                }
+                
+                // Append new text or original character
+                if !new_text.is_empty() {
+                    // Engine returned transformed text
+                    screen.push_str(new_text);
+                } else if ch == ' ' {
+                    // Space doesn't return text but should be added to screen
+                    screen.push(' ');
+                } else if !has_transformation {
+                    // No transformation - pass through original character
+                    // (mimics editor receiving the character)
+                    screen.push(ch);
+                }
+            }
+            Err(e) => {
+                eprintln!("ERROR processing '{}': {:?}", ch, e);
+                // On error, just append the original character
+                screen.push(ch);
+            }
+        }
+    }
+    
+    screen
+}
 
 /// Get base character and modifiers (mark, tone) for Vietnamese character
 fn decompose_vn_char(c: char) -> (char, Option<char>, Option<char>) {
@@ -543,10 +611,22 @@ fn test_telex_batch(words: &[&str], _category: &str, _chunk_idx: usize) -> Batch
         let input_with_space = format!("{} ", telex_input);
         let expected = format!("{} ", word);
 
-        let mut e = Engine::new();
-        e.set_modern_tone(true);
-        e.set_english_auto_restore(false);
-        let actual = type_word(&mut e, &input_with_space);
+        let config = EngineConfig {
+            input_method: InputMethodId::Telex,
+            tone_strategy: ToneStrategy::Modern,
+            enabled: true,
+            smart_mode: true,
+            spell_check: false,
+            auto_correct: false,
+            max_history_size: 100,
+            buffer_timeout_ms: 1000,
+            use_modern_tone_placement: true,
+            enable_shortcuts: false,
+            instant_restore_enabled: true,
+            esc_restore_enabled: true,
+        };
+        let mut container = Container::with_config(config);
+        let actual = type_word(&mut container, &input_with_space);
 
         result.total += 1;
         if matches_either_style(expected.trim(), actual.trim()) {
@@ -599,11 +679,22 @@ fn test_vni_batch(words: &[&str], _category: &str, _chunk_idx: usize) -> BatchRe
         let input_with_space = format!("{} ", vni_input);
         let expected = format!("{} ", word);
 
-        let mut e = Engine::new();
-        e.set_modern_tone(true);
-        e.set_english_auto_restore(false);
-        e.set_method(1); // VNI mode
-        let actual = type_word(&mut e, &input_with_space);
+        let config = EngineConfig {
+            input_method: InputMethodId::Vni,
+            tone_strategy: ToneStrategy::Modern,
+            enabled: true,
+            smart_mode: true,
+            spell_check: false,
+            auto_correct: false,
+            max_history_size: 100,
+            buffer_timeout_ms: 1000,
+            use_modern_tone_placement: true,
+            enable_shortcuts: false,
+            instant_restore_enabled: true,
+            esc_restore_enabled: true,
+        };
+        let mut container = Container::with_config(config);
+        let actual = type_word(&mut container, &input_with_space);
 
         result.total += 1;
         if matches_either_style(expected.trim(), actual.trim()) {
@@ -932,11 +1023,22 @@ fn test_telex_specific_cases() {
         let input_with_space = format!("{} ", telex_input);
         let expected = format!("{} ", expected_word);
 
-        let mut e = Engine::new();
-        e.set_modern_tone(true);
-        e.set_english_auto_restore(false);
-        e.set_method(0);
-        let result = type_word(&mut e, &input_with_space);
+        let config = EngineConfig {
+            input_method: InputMethodId::Telex,
+            tone_strategy: ToneStrategy::Modern,
+            enabled: true,
+            smart_mode: true,
+            spell_check: false,
+            auto_correct: false,
+            max_history_size: 100,
+            buffer_timeout_ms: 1000,
+            use_modern_tone_placement: true,
+            enable_shortcuts: false,
+            instant_restore_enabled: true,
+            esc_restore_enabled: true,
+        };
+        let mut container = Container::with_config(config);
+        let result = type_word(&mut container, &input_with_space);
 
         if matches_either_style(expected.trim(), result.trim()) {
             passed += 1;
@@ -1010,11 +1112,22 @@ fn test_vni_specific_cases() {
         let input_with_space = format!("{} ", vni_input);
         let expected = format!("{} ", expected_word);
 
-        let mut e = Engine::new();
-        e.set_modern_tone(true);
-        e.set_english_auto_restore(false);
-        e.set_method(1);
-        let result = type_word(&mut e, &input_with_space);
+        let config = EngineConfig {
+            input_method: InputMethodId::Vni,
+            tone_strategy: ToneStrategy::Modern,
+            enabled: true,
+            smart_mode: true,
+            spell_check: false,
+            auto_correct: false,
+            max_history_size: 100,
+            buffer_timeout_ms: 1000,
+            use_modern_tone_placement: true,
+            enable_shortcuts: false,
+            instant_restore_enabled: true,
+            esc_restore_enabled: true,
+        };
+        let mut container = Container::with_config(config);
+        let result = type_word(&mut container, &input_with_space);
 
         if matches_either_style(expected.trim(), result.trim()) {
             passed += 1;

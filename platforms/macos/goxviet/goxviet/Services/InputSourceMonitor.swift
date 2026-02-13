@@ -287,10 +287,10 @@ class InputSourceMonitor: LifecycleManaged {
             
             // Update Rust engine but don't change SettingsManager.isEnabled
             // This way the menu bar icon still shows the "intended" state
-            ime_enabled(false)
+            ime_enabled_v2(false)
             
             // Clear buffer
-            ime_clear()
+            ime_clear_v2()
             
             Log.info("Vietnamese input temporarily disabled (non-Latin input source active)")
             
@@ -313,7 +313,7 @@ class InputSourceMonitor: LifecycleManaged {
         isTemporarilyDisabled = false
         
         // Restore the state that was active before temporary disable
-        ime_enabled(stateBeforeDisable)
+        ime_enabled_v2(stateBeforeDisable)
         
         Log.info("Vietnamese input restored (Latin input source active)")
         

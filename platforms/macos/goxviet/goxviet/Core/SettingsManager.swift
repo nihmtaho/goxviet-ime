@@ -35,11 +35,18 @@ final class SettingsManager: ObservableObject {
         }
     }
     
-    @Published var escRestoreEnabled: Bool = true {
+    @Published var restoreShortcutEnabled: Bool = true {
         didSet {
-            saveToDefaults(Keys.escRestoreEnabled, value: escRestoreEnabled)
+            saveToDefaults(Keys.restoreShortcutEnabled, value: restoreShortcutEnabled)
             syncToCore()
-            postNotification(.escRestoreChanged, value: escRestoreEnabled)
+            postNotification(.restoreShortcutChanged, value: restoreShortcutEnabled)
+        }
+    }
+    
+    @Published var restoreShortcut: RestoreShortcut = RestoreShortcut.load() {
+        didSet {
+            restoreShortcut.save()
+            postNotification(.restoreShortcutChanged, value: restoreShortcutEnabled)
         }
     }
     
@@ -102,9 +109,10 @@ final class SettingsManager: ObservableObject {
     @Published var textExpansionEnabled: Bool = true {
         didSet {
             saveToDefaults(Keys.textExpansionEnabled, value: textExpansionEnabled)
-            _ = RustBridgeSafe.shared.setShortcutsEnabled(textExpansionEnabled)
+            // TODO: v2 API doesn't support shortcuts yet
+            // _ = RustBridgeSafe.shared.setShortcutsEnabled(textExpansionEnabled)
             postNotification(.textExpansionEnabledChanged, value: textExpansionEnabled)
-            Log.info("Text Expansion \(textExpansionEnabled ? "enabled" : "disabled")")
+            Log.info("Text Expansion \(textExpansionEnabled ? "enabled" : "disabled") (v2 pending)")
         }
     }
     
@@ -116,10 +124,10 @@ final class SettingsManager: ObservableObject {
     /// Track if shortcuts have been loaded from storage
     @Published var shortcutsLoaded: Bool = false
     
-    // MARK: - Runtime State (Not Persisted)
+    // MARK: - Runtime State (Persisted)
     
-    /// Whether Vietnamese input is currently enabled (runtime state, not persisted)
-    @Published private(set) var isEnabled: Bool = false
+    /// Whether Vietnamese input is currently enabled
+    @Published private(set) var isEnabled: Bool = true
     
     /// Debounce work item for setEnabled notifications
     private var setEnabledDebounceWork: DispatchWorkItem?
@@ -132,9 +140,10 @@ final class SettingsManager: ObservableObject {
     
     // Keys for UserDefaults
     private enum Keys {
+        static let isEnabled = "isEnabled"
         static let inputMethod = "inputMethod"
         static let modernToneStyle = "modernToneStyle"
-        static let escRestoreEnabled = "escRestoreEnabled"
+        static let restoreShortcutEnabled = "restoreShortcutEnabled"
         static let freeToneEnabled = "freeToneEnabled"
         static let instantRestoreEnabled = "instantRestoreEnabled"
         static let smartModeEnabled = "smartModeEnabled"
@@ -189,15 +198,23 @@ final class SettingsManager: ObservableObject {
         Log.info("Tone style changed to: \(modern ? "Modern" : "Traditional")")
     }
     
-    /// Toggle ESC restore
-    func setEscRestoreEnabled(_ enabled: Bool) {
+    /// Toggle restore shortcut
+    func setRestoreShortcutEnabled(_ enabled: Bool) {
         lock.lock()
         defer { lock.unlock() }
         
-        guard enabled != escRestoreEnabled else { return }
+        guard enabled != restoreShortcutEnabled else { return }
         
-        escRestoreEnabled = enabled
-        saveToDefaults(Keys.escRestoreEnabled, value: enabled)
+        restoreShortcutEnabled = enabled
+        saveToDefaults(Keys.restoreShortcutEnabled, value: enabled)
+    }
+    
+    /// Update restore shortcut
+    func setRestoreShortcut(_ shortcut: RestoreShortcut) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        restoreShortcut = shortcut
     }
     
     /// Toggle free tone marking
@@ -263,7 +280,8 @@ final class SettingsManager: ObservableObject {
         
         inputMethod = 0
         modernToneStyle = false
-        escRestoreEnabled = true
+        restoreShortcutEnabled = true
+        restoreShortcut = .default
         freeToneEnabled = false
         instantRestoreEnabled = true
         smartModeEnabled = true
@@ -291,6 +309,9 @@ final class SettingsManager: ObservableObject {
         
         isEnabled = enabled
         
+        // Persist to UserDefaults
+        userDefaults.set(enabled, forKey: Keys.isEnabled)
+        
         // Cancel pending debounce work
         setEnabledDebounceWork?.cancel()
         
@@ -317,6 +338,7 @@ final class SettingsManager: ObservableObject {
         defer { lock.unlock() }
         
         isEnabled = enabled
+        // Note: Not persisted to avoid saving temporary app-specific state
     }
     
     // MARK: - Per-App Mode Management
@@ -551,8 +573,12 @@ final class SettingsManager: ObservableObject {
     /// Sync all enabled shortcuts to Rust engine
     func syncShortcutsToEngine() {
         let enabledShortcuts = getShortcutsForEngine().filter { $0.enabled }
-        _ = RustBridgeSafe.shared.syncShortcuts(enabledShortcuts)
-        Log.info("Synced \(enabledShortcuts.count) enabled shortcuts to engine")
+        ime_clear_shortcuts_v2()
+        for shortcut in enabledShortcuts {
+            _ = ime_add_shortcut_v2(shortcut.key, shortcut.value)
+        }
+        _ = ime_set_shortcuts_enabled_v2(textExpansionEnabled)
+        Log.info("Synced \(enabledShortcuts.count) shortcuts to engine (enabled: \(textExpansionEnabled))")
     }
     
     /// Import shortcuts from custom format
@@ -608,9 +634,22 @@ final class SettingsManager: ObservableObject {
             shortcuts = saved
             Log.info("Loaded \(shortcuts.count) shortcuts from UserDefaults")
         } else {
-            // No saved shortcuts - start with empty array
-            shortcuts = []
-            Log.info("No saved shortcuts found, starting fresh")
+            // No saved shortcuts - load defaults from core engine and save
+            let defaults: [(String, String)] = [
+                ("vn", "Việt Nam"),
+                ("hcm", "Hồ Chí Minh"),
+                ("hn", "Hà Nội"),
+                ("dc", "được"),
+                ("ko", "không"),
+            ]
+            shortcuts = defaults.map {
+                TextShortcutItem(trigger: $0.0, replacement: $0.1, isEnabled: true)
+            }
+            // Persist to UserDefaults so they appear in UI
+            if let data = try? JSONEncoder().encode(shortcuts) {
+                userDefaults.set(data, forKey: Keys.shortcuts)
+            }
+            Log.info("Loaded \(shortcuts.count) default shortcuts and saved to UserDefaults")
         }
         
         // Sync to engine (will be called again when engine is ready via InputManager)
@@ -656,7 +695,7 @@ final class SettingsManager: ObservableObject {
         return [
             "inputMethod": inputMethod,
             "modernToneStyle": modernToneStyle,
-            "escRestoreEnabled": escRestoreEnabled,
+            "restoreShortcutEnabled": restoreShortcutEnabled,
             "freeToneEnabled": freeToneEnabled,
             "instantRestoreEnabled": instantRestoreEnabled,
             "smartModeEnabled": smartModeEnabled,
@@ -679,8 +718,8 @@ final class SettingsManager: ObservableObject {
         if let modern = settings["modernToneStyle"] as? Bool {
             modernToneStyle = modern
         }
-        if let enabled = settings["escRestoreEnabled"] as? Bool {
-            escRestoreEnabled = enabled
+        if let enabled = settings["restoreShortcutEnabled"] as? Bool {
+            restoreShortcutEnabled = enabled
         }
         if let enabled = settings["freeToneEnabled"] as? Bool {
             freeToneEnabled = enabled
@@ -720,9 +759,10 @@ final class SettingsManager: ObservableObject {
         if !hasLaunchedBefore {
             // First launch: Register default values without triggering didSet
             let defaults: [String: Any] = [
+                Keys.isEnabled: true,
                 Keys.inputMethod: 0,
                 Keys.modernToneStyle: false,
-                Keys.escRestoreEnabled: true,
+                Keys.restoreShortcutEnabled: true,
                 Keys.freeToneEnabled: false,
                 Keys.instantRestoreEnabled: true,
                 Keys.smartModeEnabled: true,
@@ -741,9 +781,11 @@ final class SettingsManager: ObservableObject {
         }
         
         // Load from UserDefaults (will use registered defaults if keys don't exist)
+        isEnabled = userDefaults.bool(forKey: Keys.isEnabled)
         inputMethod = userDefaults.integer(forKey: Keys.inputMethod)
         modernToneStyle = userDefaults.bool(forKey: Keys.modernToneStyle)
-        escRestoreEnabled = userDefaults.bool(forKey: Keys.escRestoreEnabled)
+        restoreShortcutEnabled = userDefaults.bool(forKey: Keys.restoreShortcutEnabled)
+        restoreShortcut = RestoreShortcut.load()
         freeToneEnabled = userDefaults.bool(forKey: Keys.freeToneEnabled)
         instantRestoreEnabled = userDefaults.bool(forKey: Keys.instantRestoreEnabled)
         smartModeEnabled = userDefaults.bool(forKey: Keys.smartModeEnabled)
@@ -773,9 +815,10 @@ final class SettingsManager: ObservableObject {
     }
     
     private func saveAllToDefaults() {
+        saveToDefaults(Keys.isEnabled, value: isEnabled)
         saveToDefaults(Keys.inputMethod, value: inputMethod)
         saveToDefaults(Keys.modernToneStyle, value: modernToneStyle)
-        saveToDefaults(Keys.escRestoreEnabled, value: escRestoreEnabled)
+        saveToDefaults(Keys.restoreShortcutEnabled, value: restoreShortcutEnabled)
         saveToDefaults(Keys.freeToneEnabled, value: freeToneEnabled)
         saveToDefaults(Keys.instantRestoreEnabled, value: instantRestoreEnabled)
         saveToDefaults(Keys.smartModeEnabled, value: smartModeEnabled)
@@ -786,27 +829,9 @@ final class SettingsManager: ObservableObject {
     }
     
     private func syncToCore() {
-        // Sync to Rust core via RustBridgeSafe
-        let bridge = RustBridgeSafe.shared
-        
-        // Ensure bridge is initialized
-        _ = bridge.initialize()
-        
-        // Sync all settings to core
-        let results = [
-            bridge.setMethod(inputMethod),
-            bridge.setModernTone(modernToneStyle),
-            bridge.setEscRestore(escRestoreEnabled),
-            bridge.setFreeTone(freeToneEnabled),
-            bridge.setInstantRestore(instantRestoreEnabled)
-        ]
-        
-        // Log any failures
-        for (index, result) in results.enumerated() {
-            if case .failure(let error) = result {
-                Log.error("Failed to sync setting \(index) to core: \(error.localizedDescription)")
-            }
-        }
+        // TODO: v2 migration - settings are now synced via InputManager.loadSavedSettings()
+        // This function is deprecated and no longer needed
+        Log.info("syncToCore() deprecated - settings applied via InputManager v2 API")
     }
     
     private func postNotification(_ name: Notification.Name, value: Any?) {

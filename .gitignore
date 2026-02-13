@@ -197,3 +197,5 @@ release/
 .gemini/
 gha-creds-*.json
 *.skill
+.venv
+.ruff_cache

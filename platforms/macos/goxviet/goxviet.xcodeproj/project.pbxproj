@@ -7,8 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		964237712F178DA900F9DA20 /* libgoxviet_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 96DB42402F0B897C00C435C2 /* libgoxviet_core.a */; };
-		9642489C2F3B107300F9DA20 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 9642489B2F3B107300F9DA20 /* Sparkle */; };
+		964248E32F3DB9EC00F9DA20 /* libgoxviet_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 96DB42402F0B897C00C435C2 /* libgoxviet_core.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,8 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				964237712F178DA900F9DA20 /* libgoxviet_core.a in Frameworks */,
-				9642489C2F3B107300F9DA20 /* Sparkle in Frameworks */,
+				964248E32F3DB9EC00F9DA20 /* libgoxviet_core.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,7 +80,6 @@
 			);
 			name = goxviet;
 			packageProductDependencies = (
-				9642489B2F3B107300F9DA20 /* Sparkle */,
 			);
 			productName = VietnameseIMEFast;
 			productReference = 96A921572EF531D900BE0070 /* goxviet.app */;
@@ -275,6 +272,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = goxviet/goxviet.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 230;
@@ -339,6 +337,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = goxviet/goxviet.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 230;
@@ -427,14 +426,6 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		9642489B2F3B107300F9DA20 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 9642489A2F3B107300F9DA20 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 96A9214F2EF531D800BE0070 /* Project object */;
 }

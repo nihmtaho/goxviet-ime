@@ -437,7 +437,7 @@ impl Phonology {
         // SIMPLIFIED: Don't apply compound patterns implicitly
         // When applying horn in general, just apply to the last matching vowel
         // This prevents "khuow" from becoming "khươ"
-        
+
         // Special case ONLY: "ua" - check preceding consonant (Q excluded)
         if len >= 2 {
             for i in 0..len - 1 {

@@ -89,6 +89,30 @@
 - Xóa các thư mục trống (bindings, examples)
 - Cập nhật .gitignore
 
+### macOS Platform SOLID Refactoring
+
+- **Tái cấu trúc codebase theo SOLID principles:**
+  - Phân tách file vào các module logic: `App/`, `Core/`, `Managers/`, `Models/`, `Services/`, `UI/`, `Utilities/`
+  - Mỗi module có trách nhiệm duy nhất (Single Responsibility)
+  - Dễ bảo trì và mở rộng hơn
+  
+- **Migrate RustBridge sang RustBridgeSafe:**
+  - Xóa `RustBridge.swift` (legacy), migrate sang `Core/RustBridgeSafe.swift`
+  - Thêm `setShortcutsEnabled()` method vào `RustBridgeSafe`
+  - Update `SettingsManager` và `InputManager` sử dụng `RustBridgeSafe`
+  - Thread-safe, better error handling
+  
+- **File Organization:**
+  - `App/` - Application entry point (GoxVietApp, AppDelegate)
+  - `Core/` - Business logic và FFI bridge
+  - `Managers/` - Input, Injection, Update, Resource, Window
+  - `Models/` - KeyboardShortcut, LRUCache
+  - `Services/` - Log, MemoryProfiler, InputSourceMonitor
+  - `UI/` - MenuBar, Settings, Components
+  - `Utilities/` - Helper classes và protocols
+
+**Breaking Change:** `RustBridge` class đã bị xóa. Code cũ sử dụng `RustBridge.shared` cần migrate sang `RustBridgeSafe.shared`.
+
 ### macOS Performance Optimization (PR #59)
 
 - **Memory Usage**: Tối ưu memory usage và cải thiện app lifecycle management
