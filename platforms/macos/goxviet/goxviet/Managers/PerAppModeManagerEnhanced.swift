@@ -31,9 +31,6 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     private var recentlyUsedApps: [String] = []
     private let maxRecentApps = 10
     
-    /// Performance metrics
-    private var switchCount: Int = 0
-    private var cacheHitCount: Int = 0
     private var lastSwitchTime: Date?
     
     // MARK: - Structures
@@ -66,13 +63,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         }
     }
     
-    struct PerformanceMetrics {
-        let totalSwitches: Int
-        let cacheHitRate: Double
-        let averageSwitchTime: TimeInterval?
-        let recentAppsCount: Int
-        let cachedAppsCount: Int
-    }
+
     
     // MARK: - Initialization
     
@@ -156,9 +147,6 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         
         // Ignore same app
         guard bundleId != currentBundleId else { return }
-        
-        // Update metrics
-        switchCount += 1
         
         // Cache metadata
         cacheAppMetadata(bundleId, app: app)
@@ -249,8 +237,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     private func cacheAppMetadata(_ bundleId: String, app: NSRunningApplication? = nil) {
         // Check cache first
-        if let cached = appMetadataCache.get(bundleId) {
-            cacheHitCount += 1
+        if appMetadataCache.get(bundleId) != nil {
             return
         }
         
@@ -309,24 +296,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         return recentlyUsedApps
     }
     
-    func getPerformanceMetrics() -> PerformanceMetrics {
-        let totalQueries = switchCount
-        let hitRate = totalQueries > 0 ? Double(cacheHitCount) / Double(totalQueries) : 0.0
-        
-        return PerformanceMetrics(
-            totalSwitches: switchCount,
-            cacheHitRate: hitRate,
-            averageSwitchTime: nil,  // Could implement if needed
-            recentAppsCount: recentlyUsedApps.count,
-            cachedAppsCount: appMetadataCache.count
-        )
-    }
-    
     func clearCache() {
         appMetadataCache.clear()
         recentlyUsedApps.removeAll()
-        switchCount = 0
-        cacheHitCount = 0
         Log.info("Cache cleared")
     }
     

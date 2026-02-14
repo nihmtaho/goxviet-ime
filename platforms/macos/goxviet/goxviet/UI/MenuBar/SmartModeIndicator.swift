@@ -13,7 +13,6 @@ struct SmartModeIndicator: View {
     @ObservedObject private var settings = SettingsManager.shared
     @State private var currentApp: CurrentAppInfo?
     @State private var recentApps: [String] = []
-    @State private var metrics: PerAppModeManagerEnhanced.PerformanceMetrics?
     
     struct CurrentAppInfo {
         let bundleId: String
@@ -46,13 +45,6 @@ struct SmartModeIndicator: View {
                 Divider()
             }
             
-            // Performance Metrics (Debug)
-            // TODO: Add isDebugMode to AppState or SettingsManager
-            // if appState.isDebugMode, let metrics = metrics {
-            //     metricsSection(metrics)
-            //     Divider()
-            // }
-            
             // Actions
             actionsSection
         }
@@ -60,7 +52,6 @@ struct SmartModeIndicator: View {
         .onAppear {
             loadCurrentApp()
             loadRecentApps()
-            loadMetrics()
         }
     }
     
@@ -207,40 +198,12 @@ struct SmartModeIndicator: View {
         .contentShape(Rectangle())
     }
     
-    private func metricsSection(_ metrics: PerAppModeManagerEnhanced.PerformanceMetrics) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Performance")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            HStack {
-                metricItem("Switches", "\(metrics.totalSwitches)")
-                metricItem("Hit Rate", String(format: "%.1f%%", metrics.cacheHitRate * 100))
-                metricItem("Cached", "\(metrics.cachedAppsCount)")
-            }
-        }
-        .padding()
-    }
-    
-    private func metricItem(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.caption)
-                .fontWeight(.semibold)
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
     private var actionsSection: some View {
         VStack(spacing: 8) {
             Button("Refresh") {
                 PerAppModeManagerEnhanced.shared.refresh()
                 loadCurrentApp()
                 loadRecentApps()
-                loadMetrics()
             }
             .buttonStyle(.plain)
             
@@ -274,10 +237,6 @@ struct SmartModeIndicator: View {
     
     private func loadRecentApps() {
         recentApps = PerAppModeManagerEnhanced.shared.getRecentlyUsedApps()
-    }
-    
-    private func loadMetrics() {
-        metrics = PerAppModeManagerEnhanced.shared.getPerformanceMetrics()
     }
 }
 

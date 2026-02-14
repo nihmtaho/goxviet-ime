@@ -116,15 +116,6 @@ let recentApps = PerAppModeManagerEnhanced.shared.getRecentlyUsedApps()
 // Returns: ["com.apple.Safari", "com.apple.Notes", ...]
 ```
 
-### Performance Metrics
-
-```swift
-let metrics = PerAppModeManagerEnhanced.shared.getPerformanceMetrics()
-print("Total switches: \(metrics.totalSwitches)")
-print("Cache hit rate: \(metrics.cacheHitRate * 100)%")
-print("Cached apps: \(metrics.cachedAppsCount)")
-```
-
 ### Manual Refresh
 
 ```swift
@@ -267,8 +258,6 @@ let timer = Timer.scheduledTimer(withTimeInterval: 1.5, ...)
 ### Common Issues
 
 **Cache not working:**
-- Check metrics: `getPerformanceMetrics()`
-- Verify hit rate is >0%
 - Try `clearCache()` and rebuild
 
 **Slow app switches:**
