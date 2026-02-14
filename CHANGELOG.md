@@ -4,10 +4,6 @@
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.9.md](.release-notes/release_note_2.0.9.md)
 
-### ✨ Features
-- **Project Structure Refactoring**: Reorganized directory structure, consolidated agent skills into `.agent/skills/`
-- **STRUCTURE.md Documentation**: Added detailed project structure guide
-
 ### 🐛 Bug Fixes
 - **Smart 'w' Double-Apply**: Fixed `khuow` → `khươ` issue, now correctly produces `khuơ` (phonotactic validation)
 - **Compound Vowel Over-Aggressive**: Fixed `khoeo` auto-conversion, now preserves original input
@@ -17,18 +13,8 @@
 - **Per-App Mode Race Condition**: Fixed race condition in per-app mode manager causing inconsistent behavior
 
 ### ⚡ Improvements
-- **Test Coverage**: Improved Telex rate to 99.44% (6,540/6,577) and VNI to 99.59% (6,550/6,577)
-- **Project Cleanup**: Removed 16 unnecessary files, updated .gitignore
-- **Test Analysis**: Generated comprehensive failure analysis reports
-- **Memory Optimization**: Optimized memory usage and improved app lifecycle management in macOS app
-- **Settings UI**: Removed diagnostic features (metrics, memory profiling) from Advanced settings tab
-- **macOS SOLID Refactoring**: Restructured macOS platform code following SOLID principles with proper module separation (App, Core, Managers, Models, Services, UI, Utilities)
-- **RustBridge Migration**: Migrated from legacy `RustBridge` to thread-safe `RustBridgeSafe` with enhanced error handling
-
-### 📊 Test Results
-- 5 critical engine bugs identified and fixed
-- 10 new test cases added for regression prevention
-- Dictionary test optimized with foreign word filtering
+- **Memory Optimization**: Optimized memory usage and improved app lifecycle management
+- **Settings UI**: Removed diagnostic features (metrics, memory profiling) from Advanced settings tab for cleaner interface
 
 ---
 

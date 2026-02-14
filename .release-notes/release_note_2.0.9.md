@@ -9,6 +9,11 @@
 
 - **Cải tiến cấu trúc dự án:** Tái cấu trúc toàn bộ cấu trúc thư mục, gộp các skills từ nhiều nguồn vào `.agent/skills/`
 - **Tạo STRUCTURE.md:** Thêm tài liệu hướng dẫn cấu trúc dự án chi tiết
+- **Release Note Generator Skill:** Thêm skill tự động tạo release notes với workflow toàn diện để tạo changelog và release notes chi tiết
+  - Tích hợp với skill-git và pr-manager
+  - Phân loại thay đổi thành Features, Bug Fixes, Improvements, Documentation
+  - Tạo cả CHANGELOG.md entry và detailed release note
+  - Hỗ trợ script extract-changelog.sh cho GitHub Actions workflow
 
 ---
 
@@ -70,6 +75,8 @@
 - **Cải thiện vowel conversion functions:** Chuyển đổi nguyên âm chính xác hơn
 - **Lọc từ ngoại lai:** Phát hiện và loại bỏ từ không phải tiếng Việt
 - **Phân tích lỗi test:** Phân loại và phân tích chi tiết các lỗi còn lại
+- **Cập nhật dictionary data:** Đã cập nhật common_4chars.bin và common_6chars.bin
+- **Làm sạch dữ liệu từ điển:** Clean 69,401 từ tiếng Việt trong vietnamese_69k_pure.txt
 
 ### Kết quả Test (Sau cải tiến)
 
@@ -88,6 +95,8 @@
 - Gộp agent skills từ `.agent/`, `.claude/`, `scripts/skills/`
 - Xóa các thư mục trống (bindings, examples)
 - Cập nhật .gitignore
+- Loại bỏ các test files deprecated
+- Thêm các báo cáo phân tích lỗi test (failures_telex.txt, failures_vni.txt)
 
 ### macOS Platform SOLID Refactoring
 
@@ -129,6 +138,8 @@
 
 - **Thêm test suite mới:** `core/tests/engine_bug_fixes_test.rs` - 10 test cases kiểm tra các bug đã sửa
 - **Cải thiện test analysis:** Phân tích chi tiết 37 lỗi Telex và 27 lỗi VNI còn lại
+- **Cập nhật Release Workflow:** GitHub Actions workflow đã cập nhật để extract changelog từ CHANGELOG.md
+- **Cập nhật .gitignore:** Cải thiện cấu hình .gitignore cho .claude/ và .github/
 
 ---
 
@@ -143,6 +154,11 @@
 - PR: #60 - "chore: cleanup structure + add dictionary test analysis"
 - PR: #59 - "Memory optimization and app lifecycle improvements"
 - Issue: #53 - Project structure cleanup
+- Commit: `dcffeb32` - "chore: project structure cleanup and engine bug fixes"
+  - Consolidate agent skills into .claude/skills/
+  - Add release-note-generator skill with comprehensive documentation
+  - Fix 5 critical engine bugs (smart w, compound vowel, foreign word restore, VNI compound, uyu triphthong)
+  - Improve dictionary test with Telex/VNI support (99.44%/99.59% pass rate)
 
 ---
 
