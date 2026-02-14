@@ -103,19 +103,6 @@ pub struct VowelPairPattern {
 ///
 /// Order matters: first match wins
 pub const HORN_PATTERNS: &[VowelPairPattern] = &[
-    // Compound ươ - both vowels get horn
-    VowelPairPattern {
-        v1: keys::U,
-        v2: keys::O,
-        placement: HornPlacement::Both,
-        desc: "ươ compound (được, ướt)",
-    },
-    VowelPairPattern {
-        v1: keys::O,
-        v2: keys::U,
-        placement: HornPlacement::Both,
-        desc: "ươ compound reversed",
-    },
     // ưu cluster - first u gets horn
     VowelPairPattern {
         v1: keys::U,
@@ -130,6 +117,8 @@ pub const HORN_PATTERNS: &[VowelPairPattern] = &[
         placement: HornPlacement::Second,
         desc: "oă pattern (hoặc, xoắn)",
     },
+    // Note: u+o and o+u patterns are handled specially in find_horn_positions
+    // to avoid incorrect double-horn in contexts like khuow → khươ
     // ua pattern - context-dependent (handled specially)
     // Default: second gets breve, but with consonant prefix: first gets horn
 ];
@@ -430,6 +419,10 @@ impl Phonology {
     /// Uses HORN_PATTERNS array to match Vietnamese vowel pair patterns.
     /// Pattern matching is order-dependent (first match wins).
     ///
+    /// CRITICAL FIX (Bug #1): Removed implicit "u+o -> Both" compound matching.
+    /// This was causing "khuow" → "khươ" instead of "khuơ".
+    /// The compound rule should only apply explicitly, not during general horn application.
+    ///
     /// Special "ua" handling (inferred from buffer context):
     /// - C+ua (mua, chua): horn on u → "mưa"
     /// - ua, qua: breve on a → "uă", "quă"
@@ -441,7 +434,11 @@ impl Phonology {
             return result;
         }
 
-        // Check adjacent vowel pairs against pattern table
+        // SIMPLIFIED: Don't apply compound patterns implicitly
+        // When applying horn in general, just apply to the last matching vowel
+        // This prevents "khuow" from becoming "khươ"
+
+        // Special case ONLY: "ua" - check preceding consonant (Q excluded)
         if len >= 2 {
             for i in 0..len - 1 {
                 let pos1 = vowel_positions[i];
@@ -463,27 +460,9 @@ impl Phonology {
                             .map(|&k| keys::is_consonant(k) && k != keys::Q)
                             .unwrap_or(false);
 
-                    result.push(if has_non_q_consonant { pos1 } else { pos2 });
+                    let chosen_pos = if has_non_q_consonant { pos1 } else { pos2 };
+                    result.push(chosen_pos);
                     return result;
-                }
-
-                // Match against pattern table
-                for pattern in HORN_PATTERNS {
-                    if k1 == pattern.v1 && k2 == pattern.v2 {
-                        match pattern.placement {
-                            HornPlacement::Both => {
-                                result.push(pos1);
-                                result.push(pos2);
-                            }
-                            HornPlacement::First => {
-                                result.push(pos1);
-                            }
-                            HornPlacement::Second => {
-                                result.push(pos2);
-                            }
-                        }
-                        return result;
-                    }
                 }
             }
         }

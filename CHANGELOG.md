@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [2.0.9] - 2026-02-10
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.9.md](.release-notes/release_note_2.0.9.md)
+
+### 🐛 Bug Fixes
+- **Smart 'w' Double-Apply**: Fixed `khuow` → `khươ` issue, now correctly produces `khuơ` (phonotactic validation)
+- **Compound Vowel Over-Aggressive**: Fixed `khoeo` auto-conversion, now preserves original input
+- **Foreign Word Auto-Restore**: Fixed `tareh` false trigger, now correctly preserves foreign words
+- **VNI Compound Mark**: Fixed `thuo73` → `thưở` issue, now correctly produces `thuở`
+- **"uyu" Triphthong**: Added support for `khuyur` → `khuỷu` pattern
+- **Per-App Mode Race Condition**: Fixed race condition in per-app mode manager causing inconsistent behavior
+
+### ⚡ Improvements
+- **Memory Optimization**: Optimized memory usage and improved app lifecycle management
+- **Settings UI**: Removed diagnostic features (metrics, memory profiling) from Advanced settings tab for cleaner interface
+
+---
+
 ## [2.0.8] - 2026-02-06
 
 ### 🐛 Bug Fixes
@@ -67,20 +85,13 @@
 ## [Unreleased]
 
 ### Fixed
-- **Zen Browser Duplication Bug**: Sửa lỗi gõ tiếng Việt trên Zen Browser (issue #54). Chuyển sang sử dụng phương thức `AX API Direct` kết hợp với logic fallback tối ưu. Code fallback được viết lại để xử lý nhanh hơn: thoát ngay nếu phát hiện browser override (autocomplete) và chỉ retry khi gặp lỗi kết nối AX. Đặc biệt: Đã xử lý triệt để case gõ "đ" (dđ) bằng logic workaround thông minh (Type -> Left -> Backspace -> Right) với độ trễ tối ưu 1ms.
-- **Proxy Event Injection**: Sửa lỗi `TextInjectionHelper` không sử dụng proxy khi fallback, đảm bảo tính ổn định khi inject text trong các trường hợp AX API thất bại.
-- **UI Layout Recursion**: Sửa warning `_NSDetectedLayoutRecursion` bằng cách refactor `MenuToggleView` sử dụng `ObservableObject` thay vì thay thế SwiftUI RootView liên tục.
-- **Build Stability**: Sửa các lỗi biên dịch thiếu import `Combine` và thiếu định nghĩa `KeyCode`.
+- **Per-App Mode Race Condition**: Sửa lỗi race condition trong `PerAppModeManagerEnhanced` khi switch app nhanh liên tiếp. Lỗi khiến mode bị lưu cho app mới thay vì app cũ, và restore mode sai cho app hiện tại. Fix bao gồm: capture `previousId` trước khi update `currentBundleId`, thêm check `previousId != bundleId` để tránh lưu khi switch cùng app, và truyền `bundleId` trực tiếp vào `restoreModeForCurrentApp` để tránh race condition.
 
 ### Added
-- **Shift+Backspace**: Thêm phím tắt Shift+Backspace để xóa cả từ, sử dụng native macOS Option+Backspace shortcut cho tính nhất quán (#TBD).
-- **Output Encoding UI**: Thêm picker cho Output Encoding trong Advanced Settings với 4 tùy chọn: Unicode (UTF-8), TCVN3, VNI Windows, CP1258. Hiển thị cảnh báo và confirmation dialog cho legacy encodings (#TBD).
-- **Shift+Backspace Toggle**: Thêm toggle "Enable Shift+Backspace to delete word" trong General Settings, cho phép người dùng bật/tắt tính năng xóa từ bằng Shift+Backspace (#TBD).
-- **Phase 2.9.3 Documentation**: Tài liệu chi tiết về UI implementation cho Output Encoding và Shift+Backspace trong `docs/PHASE2.9.3_UI_IMPLEMENTATION.md` (#TBD).
+
 
 ### Changed
-- **Settings Persistence**: Mở rộng SettingsManager để lưu trữ `outputEncoding` và `shiftBackspaceEnabled` vào UserDefaults, hỗ trợ export/import settings (#TBD).
-- **Settings Notifications**: Thêm `outputEncodingChanged` và `shiftBackspaceEnabledChanged` notifications để hỗ trợ tích hợp backend trong Milestone 2.9.4 (#TBD).
+
 
 ## [2.0.3] - 2026-01-29
 

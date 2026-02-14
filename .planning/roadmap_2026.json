@@ -1,0 +1,42 @@
+{
+  "roadmap": {
+    "metadata": {
+      "year": 2026,
+      "version": "1.0.0",
+      "created_at": "2026-02-14T09:10:41.300100Z",
+      "updated_at": "2026-02-14T09:14:04.271311Z",
+      "owner": "team",
+      "status": "active"
+    },
+    "quarters": {
+      "Q1": {
+        "milestones": [
+          {
+            "id": "v2.0.10-hotfix",
+            "name": "v2.0.10 - Memory Leak Hotfix",
+            "description": "Investigate and fix memory leak issues causing increasing RAM usage on macOS (from v2.0.9)",
+            "task_ids": [
+              "profile-memory-2.0.10",
+              "analyze-ffi-2.0.10",
+              "audit-retain-2.0.10",
+              "check-eventtap-2.0.10",
+              "fix-leaks-2.0.10"
+            ],
+            "status": "not_started",
+            "start_date": "2026-02-14",
+            "target_date": "2026-03-01"
+          }
+        ]
+      },
+      "Q2": {
+        "milestones": []
+      },
+      "Q3": {
+        "milestones": []
+      },
+      "Q4": {
+        "milestones": []
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
 # VIETNAMESE IME PROJECT - GITIGNORE
 # ============================================
 
-.github/instructions/*
+# .github/instructions/*
 !.github/ISSUE_TEMPLATE/
 !.github/workflows/
 !.github/instructions/*.instructions.md
@@ -197,3 +197,5 @@ release/
 .gemini/
 gha-creds-*.json
 *.skill
+.venv
+.ruff_cache

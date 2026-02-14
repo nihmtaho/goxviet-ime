@@ -172,9 +172,11 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         SpecialPanelAppDetector.invalidateCache()
         SpecialPanelAppDetector.updateLastFrontMostApp(bundleId)
         
-        // Save previous app state
-        if let previousId = currentBundleId,
-           SettingsManager.shared.smartModeEnabled {
+        // Save previous app state - must capture before updating currentBundleId
+        let previousId = currentBundleId
+        if let previousId = previousId,
+           SettingsManager.shared.smartModeEnabled,
+           previousId != bundleId {
             let currentMode = SettingsManager.shared.isEnabled
             SettingsManager.shared.setPerAppMode(bundleId: previousId, enabled: currentMode)
         }
@@ -183,11 +185,11 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         currentBundleId = bundleId
         
         // Clear buffer
-        ime_clear()
+        ime_clear_v2()
         
-        // Restore mode for new app
+        // Restore mode for new app - pass bundleId directly to avoid race condition
         if SettingsManager.shared.smartModeEnabled {
-            restoreModeForCurrentApp()
+            restoreModeForCurrentApp(bundleId: bundleId)
         }
         
         // Post notification for UI updates
@@ -208,13 +210,14 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     // MARK: - Mode Management
     
-    private func restoreModeForCurrentApp() {
-        guard let bundleId = currentBundleId else { return }
+    private func restoreModeForCurrentApp(bundleId: String? = nil) {
+        let targetBundleId = bundleId ?? currentBundleId
+        guard let bundleId = targetBundleId else { return }
         
         let savedMode = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
         
         SettingsManager.shared.setEnabledSilently(savedMode)
-        ime_enabled(savedMode)
+        ime_enabled_v2(savedMode)
         
         DispatchQueue.main.async {
             NotificationCenter.default.post(

@@ -78,19 +78,43 @@ The project structure is organized as follows:
 
 ```
 goxviet/
-├── core/                  # Rust Core Engine (Logic, State, FFI)
+├── .agent/                    # AI agent skills and automation (consolidated)
+│   └── skills/               # Consolidated skill modules
+├── .claude/                   # Claude-specific skills
+│   └── skills/               # Skill modules (skill-git, pr-creator, etc.)
+├── .github/                   # GitHub workflows, templates, prompts
+├── .docs/                     # Project Internal Documentation
+│   ├── features/
+│   │   ├── core-engine/      # Engine architecture docs
+│   │   └── platform/macos/   # macOS platform docs
+│   ├── guides/               # Feature-specific guides
+│   └── templates/            # PR templates
+├── .planning/                 # Task Planning & Tracking
+│   └── *.json                # Roadmap files
+├── core/                      # Rust Core Engine (Logic, State, FFI)
 │   ├── src/
-│   │   ├── engine/       # Legacy Engine
-│   │   └── engine_v2/    # Modern Engine
-├── platforms/             # Native Platform Implementations
-│   ├── macos/            # macOS App (Swift)
-│   └── windows/          # Windows App (C#)
-├── .docs/                 # Project Internal Documentation
-├── .planning/             # Task Planning & Tracking
-└── .rules                 # This file
+│   │   ├── lib.rs           # Main FFI interface
+│   │   ├── engine/          # Legacy Engine
+│   │   ├── engine_v2/       # Modern Engine
+│   │   ├── input/           # Telex, VNI implementations
+│   │   └── data/            # Static data
+│   ├── tests/               # Integration tests
+│   └── benches/             # Performance benchmarks
+├── platforms/                 # Native Platform Implementations
+│   ├── macos/               # macOS App (Swift)
+│   │   └── goxviet/
+│   │       ├── goxviet.xcodeproj/
+│   │       └── goxviet/     # Swift source files
+│   └── windows/             # Windows App (C#) - Planned
+├── docs/                      # Public/user-facing documentation
+├── scripts/                   # Build scripts and utilities
+├── homebrew/                  # Homebrew formula
+├── AGENTS.md                 # → .rules (symlink)
+├── STRUCTURE.md              # Detailed project structure
+└── .rules                    # This file
 ```
 
-**Excluded from standard context:** `docs`, `bindings`, `example-project`, `homebrew`, `.claude`, `.agent`, `generate_dictionary.py`, `.tasks`.
+**Excluded from standard context:** `docs`, `bindings`, `example-project`, `homebrew`, `.temp`, `generate_dictionary.py`, `.tasks`, `core/target/`, `*.dmg`, `*.app`.
 
 ## 6. Architecture Overview
 
@@ -105,78 +129,148 @@ Dual-engine design:
 - **`engine_v2/` (Modern):** The future. Modular, performant. Contains:
     - `english/`: Advanced bilingual detection (Phonotactic + Dictionary).
     - `vietnamese_validator/`: Strict syllable validation with `fsm`.
+    - `fsm/`: Finite State Machine for validation.
 - **`engine/` (Legacy/Deprecated):** Currently powering the `lib.rs` FFI.
-    - Features: `buffer`, `transform`, `tone_positioning`.
+    - Features: `buffer`, `transform`, `tone_positioning`, `state/history`.
 
 ### 6.2. Platform: macOS (`platforms/macos/`)
 - **Language:** Swift (AppKit + SwiftUI).
 - **Key Components:**
     - `InputManager`: Singleton event loop (`CGEventTap`). Filters and forwards keys.
-    - `RustBridge`: Safety wrapper around C FFI. Manages pointer ownership.
+    - `RustBridgeSafe`: Thread-safe wrapper around C FFI. Manages pointer ownership.
     - `AppState`: Central source of truth for settings, synced via `NotificationCenter`.
     - `SettingsRootView`: Pure SwiftUI settings interface with "Glass" window style.
+    - `PerAppModeManagerEnhanced`: Smart Mode per-app configurations.
 
 ### 6.3. Platform: Windows (`platforms/windows/`)
 - **Language:** C# (.NET).
-- **Key Components:**
-    - `InputInterceptor`: Low-level keyboard hook.
+- **Status:** Planned/Placeholder.
+- **Key Components (Planned):**
+    - `InputInterceptor`: Low-level keyboard hook (`SetWindowsHookEx`).
     - `EngineInterop`: P/Invoke wrappers for Rust Core.
     - `TrayApplication`: System tray interface.
 
-## 7. Documentation Map
+## 7. File Placement Guidelines
+
+### Where to add new code:
+
+**Core engine changes:**
+→ `core/src/` (Rust files)
+
+**macOS UI changes:**
+→ `platforms/macos/goxviet/goxviet/` (Swift files)
+
+**Documentation (user-facing):**
+→ `docs/` (public) or `.docs/` (internal)
+
+**Build/utility scripts:**
+→ `scripts/`
+
+**Agent skills:**
+→ `.agent/skills/[skill-name]/SKILL.md` (consolidated)
+→ `.claude/skills/[skill-name]/SKILL.md` (Claude-specific)
+
+**CI/CD configuration:**
+→ `.github/workflows/`
+
+## 8. Documentation Map
 
 **ALWAYS** refer to the specific feature documentation before modifying code.
 
 - **Core Engine:** `.docs/features/core-engine/`
 - **macOS Platform:** `.docs/features/platform/macos/`
+- **Guides:** `.docs/guides/`
 - **Planning:** `.planning/`
+- **Agent Skills:** `.agent/skills/` and `.claude/skills/`
 
-## 8. Coding Standards & Rules
+## 9. Coding Standards & Rules
 
-### 8.1. General
+### 9.1. General
 - **Naming:**
     - ✅ `Gõ Việt`, `GoxViet`, `goxviet` (Our brand).
-- **Logs:**
-    - Use structured logging.
+    - ✅ `goxviet-core` (Rust crate name)
+- **Logs:** Use structured logging.
 
-### 8.2. Rust (Core)
+### 9.2. Rust (Core)
 - **Performance:**
     - **NO** heap allocations in the hot path (`process_key`). Use stack arrays or `SmallVec`.
     - **O(1)** lookups for validation.
 - **FFI Safety:**
     - **NEVER** panic across FFI boundaries. Capture `UnwindSafe`.
     - **ALWAYS** verify raw pointers.
+- **Testing:**
+    - Unit tests in `core/tests/`
+    - Benchmarks in `core/benches/`
 
-### 8.3. Swift (macOS)
+### 9.3. Swift (macOS)
 - **Memory Management:**
-    - Free FFI results immediately.
+    - Free FFI results immediately using `ime_free`.
+    - Use `defer { ime_free(...) }` after receiving pointer.
 - **Concurrency:**
-    - UI updates on `MainActor`.
+    - UI updates on `MainActor` (`DispatchQueue.main` or `@MainActor`).
+    - Engine calls are synchronous - keep them fast.
+- **Architecture:**
+    - `InputManager` is high-risk - modifications need careful testing.
+    - `RustBridgeSafe` is the only place for raw FFI calls.
 
-## 9. Implementation Workflow
+### 9.4. C# (Windows)
+- **Interop:**
+    - **UTF-16:** Windows APIs use UTF-16 (Wide Chars).
+    - **P/Invoke:** Use `DllImport` safely. Match calling conventions (`Cdecl`).
+- **Stability:**
+    - Catch exceptions at hook boundaries to prevent input system crashes.
 
-**ALWAYS** using `implement-tasks` skill to execute feature implementations.
+### 9.5. SOLID Principles (All Languages)
+**MUST** follow SOLID principles in all code:
+
+| Principle | Application |
+|-----------|-------------|
+| **S**ingle Responsibility | Each module/class has ONE reason to change. `InputManager` handles events, `RustBridgeSafe` handles FFI. |
+| **O**pen/Closed | Open for extension, closed for modification. Use traits/protocols for new input methods. |
+| **L**iskov Substitution | Subtypes must be substitutable. Engine v2 should be drop-in replacement for legacy engine. |
+| **I**nterface Segregation | Small, focused interfaces. Separate `InputMethod` from `OutputEncoding` protocols. |
+| **D**ependency Inversion | Depend on abstractions. Use `trait InputProcessor` instead of concrete `TelexEngine`. |
+
+**Examples:**
+- ✅ `trait InputMethod { fn process(&self, key: char) -> Result; }`
+- ❌ Direct struct dependencies: `impl TelexEngine { fn process(...) }` called directly
 
 ## 10. Common Patterns
 
 ### 10.1. Backspace Handling
 - "Soft Backspace": Undo last transformation if possible.
+- Coalesce rapid deletes for performance.
 
 ### 10.2. Smart Mode
 - Per-App configurations persisted in `UserDefaults`.
+- Detect application context to enable/disable IME.
 
 ### 10.3. English Auto-Restore
 - Restore original text if unintentional transformation is detected.
+- Uses dictionary and phonotactic analysis.
 
-## 11. Feature Documentation Rules
-- Read `.docs/features/core-engine` before core changes.
-- Read `.docs/features/platform/macos` before macOS changes.
+### 10.4. Text Expansion
+- Shortcuts map to expanded text.
+- Configurable via Settings UI.
 
-## 12. Rust Coding Guidelines
-- Follow Rust API Guidelines.
-- **No Panic Policy:** Core must NEVER panic. Use `Result` and `catch_unwind` at FFI.
-- **State Management:** Use State Machine pattern.
-- **String Handling:** Internal UTF-8, Windows UTF-16, macOS C-String (UTF-8).
-- **FFI Pattern:** Use `engine_ptr`, `catch_unwind`, and proper ownership transfer.
-- **Memory Management:** Allocator frees memory.
-- **Testing:** Unit + Integration tests.
+## 11. Gitignore Rules
+
+**NEVER commit:**
+- `.DS_Store` files (macOS system files)
+- `core/target/` (Rust build artifacts)
+- `xcuserdata/` (Xcode user data)
+- `*.dmg`, `*.app` (Distribution packages)
+- `libgoxviet_core.a` (Compiled Rust library)
+- `example-project/` (Reference implementations)
+- `.temp/` (Temporary files)
+- Environment files (`.env`, secrets, API keys)
+
+## 12. Implementation Workflow
+
+**ALWAYS** use `implement-tasks` skill to execute feature implementations.
+
+## 13. Platform-Specific Overrides
+
+When working on specific platforms, also read:
+- **macOS:** `platforms/macos/AGENT.override.md`
+- **Windows:** `platforms/windows/AGENT.override.md`
