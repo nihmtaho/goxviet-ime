@@ -22,7 +22,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 opt-level = "z"          # Optimize for size
 lto = true               # Link-time optimization
 codegen-units = 1        # Better optimization
-strip = true             # Strip symbols
+strip = false            # Keep symbols for debugging
 panic = "abort"          # Smaller binary
 
 [profile.dev]
@@ -47,4 +47,8 @@ harness = false
 
 [[bench]]
 name = "encoding_bench"
+harness = false
+
+[[bench]]
+name = "clean_arch_bench"
 harness = false

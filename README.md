@@ -57,6 +57,24 @@ Chúng tôi luôn hoan nghênh mọi đóng góp từ cộng đồng!
 
 ---
 
+## 📁 Project Structure
+
+Dự án được tổ chức theo kiến trúc hybrid với Core Engine (Rust) và Platform Layers (Native):
+
+```
+goxviet/
+├── core/           # Rust core engine (logic, state, transform)
+├── platforms/      # Platform implementations (macOS, Windows)
+├── docs/           # Public documentation
+├── .docs/          # Internal/developer documentation
+├── scripts/        # Build scripts and utilities
+└── .agent/         # AI agent skills
+```
+
+📋 Xem chi tiết tại [STRUCTURE.md](STRUCTURE.md) để hiểu rõ cấu trúc và biết nên đặt file ở đâu.
+
+---
+
 ## 📚 Tài liệu tham khảo
 
 Hệ thống tài liệu chi tiết giúp bạn bắt đầu nhanh chóng:
@@ -66,6 +84,7 @@ Hệ thống tài liệu chi tiết giúp bạn bắt đầu nhanh chóng:
 *   ⌨️ [Danh sách phím tắt](docs/SHORTCUTS.md)
 *   🛠️ [Hướng dẫn cho Developer (English Words)](docs/ADDING_ENGLISH_WORDS.md)
 *   📝 [Release Notes](docs/release-note/)
+*   📁 [Project Structure](STRUCTURE.md)
 
 ---
 

@@ -180,7 +180,7 @@ final class TypedNotificationCenter {
     func post(_ notification: EscRestoreChangedNotification) {
         queue.async {
             self.center.post(
-                name: .escRestoreChanged,
+                name: .restoreShortcutChanged,
                 object: notification,
                 userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
             )

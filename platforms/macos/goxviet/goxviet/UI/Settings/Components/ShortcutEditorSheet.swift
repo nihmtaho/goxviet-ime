@@ -342,7 +342,8 @@ struct ShortcutEditorSheet: View {
         }
         
         // Duplicate check (exclude current trigger when editing)
-        if existingShortcuts.contains(trimmed) {
+        let editingTrimmed = editingTrigger?.trimmingCharacters(in: .whitespaces)
+        if existingShortcuts.contains(trimmed) && (!isEditing || trimmed != editingTrimmed) {
             triggerError = "Từ viết tắt này đã tồn tại"
             return
         }

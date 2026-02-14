@@ -185,7 +185,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         currentBundleId = bundleId
         
         // Clear buffer
-        ime_clear()
+        ime_clear_v2()
         
         // Restore mode for new app - pass bundleId directly to avoid race condition
         if SettingsManager.shared.smartModeEnabled {
@@ -217,7 +217,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         let savedMode = SettingsManager.shared.getPerAppMode(bundleId: bundleId)
         
         SettingsManager.shared.setEnabledSilently(savedMode)
-        ime_enabled(savedMode)
+        ime_enabled_v2(savedMode)
         
         DispatchQueue.main.async {
             NotificationCenter.default.post(

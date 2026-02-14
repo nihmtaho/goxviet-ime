@@ -1,33 +1,19 @@
+//! LEGACY v1 FFI TEST - DISABLED in v3.0
+//! This test used ime_init/ime_key API which was removed.
+
+#[ignore = "Legacy v1 FFI removed in v3.0"]
+#[test]
+fn placeholder_test() {
+    // Migrate to v2 API if needed
+}
+
+/*
+ARCHIVED CONTENT:
 use goxviet_core::*;
 
 #[test]
-fn test_truyen_transform() {
-    ime_init();
-    ime_method(0); // Telex
+fn test_truyen_transform() { ... }
 
-    // Type "truyeefn" should produce "truyền"
-    let input = "truyeefn";
-    let expected = "truyền";
-
-    let mut output = String::new();
-
-    for ch in input.chars() {
-        let key = match ch {
-            't' => 17,
-            'r' => 15,
-            'u' => 32,
-            'y' => 16,
-            'e' => 14,
-            'f' => 3,
-            'n' => 45,
-            _ => continue,
-        };
-
-        let result = unsafe { ime_key_ext(key, false, false, false) };
-        if !result.is_null() {
-            let r_ref = unsafe { &*result };
-
-            if r_ref.action == 1 && r_ref.count > 0 && !r_ref.chars.is_null() {
                 output.clear();
                 for i in 0..r_ref.count as usize {
                     let code = unsafe { *r_ref.chars.offset(i as isize) };
@@ -47,3 +33,4 @@ fn test_truyen_transform() {
 
     assert_eq!(output, expected, "truyeefn should transform to truyền");
 }
+*/
