@@ -36,6 +36,10 @@ final class MemoryProfiler: ObservableObject {
     private var peakMemory: Double = 0.0
     private let maxHistoryCount = 60 // Keep last 60 samples
     
+    /// Stored observer tokens for proper cleanup
+    private var memoryPressureObserverToken: NSObjectProtocol?
+    private var settingsCleanupObserverToken: NSObjectProtocol?
+    
     // MARK: - Memory Thresholds
     
     /// Memory threshold for auto-cleanup (MB) - trigger cleanup when exceeded
@@ -101,6 +105,16 @@ final class MemoryProfiler: ObservableObject {
         monitoringTimer?.invalidate()
         monitoringTimer = nil
         
+        // Remove notification observers
+        if let token = memoryPressureObserverToken {
+            NotificationCenter.default.removeObserver(token)
+            memoryPressureObserverToken = nil
+        }
+        if let token = settingsCleanupObserverToken {
+            NotificationCenter.default.removeObserver(token)
+            settingsCleanupObserverToken = nil
+        }
+        
         Log.info("Memory profiling stopped")
     }
     
@@ -156,7 +170,7 @@ final class MemoryProfiler: ObservableObject {
     
     private func setupMemoryPressureObserver() {
         // Listen for memory pressure notifications from ResourceManager
-        NotificationCenter.default.addObserver(
+        memoryPressureObserverToken = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("com.goxviet.memoryPressure"),
             object: nil,
             queue: .main
@@ -165,7 +179,7 @@ final class MemoryProfiler: ObservableObject {
         }
         
         // Listen for settings window close to trigger cleanup
-        NotificationCenter.default.addObserver(
+        settingsCleanupObserverToken = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("settingsWindowCleanup"),
             object: nil,
             queue: .main
@@ -284,9 +298,12 @@ final class MemoryProfiler: ObservableObject {
         var vmStats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         
+        let hostPort = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, hostPort) }
+        
         let result = withUnsafeMutablePointer(to: &vmStats) {
             $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+                host_statistics64(hostPort, HOST_VM_INFO64, $0, &count)
             }
         }
         

@@ -195,6 +195,11 @@ class InputManager: LifecycleManaged {
         // Unregister all observers via ResourceManager
         ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
         ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.inputMethodObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toneStyleObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.restoreShortcutObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.instantRestoreObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.textExpansionObserver")
         
         // Stop mouse monitor
         if let monitor = mouseMonitor {
