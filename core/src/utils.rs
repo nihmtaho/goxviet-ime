@@ -8,7 +8,7 @@ use crate::data::{
     keys,
     vowel::{Modifier, Vowel},
 };
-use crate::engine::buffer::Buffer;
+use crate::infrastructure::engine::buffer::Buffer;
 
 /// Convert key code to character
 pub fn key_to_char(key: u16, caps: bool) -> Option<char> {
@@ -136,7 +136,7 @@ mod test_utils {
     //! Used by `#[cfg(test)]` modules throughout the crate.
 
     use crate::data::keys;
-    use crate::engine::{Action, Engine};
+    use crate::infrastructure::engine::{Action, Engine};
 
     // ============================================================
     // KEY MAPPING

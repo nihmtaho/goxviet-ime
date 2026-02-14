@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [2.0.9] - 2026-02-10
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.9.md](.release-notes/release_note_2.0.9.md)
+
+### 🐛 Bug Fixes
+- **Smart 'w' Double-Apply**: Fixed `khuow` → `khươ` issue, now correctly produces `khuơ` (phonotactic validation)
+- **Compound Vowel Over-Aggressive**: Fixed `khoeo` auto-conversion, now preserves original input
+- **Foreign Word Auto-Restore**: Fixed `tareh` false trigger, now correctly preserves foreign words
+- **VNI Compound Mark**: Fixed `thuo73` → `thưở` issue, now correctly produces `thuở`
+- **"uyu" Triphthong**: Added support for `khuyur` → `khuỷu` pattern
+- **Per-App Mode Race Condition**: Fixed race condition in per-app mode manager causing inconsistent behavior
+
+### ⚡ Improvements
+- **Memory Optimization**: Optimized memory usage and improved app lifecycle management
+- **Settings UI**: Removed diagnostic features (metrics, memory profiling) from Advanced settings tab for cleaner interface
+
+---
+
 ## [2.0.8] - 2026-02-06
 
 ### 🐛 Bug Fixes

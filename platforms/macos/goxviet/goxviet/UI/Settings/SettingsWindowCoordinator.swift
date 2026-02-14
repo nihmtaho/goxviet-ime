@@ -142,7 +142,7 @@ struct GeneralSettingsTab: View {
         GeneralSettingsView(
             inputMethod: $settingsManager.inputMethod,
             modernToneStyle: $settingsManager.modernToneStyle,
-            escRestoreEnabled: $settingsManager.escRestoreEnabled,
+            restoreShortcutEnabled: $settingsManager.restoreShortcutEnabled,
             freeToneEnabled: $settingsManager.freeToneEnabled,
             instantRestoreEnabled: $settingsManager.instantRestoreEnabled,
             autoDisableForNonLatin: $settingsManager.autoDisableForNonLatin,
