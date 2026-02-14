@@ -228,9 +228,10 @@ class InputManager: LifecycleManaged {
             return false
         }
         
-        var roleRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element as! AXUIElement, kAXRoleAttribute as CFString, &roleRef) == .success,
-              let role = roleRef as? String else {
+        let axEl = element as! AXUIElement
+        
+        // Use resolveRole from TextInjectionHelper (now accessible)
+        guard let role = resolveRole(axEl: axEl) else {
             return false
         }
         
@@ -504,6 +505,13 @@ class InputManager: LifecycleManaged {
             // Clear ALL state on modifier shortcuts (selection-delete, Cmd+A, Cmd+V, etc.)
             // This prevents stale buffer content from appearing after selection operations
             ime_clear_all_v2()
+            return Unmanaged.passUnretained(event)
+        }
+        
+        // 6.1. Check for passthrough mode (iPhone Mirroring, games)
+        let (method, _) = detectMethod()
+        if method == .passthrough {
+            // Pass through without IME processing - remote device/game handles input
             return Unmanaged.passUnretained(event)
         }
         

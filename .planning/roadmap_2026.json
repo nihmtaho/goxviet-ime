@@ -4,7 +4,7 @@
       "year": 2026,
       "version": "1.0.0",
       "created_at": "2026-02-14T09:10:41.300100Z",
-      "updated_at": "2026-02-14T09:14:04.271311Z",
+      "updated_at": "2026-02-14T10:14:49.674139Z",
       "owner": "team",
       "status": "active"
     },
@@ -22,20 +22,92 @@
               "check-eventtap-2.0.10",
               "fix-leaks-2.0.10"
             ],
-            "status": "not_started",
+            "status": "completed",
             "start_date": "2026-02-14",
             "target_date": "2026-03-01"
+          },
+          {
+            "id": "v2.0.11-auto-restore",
+            "name": "v2.0.11 - Double-Tone Auto-Restore Fixes",
+            "description": "Fix auto-restore logic conflicts: prevent over-restoration of English words (aroma, array) while preserving Vietnamese auto-restore functionality",
+"task_ids": [
+               "analyze-auto-restore-logic",
+               "add-language-context",
+               "implement-english-detection",
+               "fix-consonant-doubling-issue",
+               "fix-vowel-repetition-issue",
+               "integration-test-auto-restore",
+               "document-auto-restore-behavior",
+               "utf16-offset-axdirect",
+               "emptycharprefix-injection",
+               "mouse-detection-optimization"
+             ],
+            "status": "in_progress",
+            "start_date": "2026-02-14",
+            "target_date": "2026-03-15"
           }
         ]
       },
       "Q2": {
-        "milestones": []
+        "milestones": [
+          {
+            "id": "v2.1.0-windows-foundation",
+            "name": "v2.1.0 - Windows Foundation",
+            "description": "Windows platform foundation with Rust GUI, FFI bridge, WinHookEx, and VK mapping.",
+            "task_ids": [
+              "design-windows-architecture",
+              "scaffold-windows-rust-gui",
+              "implement-windows-ffi-bridge",
+              "implement-windows-hook",
+              "build-virtual-keycode-map",
+              "wire-input-pipeline-smoke-test"
+            ],
+            "status": "not_started",
+            "start_date": "2026-04-01",
+            "target_date": "2026-06-30"
+          }
+        ]
       },
       "Q3": {
-        "milestones": []
+        "milestones": [
+          {
+            "id": "v2.2.0-windows-feature-parity",
+            "name": "v2.2.0 - Windows Feature Parity",
+            "description": "Feature parity with macOS: settings, smart mode, preedit/commit flow, and tray app.",
+            "task_ids": [
+              "implement-windows-settings-ui",
+              "implement-app-state-config",
+              "implement-smart-mode-per-app",
+              "implement-preedit-commit-flow",
+              "implement-tray-app",
+              "parity-test-suite",
+              "logging-telemetry-windows"
+            ],
+            "status": "not_started",
+            "start_date": "2026-07-01",
+            "target_date": "2026-09-30"
+          }
+        ]
       },
       "Q4": {
-        "milestones": []
+        "milestones": [
+          {
+            "id": "v2.3.0-windows-release",
+            "name": "v2.3.0 - Windows Release",
+            "description": "Performance, multi-arch builds (x86/x64/ARM64), packaging, and QA for Windows release.",
+            "task_ids": [
+              "perf-optimization-windows-input",
+              "arm64-build-test",
+              "x86-x64-build-test",
+              "installer-packaging",
+              "release-candidate-qa",
+              "docs-windows-user-guide"
+            ],
+            "status": "not_started",
+            "start_date": "2026-10-01",
+            "target_date": "2026-12-15"
+          }
+        ]
       }
     }
   }

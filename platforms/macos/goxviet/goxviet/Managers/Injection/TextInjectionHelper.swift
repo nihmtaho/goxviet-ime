@@ -15,9 +15,12 @@ enum InjectionMethod {
     case instant        // Modern editors: zero delays for maximum speed (VSCode, Zed, Sublime)
     case fast           // Default: backspace + text with minimal delays
     case slow           // Terminals/Electron: backspace + text with higher delays
+    case charByChar     // Safari Google Docs: backspace + text character-by-character
     case selection      // Browser address bars: Shift+Left select + type replacement
     case emptyCharPrefix // Browser address bars: Use U+202F to break autocomplete highlight
     case axDirect       // Browser address bars: AX API direct text manipulation (bypasses autocomplete)
+    case syncProxy      // Games: synchronous injection via CGEventTapPostEvent(proxy)
+    case passthrough    // iPhone Mirroring: pass through all keys (remote device handles input)
 }
 
 // MARK: - Key Codes
@@ -61,12 +64,19 @@ class TextInjector {
             injectViaInstant(bs: bs, text: text)
         case .fast, .slow:
             injectViaBackspace(bs: bs, text: text, delays: delays)
+        case .charByChar:
+            injectViaBackspace(bs: bs, text: text, delays: delays, charByChar: true)
         case .selection:
             injectViaSelection(bs: bs, text: text, delays: delays)
         case .emptyCharPrefix:
-            injectViaEmptyCharPrefix(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+            injectViaBackspace(bs: bs, text: text, delays: delays, emptyCharPrefix: true)
+        case .syncProxy:
+            injectViaProxy(bs: bs, text: text, proxy: proxy)
         case .axDirect:
             injectViaAXWithFallback(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+        case .passthrough:
+            // Should not reach here - passthrough is handled in keyboard callback
+            break
         }
     }
     
@@ -91,8 +101,26 @@ class TextInjector {
     }
     
     /// Standard backspace injection: delete N chars, then type replacement
-    private func injectViaBackspace(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
+    private func injectViaBackspace(bs: Int, text: String, delays: (UInt32, UInt32, UInt32), charByChar: Bool = false, emptyCharPrefix: Bool = false) {
         guard let src = CGEventSource(stateID: .privateState) else { return }
+        
+        var bs = bs
+        
+        // Empty char prefix: send U+202F to break autocomplete highlight, then +1 backspace
+        if emptyCharPrefix {
+            let emptyChar: [UniChar] = [0x202F]
+            if let dn = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true),
+               let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false) {
+                dn.setIntegerValueField(.eventSourceUserData, value: eventMarker)
+                up.setIntegerValueField(.eventSourceUserData, value: eventMarker)
+                dn.keyboardSetUnicodeString(stringLength: 1, unicodeString: emptyChar)
+                up.keyboardSetUnicodeString(stringLength: 1, unicodeString: emptyChar)
+                dn.post(tap: .cgSessionEventTap)
+                up.post(tap: .cgSessionEventTap)
+            }
+            usleep(delays.0 > 0 ? delays.0 : 1000)
+            bs += 1  // +1 to also delete the empty char
+        }
         
         // Optimize: use batch backspace when no delay needed between keystrokes
         if delays.0 == 0 {
@@ -106,8 +134,28 @@ class TextInjector {
         
         if bs > 0 { usleep(delays.1) }
         
-        postText(text, source: src, delay: delays.2)
-        Log.send("bs", bs, text)
+        // When charByChar=true, pass chunkSize=1 to postText
+        if charByChar {
+            postText(text, source: src, delay: delays.2, chunkSize: 1)
+        } else {
+            postText(text, source: src, delay: delays.2)
+        }
+        
+        let logPrefix = emptyCharPrefix ? "bs:emptyChar" : (charByChar ? "bs:charByChar" : "bs")
+        Log.send(logPrefix, bs, text)
+    }
+    
+    /// Synchronous proxy injection: uses CGEventTapPostEvent(proxy) for zero-delay delivery
+    /// Events are injected directly into the event tap pipeline, guaranteeing correct ordering
+    private func injectViaProxy(bs: Int, text: String, proxy: CGEventTapProxy) {
+        guard let src = CGEventSource(stateID: .privateState) else { return }
+        
+        for _ in 0..<bs {
+            postKey(KeyCode.backspace, source: src, proxy: proxy)
+        }
+        
+        postText(text, source: src, proxy: proxy)
+        Log.send("proxy", bs, text)
     }
     
     /// Selection injection: Shift+Left to select, then type replacement (for browser address bars)
@@ -435,7 +483,7 @@ class TextInjector {
                 if bundleId == "app.zen-browser.zen" || bundleId == "company.thebrowser.Arc" {
                     injectViaSelection(bs: bs, text: text, delays: (500, 1000, 500))
                 } else {
-                    injectViaEmptyCharPrefix(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+                    injectViaBackspace(bs: bs, text: text, delays: (0, 0, 0), emptyCharPrefix: true)
                 }
                 return
                 
@@ -452,7 +500,7 @@ class TextInjector {
         if bundleId == "app.zen-browser.zen" || bundleId == "company.thebrowser.Arc" {
             injectViaSelection(bs: bs, text: text, delays: (500, 1000, 500))
         } else {
-            injectViaEmptyCharPrefix(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+            injectViaBackspace(bs: bs, text: text, delays: (0, 0, 0), emptyCharPrefix: true)
         }
     }
     
@@ -526,12 +574,13 @@ class TextInjector {
     }
     
     /// Post text in chunks (CGEvent has 20-char limit)
-    private func postText(_ text: String, source: CGEventSource, delay: UInt32 = 0, proxy: CGEventTapProxy? = nil) {
+    /// When chunkSize=1, sends each character individually with delays
+    private func postText(_ text: String, source: CGEventSource, delay: UInt32 = 0, chunkSize: Int = 20, proxy: CGEventTapProxy? = nil) {
         let utf16 = Array(text.utf16)
         var offset = 0
         
         while offset < utf16.count {
-            let end = min(offset + 20, utf16.count)
+            let end = min(offset + chunkSize, utf16.count)
             let chunk = Array(utf16[offset..<end])
             
             guard let dn = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
@@ -654,6 +703,52 @@ func clearDetectionCache() {
 
 // MARK: - Method Detection
 
+/// Helper function to resolve role from AX element
+/// Tries multiple strategies to get a usable role string
+func resolveRole(axEl: AXUIElement) -> String? {
+    // Strategy 1: Try kAXRoleAttribute
+    var roleVal: CFTypeRef?
+    if AXUIElementCopyAttributeValue(axEl, kAXRoleAttribute as CFString, &roleVal) == .success,
+       let role = roleVal as? String, !role.isEmpty {
+        return role
+    }
+    
+    // Strategy 2: Try kAXSubroleAttribute
+    var subroleVal: CFTypeRef?
+    if AXUIElementCopyAttributeValue(axEl, kAXSubroleAttribute as CFString, &subroleVal) == .success,
+       let subrole = subroleVal as? String, !subrole.isEmpty {
+        Log.info("resolveRole: using subrole '\(subrole)'")
+        return subrole
+    }
+    
+    // Strategy 3: Walk up parent chain looking for a role
+    var parent: CFTypeRef?
+    if AXUIElementCopyAttributeValue(axEl, kAXParentAttribute as CFString, &parent) == .success,
+       let parentEl = parent {
+        let parentElement = parentEl as! AXUIElement
+        var parentRoleVal: CFTypeRef?
+        if AXUIElementCopyAttributeValue(parentElement, kAXRoleAttribute as CFString, &parentRoleVal) == .success,
+           let parentRole = parentRoleVal as? String, !parentRole.isEmpty {
+            Log.info("resolveRole: using parent role '\(parentRole)'")
+            return parentRole
+        }
+    }
+    
+    // Strategy 4: Check if it's a text input by testing for text attributes
+    var valueVal: CFTypeRef?
+    var rangeVal: CFTypeRef?
+    let hasValue = AXUIElementCopyAttributeValue(axEl, kAXValueAttribute as CFString, &valueVal) == .success
+    let hasRange = AXUIElementCopyAttributeValue(axEl, kAXSelectedTextRangeAttribute as CFString, &rangeVal) == .success
+    
+    if hasValue && hasRange {
+        Log.info("resolveRole: inferred 'AXTextField' from value+range attributes")
+        return "AXTextField"
+    }
+    
+    Log.info("resolveRole: all strategies failed, returning nil")
+    return nil
+}
+
 /// Detect optimal injection method based on focused app and UI element
 func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Check cache first (200ms TTL)
@@ -673,11 +768,9 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if focusResult == .success, let el = focused {
         let axEl = el as! AXUIElement
         
-        // Get role with error logging
-        var roleVal: CFTypeRef?
-        let roleResult = AXUIElementCopyAttributeValue(axEl, kAXRoleAttribute as CFString, &roleVal)
-        role = roleVal as? String
-        Log.info("AX role: result=\(roleResult.rawValue) role=\(role ?? "nil")")
+        // Get role using resolveRole helper (handles role=nil cases)
+        role = resolveRole(axEl: axEl)
+        Log.info("AX role: resolved=\(role ?? "nil")")
         
         // Get owning app's bundle ID (works for Spotlight overlay)
         var pid: pid_t = 0
@@ -704,6 +797,11 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
         return (m, d)
     }
     
+    // iPhone Mirroring (ScreenContinuity) - pass through all keys
+    if bundleId == "com.apple.ScreenContinuity" {
+        return cached(.passthrough, (0, 0, 0), "pass:iphone")
+    }
+    
     // Selection method for autocomplete UI elements (ComboBox, SearchField)
     if role == "AXComboBox" { return cached(.selection, (0, 0, 0), "sel:combo") }
     if role == "AXSearchField" { return cached(.selection, (0, 0, 0), "sel:search") }
@@ -713,58 +811,91 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
         return cached(.axDirect, (0, 0, 0), "ax:spotlight")
     }
     
-    // Arc browser - use axDirect (works on Arc)
-    let theBrowserCompany = ["company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia"]
-    if theBrowserCompany.contains(bundleId) {
-        return cached(.axDirect, (0, 0, 0), "ax:arc")
+    // Safari: address bar uses emptyCharPrefix, content areas (Google Docs) use charByChar
+    if bundleId == "com.apple.Safari" || bundleId == "com.apple.SafariTechnologyPreview" {
+        if role == "AXTextField" { return cached(.emptyCharPrefix, (0, 0, 0), "emptyChar:safari") }
+        return cached(.charByChar, (0, 0, 0), "char:safari")
     }
     
-    // Chromium-based browsers - use selection
-    if BundleConstants.chromiumBrowsers.contains(bundleId) {
-        return cached(.selection, (0, 0, 0), "sel:chromium")
+    // Browser address bars: emptyCharPrefix to break autocomplete (when role matches)
+    let browsers = [
+        // The Browser Company
+        "company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia",
+        // Firefox-based
+        "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly",
+        "org.waterfoxproject.waterfox", "io.gitlab.librewolf-community.librewolf",
+        "one.ablaze.floorp", "org.torproject.torbrowser", "net.mullvad.mullvadbrowser",
+        "app.zen-browser.zen",
+        // Chromium-based
+        "com.google.Chrome", "com.google.Chrome.canary", "com.google.Chrome.beta",
+        "org.chromium.Chromium",
+        "com.brave.Browser", "com.brave.Browser.beta", "com.brave.Browser.nightly",
+        "com.microsoft.edgemac", "com.microsoft.edgemac.Beta", 
+        "com.microsoft.edgemac.Dev", "com.microsoft.edgemac.Canary",
+        "com.vivaldi.Vivaldi", "com.vivaldi.Vivaldi.snapshot",
+        "ru.yandex.desktop.yandex-browser",
+        // Opera
+        "com.opera.Opera", "com.operasoftware.Opera", "com.operasoftware.OperaGX",
+        "com.operasoftware.OperaAir", "com.opera.OperaNext",
+        // WebKit-based
+        "com.kagi.kagimacOS",
+        // Others
+        "com.sigmaos.sigmaos.macos", "com.pushplaylabs.sidekick",
+        "com.firstversionist.polypane", "ai.perplexity.comet",
+        "com.duckduckgo.macos.browser", "com.openai.atlas"
+    ]
+    let addressBarRoles: Set<String> = ["AXTextField", "AXTextArea", "AXWindow"]
+    if browsers.contains(bundleId), let role = role, addressBarRoles.contains(role) {
+        return cached(.emptyCharPrefix, (0, 0, 0), "emptyChar:browser")
     }
     
-    // Zen Browser - use selection (AX API returns kAXErrorAPIDisabled = -25204)
-    if bundleId == "app.zen-browser.zen" {
-        return cached(.selection, (500, 1000, 500), "sel:zen")
+    // Games - synchronous proxy injection
+    if bundleId.hasPrefix("com.riotgames") { 
+        return cached(.syncProxy, (0, 0, 0), "sync:game:riot") 
+    }
+    if bundleId.hasPrefix("com.blizzard") { 
+        return cached(.syncProxy, (0, 0, 0), "sync:game:blizzard") 
+    }
+    if bundleId.hasPrefix("com.valvesoftware") { 
+        return cached(.syncProxy, (0, 0, 0), "sync:game:valve") 
     }
     
-    // Other Firefox-based browsers
-    if BundleConstants.firefoxBrowsers.contains(bundleId) {
-        return cached(.selection, (0, 0, 0), "sel:firefox")
-    }
-    
-    // Safari - use selection method
-    if BundleConstants.safariBrowsers.contains(bundleId) && role == "AXTextField" {
-        return cached(.selection, (0, 0, 0), "sel:safari")
-    }
     if role == "AXTextField" && bundleId.hasPrefix("com.jetbrains") { 
         return cached(.selection, (0, 0, 0), "sel:jb") 
     }
+    
+    // Code editors & terminals - higher delays for Monaco/Electron-based apps
+    let codeApps = [
+        // VSCode-based IDEs
+        "com.microsoft.VSCode", "com.google.antigravity", "com.todesktop.cursor",
+        "com.visualstudio.code.oss", "com.vscodium",
+        // Terminals
+        "dev.warp.Warp-Stable", "com.mitchellh.ghostty", "net.kovidgoyal.kitty",
+        "com.apple.Terminal", "com.googlecode.iterm2", "io.alacritty",
+        "com.github.wez.wezterm", "co.zeit.hyper", "org.tabby",
+        "com.raphaelamorim.rio", "com.termius-dmg.mac",
+        // Other code editors
+        "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3", "com.panic.Nova"
+    ]
+    if codeApps.contains(bundleId) { return cached(.slow, (8000, 25000, 8000), "slow:code") }
+    
+    // LaTeX editors (Qt-based) - charByChar for reliable Unicode
+    if bundleId == "texstudio" { return cached(.charByChar, (3000, 8000, 3000), "char:texstudio") }
+    if bundleId.hasPrefix("com.jetbrains") { return cached(.slow, (8000, 25000, 8000), "slow:jb") }
+    
+    // Caudex - char-by-char with higher delays
+    if bundleId == "com.caudex.dev" { return cached(.charByChar, (5000, 15000, 5000), "char:caudex") }
+    
+    // Electron apps - higher delays for Monaco editor
+    if bundleId == "com.todesktop.230313mzl4w4u92" { return cached(.slow, (8000, 15000, 8000), "slow:claude") }
+    if bundleId == "notion.id" { return cached(.slow, (12000, 25000, 12000), "slow:notion") }
     
     // Microsoft Office apps - use backspace method
     if bundleId == "com.microsoft.Excel" { return cached(.slow, (3000, 8000, 3000), "slow:excel") }
     if bundleId == "com.microsoft.Word" { return cached(.slow, (3000, 8000, 3000), "slow:word") }
     
-    // Electron apps - higher delays
-    if bundleId == "com.todesktop.230313mzl4w4u92" { return cached(.slow, (8000, 15000, 8000), "slow:claude") }
-    if bundleId == "notion.id" { return cached(.slow, (100, 200, 100), "slow:notion") }
-    
-    // Modern editors - instant method for speed
-    if BundleConstants.modernEditors.contains(bundleId) { 
-        return cached(.instant, (0, 0, 0), "instant:editor") 
-    }
-    
-    // Terminals - high delays for stable rendering
-    if BundleConstants.terminals.contains(bundleId) { 
-        return cached(.slow, (8000, 25000, 8000), "slow:term") 
-    }
-    
-    // JetBrains IDEs - moderate delays
-    if bundleId.hasPrefix("com.jetbrains") { return cached(.slow, (3000, 8000, 3000), "slow:jb") }
-    
-    // Default: conservative delays
-    return cached(.instant, (0, 0, 0), "default")
+    // Default: safe delays (changed from instant to fast)
+    return cached(.fast, (1000, 3000, 1500), "default")
 }
 
 // MARK: - Screen Text Reading (for word restoration)
@@ -785,9 +916,8 @@ func getWordToRestoreOnBackspace() -> String? {
     
     // CRITICAL FIX: Check if this is a browser address bar
     // Safari address bars contain placeholder text that interferes with restoration
-    var roleVal: CFTypeRef?
-    AXUIElementCopyAttributeValue(axEl, kAXRoleAttribute as CFString, &roleVal)
-    let role = roleVal as? String
+    // Use resolveRole helper to handle role=nil cases
+    let role = resolveRole(axEl: axEl)
     
     // Get bundle ID to detect Safari
     var pid: pid_t = 0
