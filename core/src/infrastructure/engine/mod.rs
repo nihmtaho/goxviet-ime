@@ -57,13 +57,15 @@ pub mod vietnamese {
 }
 
 // Re-export core types
-pub use self::state::history::WordHistory;
 pub use self::core_types::config::{EngineConfig, InputMethod as EngineInputMethod};
 pub use self::core_types::{Action, Result, Transform};
+pub use self::state::history::WordHistory;
 
 // Re-export external english detection (integrated with infrastructure::external::english)
 pub use crate::infrastructure::external::english::dictionary::Dictionary;
-pub use crate::infrastructure::external::english::language_decision::{DecisionResult, LanguageDecisionEngine};
+pub use crate::infrastructure::external::english::language_decision::{
+    DecisionResult, LanguageDecisionEngine,
+};
 pub use crate::infrastructure::external::english::phonotactic::{
     PhonotacticEngine, PhonotacticResult, ValidationResult, VietnameseSyllableValidator,
 };
@@ -71,10 +73,10 @@ pub use crate::infrastructure::external::english::phonotactic::{
 // Flat re-exports for direct access
 pub use self::buffer::raw_input_buffer;
 pub use self::buffer::rebuild;
+pub use self::core_types::config;
 pub use self::features::shortcut;
 pub use self::state::history;
 pub use self::state::restore;
-pub use self::core_types::config;
 pub use self::transform::syllable;
 pub use self::transform::tone_positioning;
 pub use self::transform::vowel_compound;
@@ -615,6 +617,10 @@ impl Engine {
         };
         */
 
+        // Record raw keystroke for ESC restore (letters and numbers only)
+        // Skip modifier keys (s/f/r/x/j in Telex, numbers in VNI) UNLESS it's a revert
+        // (double-key pattern like ff, ss, rr where the second key reverts and adds to buffer).
+        // The revert handling below will add revert keys to raw_input explicitly.
         if (keys::is_letter(key) || keys::is_number(key)) && !should_skip {
             self.raw_input.push(key, caps);
         }
@@ -825,6 +831,14 @@ impl Engine {
         if m.tone(key).is_some() {
             if let Some(Transform::Tone(last_key, _)) = self.last_transform {
                 if last_key == key {
+                    // CRITICAL FIX: Don't add the revert key if it was already added at line 625.
+                    // Letter/number keys are added at line 625 even when used as tone modifiers.
+                    // We should NOT add them again in the double-key flow.
+                    // For non-letter keys, add them here.
+                    if !keys::is_letter(key) && !keys::is_number(key) {
+                        self.raw_input.push(key, caps);
+                    }
+
                     // Save state BEFORE revert (revert_tone sets is_english_word = true)
                     let was_english = self.is_english_word;
                     let display_len_before = self.buf.len();
@@ -834,7 +848,9 @@ impl Engine {
                     // Only if word was ALREADY English before revert (not just marked by revert itself).
                     if was_english && self.raw_input.len() > self.buf.len() {
                         self.sync_buffer_with_raw_input();
-                        let output: Vec<char> = self.raw_input.iter()
+                        let output: Vec<char> = self
+                            .raw_input
+                            .iter()
                             .filter_map(|(k, c)| utils::key_to_char(k, c))
                             .collect();
                         let bs = display_len_before.min(u8::MAX as usize) as u8;
@@ -850,6 +866,16 @@ impl Engine {
         if m.mark(key).is_some() {
             if let Some(Transform::Mark(last_key, _)) = self.last_transform {
                 if last_key == key {
+                    // CRITICAL FIX: Don't add the revert key if it was already added at line 625.
+                    // Letter/number keys (like 's') are added at line 625 even when used as modifiers.
+                    // We should NOT add them again in the double-key flow.
+                    // For non-letter keys like 'f', they weren't added at line 625, so we add them here.
+                    if keys::is_letter(key) || keys::is_number(key) {
+                        // Already added at line 625, don't add again
+                    } else {
+                        self.raw_input.push(key, caps);
+                    }
+
                     // Save state BEFORE revert (revert_mark sets is_english_word = true)
                     let was_english = self.is_english_word;
                     let display_len_before = self.buf.len();
@@ -859,7 +885,9 @@ impl Engine {
                     // Only if word was ALREADY English before revert (not just marked by revert itself).
                     if was_english && self.raw_input.len() > self.buf.len() {
                         self.sync_buffer_with_raw_input();
-                        let output: Vec<char> = self.raw_input.iter()
+                        let output: Vec<char> = self
+                            .raw_input
+                            .iter()
                             .filter_map(|(k, c)| utils::key_to_char(k, c))
                             .collect();
                         let bs = display_len_before.min(u8::MAX as usize) as u8;
@@ -1001,23 +1029,33 @@ impl Engine {
                     if let Some(result) = self.try_tone(key, caps, tone_type, targets) {
                         self.is_english_word = false;
 
-                        // Post-transform confidence check: restore if high English confidence
-                        if let Some(restore_result) = self.check_and_restore_english(0, false) {
-                            self.last_transform = None; // Clear stale transform after English restore
-                            return restore_result;
-                        }
+                        // Skip English detection for Horn/Breve diacriticals (w key in Telex).
+                        // Horn/Breve is an EXPLICIT Vietnamese typing intent signal.
+                        // Common English words ending in 'w' (vow, how, now, cow, bow, etc.)
+                        // would cause false positives, breaking Vietnamese words like vơi, hơi, etc.
+                        // Users can undo horn/breve (double-press w) or press Esc for original text.
+                        let is_horn_or_breve = matches!(tone_type, ToneType::Horn | ToneType::Breve);
 
-                        // After diacritical is applied (aa→â, ee→ê, oo→ô, aw→ă, ow→ơ, uw→ư),
-                        // check if the COMPLETE raw input matches an English dictionary word.
-                        // This catches words like "been"→"bên", "floor"→"flôr", etc.
-                        if self.instant_restore_enabled && self.has_vietnamese_transforms() {
-                            let raw_keys: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
-                            if crate::infrastructure::adapters::validation::english::dictionary::Dictionary::is_english(&raw_keys) {
-                                self.is_english_word = true;
-                                let restore = self.instant_restore_english();
-                                self.sync_buffer_with_raw_input();
-                                self.last_transform = None; // Clear stale transform after English restore
-                                return restore;
+                        if !is_horn_or_breve {
+                            // Post-transform confidence check: restore if high English confidence
+                            if let Some(restore_result) = self.check_and_restore_english(0, false) {
+                                self.last_transform = None;
+                                return restore_result;
+                            }
+
+                            // After diacritical is applied (aa→â, ee→ê, oo→ô),
+                            // check if the COMPLETE raw input matches an English dictionary word.
+                            // This catches words like "been"→"bên", "floor"→"flôr", etc.
+                            if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                                let raw_keys: Vec<u16> =
+                                    self.raw_input.iter().map(|item| item.0).collect();
+                                if crate::infrastructure::adapters::validation::english::dictionary::Dictionary::is_english(&raw_keys) {
+                                    self.is_english_word = true;
+                                    let restore = self.instant_restore_english();
+                                    self.sync_buffer_with_raw_input();
+                                    self.last_transform = None;
+                                    return restore;
+                                }
                             }
                         }
 
@@ -1085,7 +1123,10 @@ impl Engine {
                     // Only uses dictionary (not phonotactic) to avoid false positives.
                     // SKIP for single-vowel + mark (buf.len()==1): "o"+"f"→"ò", "i"+"s"→"í"
                     // These are clearly intentional Vietnamese marks, not English words.
-                    if self.instant_restore_enabled && self.buf.len() > 1 && self.has_vietnamese_transforms() {
+                    if self.instant_restore_enabled
+                        && self.buf.len() > 1
+                        && self.has_vietnamese_transforms()
+                    {
                         let raw_keys: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
                         if crate::infrastructure::external::english::dictionary::Dictionary::is_english(&raw_keys) {
                             self.is_english_word = true;
@@ -1872,7 +1913,8 @@ impl Engine {
                                             // VNI: numbers are unambiguous modifiers, always allow backward
                                         } else {
                                             // Telex: check if adding key as a letter would be valid
-                                            let mut test_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+                                            let mut test_keys: Vec<u16> =
+                                                self.buf.iter().map(|c| c.key).collect();
                                             test_keys.push(key);
                                             let valid_as_letter = crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(&test_keys).is_valid;
                                             if valid_as_letter {
@@ -2687,7 +2729,9 @@ impl Engine {
             if self.is_english_word && self.raw_input.len() > self.buf.len() {
                 // displayed = chars on screen BEFORE this keystroke (buf.len after push - 1)
                 let displayed = (self.buf.len() - 1).min(u8::MAX as usize) as u8;
-                let raw_chars: Vec<char> = self.raw_input.iter()
+                let raw_chars: Vec<char> = self
+                    .raw_input
+                    .iter()
                     .filter_map(|(k, c)| crate::utils::key_to_char(k, c))
                     .collect();
                 self.sync_buffer_with_raw_input();
@@ -3314,7 +3358,9 @@ impl Engine {
         // ALWAYS restore immediately, regardless of Vietnamese validation or confidence scores
         // This ensures words like "console" don't become "cónole"
         let raw_key_list: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
-        let is_dict = crate::infrastructure::external::english::dictionary::Dictionary::is_english(&raw_key_list);
+        let is_dict = crate::infrastructure::external::english::dictionary::Dictionary::is_english(
+            &raw_key_list,
+        );
         eprintln!("DEBUG check_and_restore: has_transforms={}, buf.len={}, raw_input.len={}, is_dict={}, raw_keys={:?}", 
             self.has_vietnamese_transforms(), self.buf.len(), self.raw_input.len(), is_dict, raw_key_list);
         if is_dict {
@@ -3330,7 +3376,9 @@ impl Engine {
 
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
         let phonotactic =
-            crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(&raw_keys);
+            crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(
+                &raw_keys,
+            );
 
         // Get Vietnamese validation
         let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
@@ -3355,7 +3403,9 @@ impl Engine {
             // CRITICAL FIX: Check dictionary against RAW input, not transformed buffer
             let raw_keys_only: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
             let is_raw_dict =
-                crate::infrastructure::external::english::dictionary::Dictionary::is_english(&raw_keys_only);
+                crate::infrastructure::external::english::dictionary::Dictionary::is_english(
+                    &raw_keys_only,
+                );
 
             // SPECIAL HANDLING: For short 2-character valid Vietnamese words that are NOT
             // in the Vietnamese dictionary (like "re" which appears in English but not as standalone Vietnamese),
@@ -3367,14 +3417,15 @@ impl Engine {
             // we should trust the user's intent to type Vietnamese for these ambiguous short words,
             // UNLESS the word is in the English dictionary (handled separately).
             // This fixes the "rẻ" case (typed "rer") being restored to "rer".
-            let is_telex_tone_key =
-                if self.method == crate::infrastructure::engine::types::config::InputMethod::Telex as u8 {
-                    use crate::data::keys::*;
-                    let last = raw_keys_only.last().cloned().unwrap_or(0);
-                    matches!(last, S | F | R | X | J | Z)
-                } else {
-                    false
-                };
+            let is_telex_tone_key = if self.method
+                == crate::infrastructure::engine::types::config::InputMethod::Telex as u8
+            {
+                use crate::data::keys::*;
+                let last = raw_keys_only.last().cloned().unwrap_or(0);
+                matches!(last, S | F | R | X | J | Z)
+            } else {
+                false
+            };
 
             let is_short_undocumented =
                 self.buf.len() <= 2 && self.has_vietnamese_transforms() && !is_raw_dict;
@@ -3407,7 +3458,9 @@ impl Engine {
             let raw_keys_only: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
 
             let is_raw_dict =
-                crate::infrastructure::external::english::dictionary::Dictionary::is_english(&raw_keys_only);
+                crate::infrastructure::external::english::dictionary::Dictionary::is_english(
+                    &raw_keys_only,
+                );
 
             if strict_mode {
                 is_raw_dict
@@ -4906,10 +4959,10 @@ mod tests {
     fn test_double_tone_revert_ss() {
         // "rés" → press 's' again → should become "res"
         let cases: &[(&str, &str)] = &[
-            ("ress", "res"),   // r + e + s(sắc) + s(revert) = "res"
-            ("dass", "das"),   // d + a + s(sắc) + s(revert) = "das"
-            // Note: ("off", "of") can't work because "of" is in English dictionary,
-            // preventing first 'f' from being treated as huyền modifier
+            ("ress", "res"), // r + e + s(sắc) + s(revert) = "res"
+            ("dass", "das"), // d + a + s(sắc) + s(revert) = "das"
+                             // Note: ("off", "of") can't work because "of" is in English dictionary,
+                             // preventing first 'f' from being treated as huyền modifier
         ];
         telex(cases);
     }
@@ -4918,10 +4971,10 @@ mod tests {
     fn test_telex_single_vowel_tone() {
         // Single vowel + tone key should apply the tone, not be treated as English
         let cases: &[(&str, &str)] = &[
-            ("of", "ò"),    // o + f(huyền) = ò
-            ("is", "í"),    // i + s(sắc) = í
-            ("ax", "ã"),    // a + x(ngã) = ã
-            ("ej", "ẹ"),    // e + j(nặng) = ẹ
+            ("of", "ò"), // o + f(huyền) = ò
+            ("is", "í"), // i + s(sắc) = í
+            ("ax", "ã"), // a + x(ngã) = ã
+            ("ej", "ẹ"), // e + j(nặng) = ẹ
         ];
         telex(cases);
     }
@@ -4943,13 +4996,20 @@ mod tests {
         }
 
         // After all keys, buf should have all 6 chars (synced with raw_input)
-        let buf_word: String = e.buf.iter()
+        let buf_word: String = e
+            .buf
+            .iter()
             .filter_map(|c| crate::utils::key_to_char(c.key, c.caps))
             .collect();
 
-        assert_eq!(buf_word, "assign",
+        assert_eq!(
+            buf_word,
+            "assign",
             "Expected 'assign' but got '{}' (buf.len={}, raw.len={})",
-            buf_word, e.buf.len(), e.raw_input.len());
+            buf_word,
+            e.buf.len(),
+            e.raw_input.len()
+        );
     }
 
     #[test]
@@ -4961,16 +5021,29 @@ mod tests {
         e.set_enabled(true);
 
         // Type "message": m-e-s-s-a-g-e
-        for &k in &[keys::M, keys::E, keys::S, keys::S, keys::A, keys::G, keys::E] {
+        for &k in &[
+            keys::M,
+            keys::E,
+            keys::S,
+            keys::S,
+            keys::A,
+            keys::G,
+            keys::E,
+        ] {
             e.on_key_ext(k, false, false, false);
         }
 
-        let buf_word: String = e.buf.iter()
+        let buf_word: String = e
+            .buf
+            .iter()
             .filter_map(|c| crate::utils::key_to_char(c.key, c.caps))
             .collect();
 
-        assert_eq!(buf_word, "message",
-            "Expected 'message' but got '{}'", buf_word);
+        assert_eq!(
+            buf_word, "message",
+            "Expected 'message' but got '{}'",
+            buf_word
+        );
     }
 
     #[test]
@@ -4986,12 +5059,17 @@ mod tests {
             e.on_key_ext(k, false, false, false);
         }
 
-        let buf_word: String = e.buf.iter()
+        let buf_word: String = e
+            .buf
+            .iter()
             .filter_map(|c| crate::utils::key_to_char(c.key, c.caps))
             .collect();
 
-        assert_eq!(buf_word, "afford",
-            "Expected 'afford' but got '{}'", buf_word);
+        assert_eq!(
+            buf_word, "afford",
+            "Expected 'afford' but got '{}'",
+            buf_word
+        );
     }
 
     #[test]
@@ -5012,19 +5090,36 @@ mod tests {
         let _space_result = e.on_key_ext(keys::SPACE, false, false, false);
         // After space, buffer should be empty
         assert_eq!(e.buf.len(), 0, "Buffer should be empty after space");
-        assert_eq!(e.raw_input.len(), 0, "Raw input should be empty after space");
+        assert_eq!(
+            e.raw_input.len(),
+            0,
+            "Raw input should be empty after space"
+        );
 
         // Type "restore" and track cumulative screen position
         let mut screen_chars: usize = 0; // chars currently on screen for this word
-        let restore_keys = [keys::R, keys::E, keys::S, keys::T, keys::O, keys::R, keys::E];
+        let restore_keys = [
+            keys::R,
+            keys::E,
+            keys::S,
+            keys::T,
+            keys::O,
+            keys::R,
+            keys::E,
+        ];
         for (i, &k) in restore_keys.iter().enumerate() {
             let r = e.on_key_ext(k, false, false, false);
             if r.action != 0 {
                 // For Send/Restore results, pending key is swallowed.
                 // Backspace must NEVER exceed what is currently on screen.
-                assert!(r.backspace as usize <= screen_chars,
+                assert!(
+                    r.backspace as usize <= screen_chars,
                     "Step {} (key {}): backspace {} exceeds screen_chars {}",
-                    i, k, r.backspace, screen_chars);
+                    i,
+                    k,
+                    r.backspace,
+                    screen_chars
+                );
                 screen_chars = screen_chars.saturating_sub(r.backspace as usize);
                 screen_chars += r.count as usize;
             } else {
@@ -5044,11 +5139,19 @@ mod tests {
 
         // Now Shift+Backspace should clear the buffer
         let r = e.on_key_ext(crate::data::keys::DELETE, false, false, true); // shift=true
-        // After shift+backspace, the word should be deleted
-        // The engine returns backspace count = screen length of "việt" = 4
-        assert!(r.backspace > 0, "Shift+Backspace should produce backspaces, got backspace={}", r.backspace);
+                                                                             // After shift+backspace, the word should be deleted
+                                                                             // The engine returns backspace count = screen length of "việt" = 4
+        assert!(
+            r.backspace > 0,
+            "Shift+Backspace should produce backspaces, got backspace={}",
+            r.backspace
+        );
         // Shift+Backspace should produce backspaces
-        assert!(r.backspace > 0, "Shift+Backspace should produce backspaces, got backspace={}", r.backspace);
+        assert!(
+            r.backspace > 0,
+            "Shift+Backspace should produce backspaces, got backspace={}",
+            r.backspace
+        );
     }
 
     /// Test auto-restore for English words where Telex 's' applies sắc
@@ -5082,7 +5185,15 @@ mod tests {
         e.set_method(0); // Telex
         e.set_enabled(true);
 
-        for key in [keys::C, keys::O, keys::N, keys::S, keys::O, keys::L, keys::E] {
+        for key in [
+            keys::C,
+            keys::O,
+            keys::N,
+            keys::S,
+            keys::O,
+            keys::L,
+            keys::E,
+        ] {
             e.on_key_ext(key, false, false, false);
         }
 
@@ -5090,6 +5201,64 @@ mod tests {
         assert!(
             !has_transforms,
             "'console' should have no Vietnamese transforms after auto-restore"
+        );
+    }
+
+    #[test]
+    fn test_mark_not_restored_by_english_dict_vow() {
+        use crate::data::keys;
+
+        // Test: "v-o-w" should produce "vơ" (horn on o), NOT restore to "vow"
+        // Even though "vow" is an English word, the horn modifier 'w' signals
+        // explicit Vietnamese typing intent. The user wants vơ → vơi, với, etc.
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        e.on_key_ext(keys::V, false, false, false);
+        e.on_key_ext(keys::O, false, false, false);
+        let r = e.on_key_ext(keys::W, false, false, false);
+
+        // 'w' should apply horn diacritical (stored in tone field), producing "vơ"
+        let has_horn = e.buf.iter().any(|c| c.tone != 0);
+        assert!(
+            has_horn,
+            "'vow' should keep Vietnamese horn (vơ), not restore to English 'vow'"
+        );
+        // Result should send the transformed text (action=Send)
+        assert_eq!(r.action, 1, "Should send transformed text 'vơ'");
+
+        // Continue typing 'i' → should produce "vơi"
+        let _r2 = e.on_key_ext(keys::I, false, false, false);
+        assert_eq!(
+            e.buf.len(),
+            3,
+            "Buffer should have 3 chars for 'vơi'"
+        );
+        let has_horn = e.buf.iter().any(|c| c.tone != 0);
+        assert!(
+            has_horn,
+            "'vơi' should retain horn after adding 'i'"
+        );
+    }
+
+    #[test]
+    fn test_mark_not_restored_by_english_dict_how() {
+        use crate::data::keys;
+
+        // Test: "h-o-w" should produce "hơ", NOT restore to "how"
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.set_enabled(true);
+
+        e.on_key_ext(keys::H, false, false, false);
+        e.on_key_ext(keys::O, false, false, false);
+        e.on_key_ext(keys::W, false, false, false);
+
+        let has_horn = e.buf.iter().any(|c| c.tone != 0);
+        assert!(
+            has_horn,
+            "'how' should keep Vietnamese horn (hơ), not restore to English 'how'"
         );
     }
 }

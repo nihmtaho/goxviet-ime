@@ -19,8 +19,8 @@
 //!    Example: "tẽt" (from typing "text" in Telex) → "text"
 
 use crate::infrastructure::engine::buffer::Buffer;
-use crate::infrastructure::engine::raw_input_buffer::RawInputBuffer;
 use crate::infrastructure::engine::core_types::Result;
+use crate::infrastructure::engine::raw_input_buffer::RawInputBuffer;
 use crate::utils;
 
 /// Build raw ASCII output from raw input history (OPTIMIZED)

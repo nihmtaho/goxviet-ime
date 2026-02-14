@@ -8,4 +8,6 @@ pub use crate::infrastructure::adapters::transformation::transform;
 pub use crate::infrastructure::adapters::transformation::validation;
 pub use crate::infrastructure::adapters::transformation::vowel_compound;
 
-pub use crate::infrastructure::adapters::transformation::{Syllable, ModifierType, TransformResult};
+pub use crate::infrastructure::adapters::transformation::{
+    ModifierType, Syllable, TransformResult,
+};
