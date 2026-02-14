@@ -16,7 +16,7 @@ enum InjectionMethod {
     case fast           // Default: backspace + text with minimal delays
     case slow           // Terminals/Electron: backspace + text with higher delays
     case selection      // Browser address bars: Shift+Left select + type replacement
-    case autocomplete   // Spotlight: Forward Delete + backspace + text via proxy
+    case emptyCharPrefix // Browser address bars: Use U+202F to break autocomplete highlight
     case axDirect       // Browser address bars: AX API direct text manipulation (bypasses autocomplete)
 }
 
@@ -49,6 +49,10 @@ class TextInjector {
     /// Synchronous text injection with app-specific optimization
     /// Synchronous text injection with app-specific optimization
     func injectSync(bs: Int, text: String, method: InjectionMethod, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy, bundleId: String? = nil) {
+        // Log which method is being used
+        let methodName = String(describing: method)
+        Log.info("INJECT: \(methodName) bs=\(bs) text='\(text)' bundleId=\(bundleId ?? "nil")")
+        
         semaphore.wait()
         defer { semaphore.signal() }
         
@@ -59,8 +63,8 @@ class TextInjector {
             injectViaBackspace(bs: bs, text: text, delays: delays)
         case .selection:
             injectViaSelection(bs: bs, text: text, delays: delays)
-        case .autocomplete:
-            injectViaAutocomplete(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+        case .emptyCharPrefix:
+            injectViaEmptyCharPrefix(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
         case .axDirect:
             injectViaAXWithFallback(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
         }
@@ -191,6 +195,92 @@ class TextInjector {
         Log.send("auto", bs, text)
     }
     
+    /// Empty Char Prefix injection: Use U+202F (Narrow No-Break Space) to break autocomplete highlight
+    /// Much simpler than Forward Delete + Backspace approach
+    /// U+202F is invisible and breaks autocomplete suggestion without visible effect
+    private func injectViaEmptyCharPrefix(bs: Int, text: String, proxy: CGEventTapProxy, bundleId: String? = nil) {
+        guard let src = CGEventSource(stateID: .privateState) else { return }
+        
+        // Special case for Zen Browser 'đ' bug (Issue #54)
+        // When typing 'd' then 'd', browser often produces "dđ" due to autocomplete race.
+        // Fix: Type "đ" (result "dđ") -> Left (betw d,đ) -> Backspace (delete d) -> Right (restore cursor)
+        if bundleId == "app.zen-browser.zen" && text == "đ" && bs == 1 {
+            Log.info("Zen: Applying special fix for 'đ'")
+            
+            // 1. Type "đ" (result likely "dđ")
+            postText("đ", source: src, proxy: proxy)
+            usleep(1000)
+            
+            // 2. Left Arrow (move cursor between d and đ)
+            postKey(KeyCode.leftArrow, source: src, proxy: proxy)
+            usleep(1000)
+            
+            // 3. Backspace (delete the first 'd')
+            postKey(KeyCode.backspace, source: src, proxy: proxy)
+            usleep(1000)
+            
+            // 4. Right Arrow (move cursor back to end)
+            postKey(KeyCode.rightArrow, source: src, proxy: proxy)
+            
+            Log.send("emptychar:zen:dd", bs, text)
+            return
+        }
+        
+        // Special case for Arc browser 'đ' bug - similar issue
+        if bundleId == "company.thebrowser.Arc" && text == "đ" && bs == 1 {
+            Log.info("Arc: Applying special fix for 'đ'")
+            
+            postText("đ", source: src, proxy: proxy)
+            usleep(1000)
+            
+            postKey(KeyCode.leftArrow, source: src, proxy: proxy)
+            usleep(1000)
+            
+            postKey(KeyCode.backspace, source: src, proxy: proxy)
+            usleep(1000)
+            
+            postKey(KeyCode.rightArrow, source: src, proxy: proxy)
+            
+            Log.send("emptychar:arc:dd", bs, text)
+            return
+        }
+        
+        // U+202F - Narrow No-Break Space (invisible, breaks autocomplete)
+        let emptyPrefix = "\u{202F}"
+        
+        // First delete the autocomplete suggestion with forward delete
+        postKey(KeyCode.forwardDelete, source: src, proxy: proxy)
+        usleep(2000)
+        
+        // Delete backspace count characters
+        for _ in 0..<bs {
+            postKey(KeyCode.backspace, source: src, proxy: proxy)
+            usleep(500)
+        }
+        if bs > 0 { usleep(3000) }
+        
+        // Type empty prefix + actual text
+        // Empty prefix breaks autocomplete highlight, then actual text is inserted
+        postText(emptyPrefix + text, source: src, proxy: proxy)
+        
+        // Move cursor back by 1 to position after empty prefix (removes it from display)
+        // This ensures cursor is at correct position for next keystroke
+        for _ in 0..<emptyPrefix.utf16.count {
+            postKey(KeyCode.leftArrow, source: src, proxy: proxy)
+            usleep(500)
+        }
+        
+        // Delete the empty prefix (which removes it from actual text)
+        postKey(KeyCode.backspace, source: src, proxy: proxy)
+        usleep(500)
+        
+        // Move cursor back to end of actual text
+        for _ in 0..<text.utf16.count {
+            postKey(KeyCode.rightArrow, source: src, proxy: proxy)
+            usleep(500)
+        }
+    }
+    
     // MARK: - AX API Direct Injection
     
     /// AX API direct text manipulation for browser address bars
@@ -242,7 +332,8 @@ class TextInjector {
         // Handle autocomplete: when selection > 0, text after cursor is autocomplete suggestion
         let hasAutocompleteSuggestion = selection > 0
 
-        // Calculate replacement: delete `bs` chars before cursor, insert `text`
+        // Calculate replacement: delete `bs` chars (UTF-16 units) before cursor, insert `text`
+        // CRITICAL: Use UTF-16 count for bs since AX API uses UTF-16
         let deleteStart = max(0, cursor - bs)
         let prefix = nsText.substring(to: deleteStart)
         
@@ -259,11 +350,15 @@ class TextInjector {
             ? nsText.substring(from: cursor)
             : ""
         
-        let newText = (prefix + text + suffix).precomposedStringWithCanonicalMapping
+        // Debug logging for Vietnamese characters
+        Log.info("AX: input text='\(text)' utf16=\(text.utf16.count) chars=\(text.count)")
+        
+        // Don't use precomposedStringWithCanonicalMapping - it may break Vietnamese diacritics
+        let newText = prefix + text + suffix
         
         // Debug logging
         Log.info("AX: cursor=\(cursor), selection=\(selection), hasAutocomplete=\(hasAutocompleteSuggestion)")
-        Log.info("  newText: '\(newText)'")
+        Log.info("  prefix='\(prefix)' suffix='\(suffix)' newText='\(newText)'")
         
         // Step 1: Write new value (WITHOUT suggestion content)
         // This deletes backspace chars, inserts new text, and OMITS the suggestion entirely
@@ -288,8 +383,10 @@ class TextInjector {
            let verifyText = checkValueRef as? String {
             
             // If text got longer than calculated newText, browser re-added suggestion
-            if verifyText.count > newText.count {
-                Log.info("AX: VERIFY FAILED - browser override (len \(newText.count) -> \(verifyText.count))")
+            let newTextUtf16 = (newText as NSString).length
+            let verifyTextUtf16 = (verifyText as NSString).length
+            if verifyTextUtf16 > newTextUtf16 {
+                Log.info("AX: VERIFY FAILED - browser override (len \(newTextUtf16) -> \(verifyTextUtf16))")
                 return .browserOverride
             }
             if verifyText != newText {
@@ -313,6 +410,15 @@ class TextInjector {
     /// Try AX injection with optimized retry/fallback logic
     /// Try AX injection with optimized retry/fallback logic
     private func injectViaAXWithFallback(bs: Int, text: String, proxy: CGEventTapProxy, bundleId: String? = nil) {
+        // Special case for Zen/Arc 'đ' bug - use selection method instead of AX
+        // When typing 'd' then 'd', browser often produces "dđ" due to autocomplete race with AX API
+        if (bundleId == "app.zen-browser.zen" || bundleId == "company.thebrowser.Arc") 
+           && text == "đ" && bs == 1 {
+            Log.info("AX: special case 'đ' for \(bundleId ?? "unknown") - using selection method")
+            injectViaSelection(bs: bs, text: text, delays: (500, 1000, 500))
+            return
+        }
+        
         // Retry loop for transient AX failures (busy system/Spotlight)
         for attempt in 0..<3 {
             if attempt > 0 { usleep(5000) } // 5ms backoff
@@ -325,7 +431,12 @@ class TextInjector {
             case .browserOverride:
                 // Immediate fallback if browser interferes (don't retry)
                 Log.info("AX: attempt \(attempt) override detected -> fallback")
-                injectViaAutocomplete(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+                // Use selection method for Zen/Arc, emptyCharPrefix for others
+                if bundleId == "app.zen-browser.zen" || bundleId == "company.thebrowser.Arc" {
+                    injectViaSelection(bs: bs, text: text, delays: (500, 1000, 500))
+                } else {
+                    injectViaEmptyCharPrefix(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+                }
                 return
                 
             case .axFailure:
@@ -337,7 +448,12 @@ class TextInjector {
         
         // Retries exhausted -> Fallback
         Log.info("AX: retries exhausted -> fallback")
-        injectViaAutocomplete(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+        // Use selection method for Zen/Arc, emptyCharPrefix for others
+        if bundleId == "app.zen-browser.zen" || bundleId == "company.thebrowser.Arc" {
+            injectViaSelection(bs: bs, text: text, delays: (500, 1000, 500))
+        } else {
+            injectViaEmptyCharPrefix(bs: bs, text: text, proxy: proxy, bundleId: bundleId)
+        }
     }
     
 
@@ -551,20 +667,24 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     var role: String?
     var bundleId: String?
     
-    if AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-       let el = focused {
+    let focusResult = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focused)
+    Log.info("AX focus: result=\(focusResult.rawValue)")
+    
+    if focusResult == .success, let el = focused {
         let axEl = el as! AXUIElement
         
-        // Get role
+        // Get role with error logging
         var roleVal: CFTypeRef?
-        AXUIElementCopyAttributeValue(axEl, kAXRoleAttribute as CFString, &roleVal)
+        let roleResult = AXUIElementCopyAttributeValue(axEl, kAXRoleAttribute as CFString, &roleVal)
         role = roleVal as? String
+        Log.info("AX role: result=\(roleResult.rawValue) role=\(role ?? "nil")")
         
         // Get owning app's bundle ID (works for Spotlight overlay)
         var pid: pid_t = 0
         if AXUIElementGetPid(axEl, &pid) == .success {
             if let app = NSRunningApplication(processIdentifier: pid) {
                 bundleId = app.bundleIdentifier
+                Log.info("AX pid app: \(bundleId ?? "nil")")
             }
         }
     }
@@ -572,6 +692,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     // Fallback to frontmost app if we couldn't get bundle from focused element
     if bundleId == nil {
         bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        Log.info("Fallback bundleId: \(bundleId ?? "nil")")
     }
     
     guard let bundleId = bundleId else { return (.fast, (200, 800, 500)) }
@@ -592,29 +713,25 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
         return cached(.axDirect, (0, 0, 0), "ax:spotlight")
     }
     
-    // Arc/Dia browser - use selection method (same as Chrome which works)
+    // Arc browser - use axDirect (works on Arc)
     let theBrowserCompany = ["company.thebrowser.Browser", "company.thebrowser.Arc", "company.thebrowser.dia"]
-    if theBrowserCompany.contains(bundleId) && (role == "AXTextField" || role == "AXTextArea") {
+    if theBrowserCompany.contains(bundleId) {
         return cached(.axDirect, (0, 0, 0), "ax:arc")
     }
     
-    // Chromium-based browser address bars - use selection method
-    if BundleConstants.chromiumBrowsers.contains(bundleId) && role == "AXTextField" {
-        return cached(.selection, (0, 0, 0), "sel:chromium-addr")
+    // Chromium-based browsers - use selection
+    if BundleConstants.chromiumBrowsers.contains(bundleId) {
+        return cached(.selection, (0, 0, 0), "sel:chromium")
     }
     
-    // Firefox-based browsers (including Zen Browser) - selection for address bar, slow for content
+    // Zen Browser - use selection (AX API returns kAXErrorAPIDisabled = -25204)
+    if bundleId == "app.zen-browser.zen" {
+        return cached(.selection, (500, 1000, 500), "sel:zen")
+    }
+    
+    // Other Firefox-based browsers
     if BundleConstants.firefoxBrowsers.contains(bundleId) {
-        if role == "AXTextField" || role == "AXWindow" || role == "AXTextArea" {
-            if bundleId == "app.zen-browser.zen" {
-                // Use axDirect method with fallback to optimized autocomplete
-                // 1ms selection, 2ms wait, 1ms type - balanced for speed and correctness
-                return cached(.axDirect, (0, 0, 0), "ax:zen")
-            }
-            return cached(.selection, (0, 0, 0), "sel:firefox-addr")
-        } else {
-            return cached(.slow, (3000, 8000, 3000), "slow:firefox")
-        }
+        return cached(.selection, (0, 0, 0), "sel:firefox")
     }
     
     // Safari - use selection method

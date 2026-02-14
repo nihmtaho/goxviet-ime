@@ -216,15 +216,55 @@ class InputManager: LifecycleManaged {
     
     // MARK: - Mouse Monitoring
     
+    /// Track if focused element is text input (AXTextField, AXTextArea, AXComboBox)
+    private var isFocusedOnTextInput: Bool = false
+    
+    /// Check if current focused element is a text input field
+    private func checkFocusedElementIsTextInput() -> Bool {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let element = focusedRef else {
+            return false
+        }
+        
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element as! AXUIElement, kAXRoleAttribute as CFString, &roleRef) == .success,
+              let role = roleRef as? String else {
+            return false
+        }
+        
+        let textInputRoles = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+        return textInputRoles.contains(role)
+    }
+    
     /// Start NSEvent global monitor for mouse events
-    /// This is more reliable than CGEventTap for detecting mouse clicks
+    /// Only clears buffers when click is on text input field
     private func startMouseMonitor() {
         // Monitor both mouseDown and mouseUp to catch clicks and drag-selects
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] _ in
-            // Clear all buffers on mouse click (user may be selecting/deleting text)
-            ime_clear_all_v2()
-            TextInjector.shared.clearSessionBuffer()
-            Log.info("Mouse click detected - cleared all buffers")
+            guard let self = self else { return }
+            
+            // Only clear buffers if currently focused on text input
+            if self.isFocusedOnTextInput {
+                ime_clear_all_v2()
+                TextInjector.shared.clearSessionBuffer()
+                Log.info("Mouse click on text input - cleared all buffers")
+            } else {
+                Log.info("Mouse click outside text input - ignored")
+            }
+        }
+    }
+    
+    /// Update focus state - call this periodically or on focus change
+    func updateFocusState() {
+        let wasFocused = isFocusedOnTextInput
+        isFocusedOnTextInput = checkFocusedElementIsTextInput()
+        
+        if wasFocused && !isFocusedOnTextInput {
+            Log.info("Focus moved OUT of text input")
+        } else if !wasFocused && isFocusedOnTextInput {
+            Log.info("Focus moved INTO text input")
         }
     }
     
@@ -437,6 +477,9 @@ class InputManager: LifecycleManaged {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
         
+        // Update focus state to track if we're in text input
+        updateFocusState()
+        
         // 4. Check for toggle shortcut (default: Control+Space)
         if currentShortcut.matches(keyCode: keyCode, flags: flags) {
             toggleEnabled()
@@ -469,12 +512,14 @@ class InputManager: LifecycleManaged {
             let (text, backspace, consumed) = ime_key_v2(UInt16(keyCode), false, false)
             if consumed {
                 let (method, delays) = detectMethod()
+                let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 TextInjector.shared.injectSync(
                     bs: backspace,
                     text: text,
                     method: method,
                     delays: delays,
-                    proxy: proxy
+                    proxy: proxy,
+                    bundleId: bundleId
                 )
                 return nil
             }
@@ -564,12 +609,14 @@ class InputManager: LifecycleManaged {
             let result = try RustBridgeV2.shared.restoreToRaw()
             if !result.text.isEmpty || result.backspaceCount > 0 {
                 let (method, delays) = detectMethod()
+                let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 TextInjector.shared.injectSync(
                     bs: result.backspaceCount,
                     text: result.text,
                     method: method,
                     delays: delays,
-                    proxy: proxy
+                    proxy: proxy,
+                    bundleId: bundleId
                 )
                 Log.info("Restore shortcut triggered: bs=\(result.backspaceCount), text='\(result.text)'")
             }
@@ -671,12 +718,14 @@ class InputManager: LifecycleManaged {
         
         // Inject replacement text using smart injection
         let (method, delays) = detectMethod()
+        let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         TextInjector.shared.injectSync(
             bs: backspace,
             text: text,
             method: method,
             delays: delays,
-            proxy: proxy
+            proxy: proxy,
+            bundleId: bundleId
         )
         
         // Swallow the original event
@@ -719,6 +768,7 @@ class InputManager: LifecycleManaged {
             if !text.isEmpty || backspace > 0 {
                 // Detect injection method
                 let (method, delays) = detectMethod()
+                let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 
                 // Inject transformation
                 TextInjector.shared.injectSync(
@@ -726,7 +776,8 @@ class InputManager: LifecycleManaged {
                     text: text,
                     method: method,
                     delays: delays,
-                    proxy: proxy
+                    proxy: proxy,
+                    bundleId: bundleId
                 )
                 
                 Log.info("DELETE processed: bs=\(backspace), text='\(text)'")

@@ -160,6 +160,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         SpecialPanelAppDetector.invalidateCache()
         SpecialPanelAppDetector.updateLastFrontMostApp(bundleId)
         
+        // Clear injection method detection cache on app switch
+        clearDetectionCache()
+        
         // Save previous app state - must capture before updating currentBundleId
         let previousId = currentBundleId
         if let previousId = previousId,
