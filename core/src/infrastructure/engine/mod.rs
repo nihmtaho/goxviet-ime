@@ -958,7 +958,7 @@ impl Engine {
                                         // Need preceding char
                                         if last_idx > 0 {
                                             let prev_cons = self.buf.get(last_idx - 1).unwrap();
-                                            let s = format!("{}{}", 
+                                            let s = format!("{}{}",
                                                 crate::utils::key_to_char(prev_cons.key, false).unwrap_or(' '),
                                                 cons_char
                                             );
@@ -1034,7 +1034,8 @@ impl Engine {
                         // Common English words ending in 'w' (vow, how, now, cow, bow, etc.)
                         // would cause false positives, breaking Vietnamese words like vơi, hơi, etc.
                         // Users can undo horn/breve (double-press w) or press Esc for original text.
-                        let is_horn_or_breve = matches!(tone_type, ToneType::Horn | ToneType::Breve);
+                        let is_horn_or_breve =
+                            matches!(tone_type, ToneType::Horn | ToneType::Breve);
 
                         if !is_horn_or_breve {
                             // Post-transform confidence check: restore if high English confidence
@@ -1543,7 +1544,7 @@ impl Engine {
                     if crate::infrastructure::external::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str)
                     {
                         eprintln!("DEBUG can_apply_diacritical: CASE 1 FOUND FINAL CONSONANT");
-                        
+
                         // SPECIAL CASE: Backward application
                         // When backward applying diacritical (e.g., "cam" + "a" → "câm"),
                         // the final consonant IS AT THE END, which is EXPECTED and ALLOWED
@@ -1551,15 +1552,15 @@ impl Engine {
                             eprintln!("DEBUG can_apply_diacritical: backward application with final consonant at end, ALLOW");
                             return true; // ALLOW backward application
                         }
-                        
+
                         // Check if it's truly final (not part of a 2-char consonant followed by vowel)
                         if target_pos + 2 >= self.buf.len() {
                             eprintln!("DEBUG can_apply_diacritical: final consonant at end of buffer, REJECT");
                             return false; // REJECT: vowel followed by final consonant at end
                         }
-                        
+
                         let after_cons = self.buf.get(target_pos + 2).unwrap();
-                        
+
                         // Check if it forms a digraph (e.g. 'ng', 'nh', 'ch')
                         let is_digraph = if let Some(second_char) = crate::utils::key_to_char(after_cons.key, false) {
                              let two_char = format!("{}{}", cons_char, second_char);
@@ -1568,17 +1569,17 @@ impl Engine {
 
                         if is_digraph {
                              // SPECIAL CASE: It's a valid digraph final (ng, nh, ch)
-                             eprintln!("DEBUG can_apply_diacritical: found digraph final"); 
+                             eprintln!("DEBUG can_apply_diacritical: found digraph final");
 
                              // Check what follows the digraph
                              if target_pos + 3 >= self.buf.len() {
                                   // End of buffer.
                                   // Backward application allows final consonant at end.
-                                  if is_backward_application { 
+                                  if is_backward_application {
                                       eprintln!("DEBUG can_apply_diacritical: backward application with digraph final at end, ALLOW");
-                                      return true; 
+                                      return true;
                                   }
-                                  
+
                                   // Even if not backward application (e.g. valid word),
                                   // a final consonant shouldn't block tone on the vowel?
                                   // Logic 1386 says "backward application ... final consonant IS AT THE END ... is ALLOWED"
@@ -1589,22 +1590,22 @@ impl Engine {
                                   eprintln!("DEBUG can_apply_diacritical: valid digraph matching end of buffer, ALLOW");
                                   return true;
                              }
-                             
+
                              // If not end of buffer, check what's after digraph.
                              let after_digraph = self.buf.get(target_pos + 3).unwrap();
                              if !keys::is_vowel(after_digraph.key) {
                                   eprintln!("DEBUG can_apply_diacritical: digraph followed by non-vowel, REJECT");
                                   return false; // REJECT
                              }
-                             
-                             // Followed by vowel? 
+
+                             // Followed by vowel?
                              // e.g. "unga". "ng" is final? No, "ng" + "a" -> "nga".
                              // So "u" + "nga". "u" is open?
                              // This is complex but for now we assume rejection or allow based on validator.
                              // But here we are VALIDATING DIACRITICAL PLACEMENT.
                              // Safest to reject if followed by vowel as it changes syllable structure?
                              eprintln!("DEBUG can_apply_diacritical: digraph followed by vowel, REJECT");
-                             return false; 
+                             return false;
                         }
 
                         // Not a digraph. Check single char.
@@ -1612,7 +1613,7 @@ impl Engine {
                             eprintln!("DEBUG can_apply_diacritical: final consonant followed by non-vowel, REJECT");
                             return false; // REJECT: vowel followed by final consonant
                         }
-                        
+
                         // Single final consonant followed by vowel = it's part of the syllable
                         eprintln!("DEBUG can_apply_diacritical: final consonant followed by vowel, REJECT");
                         return false; // REJECT
@@ -1661,7 +1662,7 @@ impl Engine {
                             } else {
                                 false // Consonant at position 0 can't be final (no vowel before it)
                             };
-                            
+
                             if has_vowel_before {
                                 eprintln!("DEBUG can_apply_diacritical: CASE 2 FOUND TRUE FINAL CONSONANT (has vowel before), REJECT");
                                 return false; // REJECT: target vowel starts new syllable after complete one
@@ -1837,7 +1838,7 @@ impl Engine {
                                 // Need preceding char
                                 if last_buf_idx > 0 {
                                     let prev_cons = self.buf.get(last_buf_idx - 1).unwrap();
-                                    let s = format!("{}{}", 
+                                    let s = format!("{}{}",
                                         crate::utils::key_to_char(prev_cons.key, false).unwrap_or(' '),
                                         cons_char
                                     );
@@ -1877,7 +1878,7 @@ impl Engine {
                         // Look backward to find matching vowel that can receive this diacritical
                         for pos in (0..last_buf_idx).rev() {
                             if let Some(c) = self.buf.get(pos) {
-                                eprintln!("DEBUG try_tone backward: Checking pos={}, key={}, is_vowel={}, tone={}", 
+                                eprintln!("DEBUG try_tone backward: Checking pos={}, key={}, is_vowel={}, tone={}",
                                     pos, c.key, keys::is_vowel(c.key), c.tone);
 
                                 // For VNI mode: match by tone targets (e.g., 6 can apply to a,e,o)
@@ -3361,7 +3362,7 @@ impl Engine {
         let is_dict = crate::infrastructure::external::english::dictionary::Dictionary::is_english(
             &raw_key_list,
         );
-        eprintln!("DEBUG check_and_restore: has_transforms={}, buf.len={}, raw_input.len={}, is_dict={}, raw_keys={:?}", 
+        eprintln!("DEBUG check_and_restore: has_transforms={}, buf.len={}, raw_input.len={}, is_dict={}, raw_keys={:?}",
             self.has_vietnamese_transforms(), self.buf.len(), self.raw_input.len(), is_dict, raw_key_list);
         if is_dict {
             eprintln!("DEBUG: Restoring from dictionary match");
@@ -5230,16 +5231,9 @@ mod tests {
 
         // Continue typing 'i' → should produce "vơi"
         let _r2 = e.on_key_ext(keys::I, false, false, false);
-        assert_eq!(
-            e.buf.len(),
-            3,
-            "Buffer should have 3 chars for 'vơi'"
-        );
+        assert_eq!(e.buf.len(), 3, "Buffer should have 3 chars for 'vơi'");
         let has_horn = e.buf.iter().any(|c| c.tone != 0);
-        assert!(
-            has_horn,
-            "'vơi' should retain horn after adding 'i'"
-        );
+        assert!(has_horn, "'vơi' should retain horn after adding 'i'");
     }
 
     #[test]

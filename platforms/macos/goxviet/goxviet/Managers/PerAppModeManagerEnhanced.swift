@@ -175,6 +175,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         // Update current
         currentBundleId = bundleId
         
+        // Reset spotlight check flag for next detection
+        resetSpotlightCheck()
+        
         // Clear buffer
         ime_clear_v2()
         
@@ -399,6 +402,50 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
                 handleActivationNotification(notification)
             }
         }
+    }
+    
+    /// Lightweight check for Spotlight only - called on first keystroke.
+    /// Spotlight doesn't fire AX notifications consistently, so we need this fallback.
+    /// Uses flag to only check once per session (until next app switch).
+    private var spotlightChecked = false
+    private static let spotlightBundleId = "com.apple.Spotlight"
+    
+    func checkSpotlightOnce() {
+        // Skip if already checked in this session
+        guard !spotlightChecked else { return }
+        spotlightChecked = true
+        
+        // Quick check: is Spotlight the focused element?
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedElement: CFTypeRef?
+        
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
+              let element = focusedElement else { return }
+        
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element as! AXUIElement, &pid) == .success, pid > 0,
+              let app = NSRunningApplication(processIdentifier: pid),
+              let bundleId = app.bundleIdentifier,
+              bundleId.hasPrefix(Self.spotlightBundleId) else { return }
+        
+        // Spotlight is active - handle app switch if not already tracked
+        if bundleId != currentBundleId {
+            Log.info("Spotlight detected via checkSpotlightOnce()")
+            let userInfo: [AnyHashable: Any] = [
+                NSWorkspace.applicationUserInfoKey: app
+            ]
+            let notification = Notification(
+                name: NSWorkspace.didActivateApplicationNotification,
+                object: NSWorkspace.shared,
+                userInfo: userInfo
+            )
+            handleActivationNotification(notification)
+        }
+    }
+    
+    /// Reset spotlight check flag - call when app switch occurs
+    func resetSpotlightCheck() {
+        spotlightChecked = false
     }
 }
 

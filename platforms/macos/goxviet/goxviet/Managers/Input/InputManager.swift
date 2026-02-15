@@ -10,23 +10,19 @@ import ApplicationServices
 
 // MARK: - Break Key Detection
 
-// OPTIMIZATION: Static Sets avoid reallocating on every call
-private let standardBreakKeys: Set<CGKeyCode> = [
-    49, 48, 36, 76, 53,  // space, tab, return, enter, esc
-    123, 124, 125, 126,  // left, right, down, up arrows
-    47, 43, 44, 41, 39, 33, 30, 42, 24, 27, 50  // punctuation: . , / ; ' [ ] \ = - `
-]
-
-private let  numberKeys: Set<CGKeyCode> = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25]
-
 /// Check if key is a break key (space, punctuation, arrows, etc.)
 /// When shift=true, also treat number keys as break (they produce !@#$%^&*())
 @inline(__always)
 private func isBreakKey(_ keyCode: CGKeyCode, shift: Bool) -> Bool {
-    if standardBreakKeys.contains(keyCode) { return true }
-    
+    // Standard break keys: space, tab, return, arrows, punctuation
+    if KeyCodeSets.breakKeys.contains(keyCode) { return true }
+
     // Shifted number keys produce symbols: !@#$%^&*()
-    return shift && numberKeys.contains(keyCode)
+    if shift {
+        return KeyCodeSets.numbers.contains(keyCode)
+    }
+
+    return false
 }
 
 // MARK: - Input Manager
@@ -475,6 +471,9 @@ class InputManager: LifecycleManaged {
             return Unmanaged.passUnretained(event)
         }
         
+        // Check for Spotlight on first keystroke (Spotlight doesn't fire AX notifications)
+        PerAppModeManagerEnhanced.shared.checkSpotlightOnce()
+        
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
         
@@ -520,14 +519,13 @@ class InputManager: LifecycleManaged {
             let (text, backspace, consumed) = ime_key_v2(UInt16(keyCode), false, false)
             if consumed {
                 let (method, delays) = detectMethod()
-                let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 TextInjector.shared.injectSync(
                     bs: backspace,
                     text: text,
                     method: method,
                     delays: delays,
                     proxy: proxy,
-                    bundleId: bundleId
+                    
                 )
                 return nil
             }
@@ -617,14 +615,13 @@ class InputManager: LifecycleManaged {
             let result = try RustBridgeV2.shared.restoreToRaw()
             if !result.text.isEmpty || result.backspaceCount > 0 {
                 let (method, delays) = detectMethod()
-                let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 TextInjector.shared.injectSync(
                     bs: result.backspaceCount,
                     text: result.text,
                     method: method,
                     delays: delays,
                     proxy: proxy,
-                    bundleId: bundleId
+                    
                 )
                 Log.info("Restore shortcut triggered: bs=\(result.backspaceCount), text='\(result.text)'")
             }
@@ -726,15 +723,26 @@ class InputManager: LifecycleManaged {
         
         // Inject replacement text using smart injection
         let (method, delays) = detectMethod()
-        let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        Log.info("DEBUG: method=\(method), delays=\(delays), bs=\(backspace), text='\(text)'")
         TextInjector.shared.injectSync(
             bs: backspace,
             text: text,
             method: method,
             delays: delays,
             proxy: proxy,
-            bundleId: bundleId
+            
         )
+        
+        // FIX: Clear buffer after break keys (punctuation) to prevent issues like "d-d" -> "dđ"
+        // Break keys reset composition context, so buffer should be cleared
+        if keyCode.isBreakKey {
+            ime_clear_v2()
+            Log.info("Cleared buffer after break key: \(keyCode)")
+        }
+        
+        // NOTE: Do NOT clear buffer after axDirect/emptyCharPrefix injection.
+        // The engine must retain composition state for multi-keystroke words (e.g., "dd"→"đ", "viets"→"viết").
+        // AX injection correctly handles autocomplete by reading current field state on each keystroke.
         
         // Swallow the original event
         return nil
@@ -776,7 +784,6 @@ class InputManager: LifecycleManaged {
             if !text.isEmpty || backspace > 0 {
                 // Detect injection method
                 let (method, delays) = detectMethod()
-                let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 
                 // Inject transformation
                 TextInjector.shared.injectSync(
@@ -785,7 +792,7 @@ class InputManager: LifecycleManaged {
                     method: method,
                     delays: delays,
                     proxy: proxy,
-                    bundleId: bundleId
+                    
                 )
                 
                 Log.info("DELETE processed: bs=\(backspace), text='\(text)'")
