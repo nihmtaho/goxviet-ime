@@ -616,8 +616,8 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
 
     // Safari: address bar uses emptyCharPrefix, content areas (Google Docs) use charByChar
     if BundleConstants.safariBrowsers.contains(bundleId) {
-        if role == "AXTextField" { return cached(.emptyCharPrefix, (0, 0, 0), "emptyChar:safari") }
-        return cached(.charByChar, (0, 0, 0), "char:safari")
+        if role == "AXTextField" { return cached(.emptyCharPrefix, (0, 0, 0), "ax:safari") }
+        return cached(.emptyCharPrefix, (0, 0, 0), "char:safari")
     }
 
     // Browser address bars: emptyCharPrefix to break autocomplete
