@@ -856,9 +856,6 @@ impl Engine {
                         let bs = display_len_before.min(u8::MAX as usize) as u8;
                         return Result::send(bs, &output);
                     }
-                    if let Some(restored) = self.check_and_restore_english(1, true) {
-                        return restored;
-                    }
                     return result;
                 }
             }
@@ -892,9 +889,6 @@ impl Engine {
                             .collect();
                         let bs = display_len_before.min(u8::MAX as usize) as u8;
                         return Result::send(bs, &output);
-                    }
-                    if let Some(restored) = self.check_and_restore_english(1, true) {
-                        return restored;
                     }
                     return result;
                 }
