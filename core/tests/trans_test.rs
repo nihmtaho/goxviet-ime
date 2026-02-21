@@ -59,18 +59,18 @@ fn test_triple_vowels() {
 fn test_double_tone_keys() {
     let mut engine = Engine::new();
 
-    // ss
+    // ss - Double-tone should revert the tone, not output the raw input
     engine.on_key(keys::A, false, false); // a
     engine.on_key(keys::S, false, false); // á
-    engine.on_key(keys::S, false, false); // ass (definite English)
-    assert_eq!(engine.get_buffer(), "ass");
+    engine.on_key(keys::S, false, false); // as (double-tone revert)
+    assert_eq!(engine.get_buffer(), "as");
 
     engine.clear();
-    // ff
+    // ff - Double-mark should revert the mark, not output the raw input
     engine.on_key(keys::A, false, false); // a
     engine.on_key(keys::F, false, false); // à
-    engine.on_key(keys::F, false, false); // aff (definite English)
-    assert_eq!(engine.get_buffer(), "aff");
+    engine.on_key(keys::F, false, false); // af (double-mark revert)
+    assert_eq!(engine.get_buffer(), "af");
 }
 
 #[test]
