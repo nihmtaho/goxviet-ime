@@ -1,8 +1,4 @@
 WORD	INPUT	EXPECTED	ACTUAL	CATEGORY
-Blô	Blo6	Blô	Blo6	Dictionary
-Hrê	Hre6	Hrê	Hre6	Dictionary
-HĐND	HD9ND	HĐND	hd9ND	Dictionary
-Hđrung	Hd9rung	Hđrung	hd9rung	Dictionary
 Kpă	Kpa8	Kpă	Kpa8	Dictionary
 Kuênh	Kue6nh	Kuênh	Kue6nh	Dictionary
 Kđrao	Kd9rao	Kđrao	kd9rao	Dictionary

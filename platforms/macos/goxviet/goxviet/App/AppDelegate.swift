@@ -748,14 +748,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Log memory after cleanup
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            _ = self // suppress unused warning
             #if DEBUG
-            let stats = MemoryProfiler.shared.captureSnapshot()
-            NSLog("[GoxViet] Memory after settings close: \(stats.formattedUsedMemory)")
-            
-            // Trigger auto-cleanup if memory still high
-            if stats.usedMemoryMB > 40.0 {
-                MemoryProfiler.shared.triggerAutoCleanup(aggressive: true)
-            }
+            NSLog("[GoxViet] Settings cleanup complete")
             #endif
         }
     }

@@ -2,7 +2,7 @@
 //  AdvancedSettingsView.swift
 //  GoxViet
 //
-//  Enhanced Advanced Settings with metrics, logs, and diagnostics
+//  Enhanced Advanced Settings with logs and diagnostics
 //
 
 import SwiftUI
@@ -29,7 +29,7 @@ struct AdvancedSettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Advanced Settings")
                         .font(.system(size: 20, weight: .semibold))
-                    Text("Diagnostics, metrics, and advanced configuration")
+                    Text("Diagnostics and advanced configuration")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }

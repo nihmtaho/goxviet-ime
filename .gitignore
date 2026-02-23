@@ -199,3 +199,4 @@ gha-creds-*.json
 *.skill
 .venv
 .ruff_cache
+.uvasx/

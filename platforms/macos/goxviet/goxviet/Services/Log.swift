@@ -13,6 +13,12 @@ enum Log {
     static let logPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/GoxViet/keyboard.log")
     
+    /// Cached formatter to avoid repeated allocation on every log write
+    private static let dateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        return formatter
+    }()
+    
     /// Whether logging is enabled (persisted in UserDefaults)
     static var isEnabled: Bool {
         get {
@@ -44,7 +50,7 @@ enum Log {
             rotateLog()
         }
         
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = dateFormatter.string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
         
         // Ensure directory exists
@@ -55,9 +61,9 @@ enum Log {
         if let data = line.data(using: .utf8) {
             if FileManager.default.fileExists(atPath: logPath.path) {
                 if let handle = try? FileHandle(forWritingTo: logPath) {
+                    defer { handle.closeFile() }
                     handle.seekToEndOfFile()
                     handle.write(data)
-                    handle.closeFile()
                 }
             } else {
                 try? data.write(to: logPath)
