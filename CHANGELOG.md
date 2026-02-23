@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [2.0.9] - 2026-02-10
+## [2.0.9] - 2026-02-23
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.9.md](.release-notes/release_note_2.0.9.md)
 
