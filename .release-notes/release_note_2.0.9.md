@@ -19,6 +19,13 @@
 
 ## 🐛 Sửa lỗi
 
+### Text Injection & English Detection Improvements (PR #61)
+
+- **English Detection for Horn/Breve**: Skip English detection for Horn (ʼ) and Breve (˘) diacritical marks to prevent false negatives in Vietnamese text processing
+- **Text Injection Methods**: Improved text injection handlers with better bundleId-based application detection
+- **Memory Leaks**: Fixed memory leaks in MemoryProfiler, InputManager, and Log services
+- **Redundant Checks**: Removed redundant English auto-restore checks for cleaner logic flow
+
 ### Engine Core - 5 lỗi logic quan trọng đã được sửa
 
 1. **Sửa lỗi Smart 'w' Double-Apply** (Issue #1)
@@ -151,14 +158,18 @@
 
 ## 🔗 Tham khảo
 
+- PR: #61 - "fix(core,macos): Improve English detection for Horn/Breve diacriticals and text injection"
 - PR: #60 - "chore: cleanup structure + add dictionary test analysis"
 - PR: #59 - "Memory optimization and app lifecycle improvements"
 - Issue: #53 - Project structure cleanup
-- Commit: `dcffeb32` - "chore: project structure cleanup and engine bug fixes"
-  - Consolidate agent skills into .claude/skills/
-  - Add release-note-generator skill with comprehensive documentation
-  - Fix 5 critical engine bugs (smart w, compound vowel, foreign word restore, VNI compound, uyu triphthong)
-  - Improve dictionary test with Telex/VNI support (99.44%/99.59% pass rate)
+- Commit: `7c468d2` - "fix(core,macos): Improve English detection for Horn/Breve diacriticals and text injection"
+  - Skip English detection for Horn/Breve diacritical marks
+  - Improve text injection methods and bundleId-based detection
+  - Fix memory leaks in MemoryProfiler, InputManager, and Log
+  - Remove redundant English auto-restore checks
+  - Add new injection methods and role resolution helpers
+  - Improve text injection handling with TextInjectionHelper updates
+  - Update core library and test expectations
 
 ---
 

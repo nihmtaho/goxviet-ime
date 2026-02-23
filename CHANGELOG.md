@@ -5,6 +5,10 @@
 > 📝 **Release Note**: [.release-notes/release_note_2.0.9.md](.release-notes/release_note_2.0.9.md)
 
 ### 🐛 Bug Fixes
+- **English Detection for Horn/Breve**: Skip English detection for Horn (ʼ) and Breve (˘) diacritical marks to prevent false negatives
+- **Text Injection Methods**: Improved bundleId-based application detection and text injection handling
+- **Memory Leaks**: Fixed memory leaks in MemoryProfiler, InputManager, and Log services
+- **Redundant Checks**: Removed redundant English auto-restore checks
 - **Smart 'w' Double-Apply**: Fixed `khuow` → `khươ` issue, now correctly produces `khuơ` (phonotactic validation)
 - **Compound Vowel Over-Aggressive**: Fixed `khoeo` auto-conversion, now preserves original input
 - **Foreign Word Auto-Restore**: Fixed `tareh` false trigger, now correctly preserves foreign words

@@ -1,13 +1,4 @@
 WORD	INPUT	EXPECTED	ACTUAL	CATEGORY
-Blô	Bloo	Blô	Bloo	Dictionary
-Hrê	Hree	Hrê	Hree	Dictionary
-HĐND	HDdND	HĐND	hddnd	Dictionary
-Hđrung	Hddrung	Hđrung	hddrung	Dictionary
-Kpă	Kpaw	Kpă	Kpaw	Dictionary
-Kuênh	Kueenh	Kuênh	Kueenh	Dictionary
-Kđrao	Kddrao	Kđrao	kddrao	Dictionary
-Kốc	Koocs	Kốc	Koocs	Dictionary
-Kủo	Kuor	Kủo	Kuor	Dictionary
 Mđhur	Mddhur	Mđhur	mddhur	Dictionary
 NSƯT	NSUT	NSƯT	NSUT	Dictionary
 Prâng	Praang	Prâng	Praang	Dictionary

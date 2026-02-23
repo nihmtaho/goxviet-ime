@@ -10,23 +10,19 @@ import ApplicationServices
 
 // MARK: - Break Key Detection
 
-// OPTIMIZATION: Static Sets avoid reallocating on every call
-private let standardBreakKeys: Set<CGKeyCode> = [
-    49, 48, 36, 76, 53,  // space, tab, return, enter, esc
-    123, 124, 125, 126,  // left, right, down, up arrows
-    47, 43, 44, 41, 39, 33, 30, 42, 24, 27, 50  // punctuation: . , / ; ' [ ] \ = - `
-]
-
-private let  numberKeys: Set<CGKeyCode> = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25]
-
 /// Check if key is a break key (space, punctuation, arrows, etc.)
 /// When shift=true, also treat number keys as break (they produce !@#$%^&*())
 @inline(__always)
 private func isBreakKey(_ keyCode: CGKeyCode, shift: Bool) -> Bool {
-    if standardBreakKeys.contains(keyCode) { return true }
-    
+    // Standard break keys: space, tab, return, arrows, punctuation
+    if KeyCodeSets.breakKeys.contains(keyCode) { return true }
+
     // Shifted number keys produce symbols: !@#$%^&*()
-    return shift && numberKeys.contains(keyCode)
+    if shift {
+        return KeyCodeSets.numbers.contains(keyCode)
+    }
+
+    return false
 }
 
 // MARK: - Input Manager
@@ -195,6 +191,11 @@ class InputManager: LifecycleManaged {
         // Unregister all observers via ResourceManager
         ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
         ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.inputMethodObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toneStyleObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.restoreShortcutObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.instantRestoreObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.textExpansionObserver")
         
         // Stop mouse monitor
         if let monitor = mouseMonitor {
@@ -211,15 +212,56 @@ class InputManager: LifecycleManaged {
     
     // MARK: - Mouse Monitoring
     
+    /// Track if focused element is text input (AXTextField, AXTextArea, AXComboBox)
+    private var isFocusedOnTextInput: Bool = false
+    
+    /// Check if current focused element is a text input field
+    private func checkFocusedElementIsTextInput() -> Bool {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+              let element = focusedRef else {
+            return false
+        }
+        
+        let axEl = element as! AXUIElement
+        
+        // Use resolveRole from TextInjectionHelper (now accessible)
+        guard let role = resolveRole(axEl: axEl) else {
+            return false
+        }
+        
+        let textInputRoles = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+        return textInputRoles.contains(role)
+    }
+    
     /// Start NSEvent global monitor for mouse events
-    /// This is more reliable than CGEventTap for detecting mouse clicks
+    /// Only clears buffers when click is on text input field
     private func startMouseMonitor() {
         // Monitor both mouseDown and mouseUp to catch clicks and drag-selects
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] _ in
-            // Clear all buffers on mouse click (user may be selecting/deleting text)
-            ime_clear_all_v2()
-            TextInjector.shared.clearSessionBuffer()
-            Log.info("Mouse click detected - cleared all buffers")
+            guard let self = self else { return }
+            
+            // Only clear buffers if currently focused on text input
+            if self.isFocusedOnTextInput {
+                ime_clear_all_v2()
+                TextInjector.shared.clearSessionBuffer()
+                Log.info("Mouse click on text input - cleared all buffers")
+            } else {
+                Log.info("Mouse click outside text input - ignored")
+            }
+        }
+    }
+    
+    /// Update focus state - call this periodically or on focus change
+    func updateFocusState() {
+        let wasFocused = isFocusedOnTextInput
+        isFocusedOnTextInput = checkFocusedElementIsTextInput()
+        
+        if wasFocused && !isFocusedOnTextInput {
+            Log.info("Focus moved OUT of text input")
+        } else if !wasFocused && isFocusedOnTextInput {
+            Log.info("Focus moved INTO text input")
         }
     }
     
@@ -429,8 +471,14 @@ class InputManager: LifecycleManaged {
             return Unmanaged.passUnretained(event)
         }
         
+        // Check for Spotlight on first keystroke (Spotlight doesn't fire AX notifications)
+        PerAppModeManagerEnhanced.shared.checkSpotlightOnce()
+        
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
+        
+        // Update focus state to track if we're in text input
+        updateFocusState()
         
         // 4. Check for toggle shortcut (default: Control+Space)
         if currentShortcut.matches(keyCode: keyCode, flags: flags) {
@@ -459,6 +507,13 @@ class InputManager: LifecycleManaged {
             return Unmanaged.passUnretained(event)
         }
         
+        // 6.1. Check for passthrough mode (iPhone Mirroring, games)
+        let (method, _) = detectMethod()
+        if method == .passthrough {
+            // Pass through without IME processing - remote device/game handles input
+            return Unmanaged.passUnretained(event)
+        }
+        
         // 7. Handle ESC key for word restoration
         if keyCode == 53 { // ESC key
             let (text, backspace, consumed) = ime_key_v2(UInt16(keyCode), false, false)
@@ -469,7 +524,8 @@ class InputManager: LifecycleManaged {
                     text: text,
                     method: method,
                     delays: delays,
-                    proxy: proxy
+                    proxy: proxy,
+                    
                 )
                 return nil
             }
@@ -564,7 +620,8 @@ class InputManager: LifecycleManaged {
                     text: result.text,
                     method: method,
                     delays: delays,
-                    proxy: proxy
+                    proxy: proxy,
+                    
                 )
                 Log.info("Restore shortcut triggered: bs=\(result.backspaceCount), text='\(result.text)'")
             }
@@ -666,13 +723,26 @@ class InputManager: LifecycleManaged {
         
         // Inject replacement text using smart injection
         let (method, delays) = detectMethod()
+        Log.info("DEBUG: method=\(method), delays=\(delays), bs=\(backspace), text='\(text)'")
         TextInjector.shared.injectSync(
             bs: backspace,
             text: text,
             method: method,
             delays: delays,
-            proxy: proxy
+            proxy: proxy,
+            
         )
+        
+        // FIX: Clear buffer after break keys (punctuation) to prevent issues like "d-d" -> "dđ"
+        // Break keys reset composition context, so buffer should be cleared
+        if keyCode.isBreakKey {
+            ime_clear_v2()
+            Log.info("Cleared buffer after break key: \(keyCode)")
+        }
+        
+        // NOTE: Do NOT clear buffer after axDirect/emptyCharPrefix injection.
+        // The engine must retain composition state for multi-keystroke words (e.g., "dd"→"đ", "viets"→"viết").
+        // AX injection correctly handles autocomplete by reading current field state on each keystroke.
         
         // Swallow the original event
         return nil
@@ -721,7 +791,8 @@ class InputManager: LifecycleManaged {
                     text: text,
                     method: method,
                     delays: delays,
-                    proxy: proxy
+                    proxy: proxy,
+                    
                 )
                 
                 Log.info("DELETE processed: bs=\(backspace), text='\(text)'")
