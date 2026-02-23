@@ -6,103 +6,46 @@
 #include <stddef.h>
 
 // ============================================================
-// Core FFI Functions
+// FFI API v2 - Clean Architecture
 // ============================================================
-
-/// Initialize the IME engine (must be called once at startup)
-void ime_init(void);
-
-/// Process a key event
-/// Returns pointer to Result struct (must be freed with ime_free)
-/// Returns NULL if engine not initialized
-// Result from IME processing (heap-allocated)
-typedef struct {
-  uint32_t *chars;   // Heap-allocated UTF-32 codepoints
-  size_t capacity;   // Allocated capacity
-  uint8_t action;    // 0=None, 1=Send, 2=Restore
-  uint8_t backspace; // Number of chars to delete
-  uint8_t count;     // Number of valid chars
-  uint8_t _pad;      // Padding
-} ImeResult;
-
-ImeResult *ime_key(uint16_t key, bool caps, bool ctrl);
-
-/// Process key event with extended parameters (for Shift handling)
-ImeResult *ime_key_ext(uint16_t key, bool caps, bool ctrl, bool shift);
-
-/// Free a result pointer
-void ime_free(ImeResult *result);
-
-/// Set input method (0=Telex, 1=VNI)
-void ime_method(uint8_t method);
-
-/// Enable or disable the engine
-void ime_enabled(bool enabled);
-
-/// Clear the input buffer (call on word boundaries)
-void ime_clear(void);
-
-/// Clear all state including word history
-/// Call on cursor position changes (mouse click, selection-delete, arrow keys)
-void ime_clear_all(void);
-
+//
+// ALL FFI types and functions are declared in Swift (RustBridgeV2.swift)
+// using @_silgen_name for direct symbol binding to the Rust library.
+//
+// This header is kept EMPTY to avoid dual declarations that cause:
+// 1. Function overload ambiguity (C-imported vs @_silgen_name)
+// 2. Type shadowing issues (C struct vs Swift struct)
+//
+// See RustBridgeV2.swift for the canonical type definitions.
+//
 // ============================================================
-// Configuration Functions
+// REFERENCE: Rust FFI Types (DO NOT UNCOMMENT)
 // ============================================================
-
-/// Skip w→ư shortcut in Telex mode
-void ime_skip_w_shortcut(bool skip);
-
-/// Enable ESC key to restore raw ASCII
-void ime_esc_restore(bool enabled);
-
-/// Enable free tone placement (skip validation)
-void ime_free_tone(bool enabled);
-
-/// Use modern orthography for tone placement
-void ime_modern(bool modern);
-
-/// Enable instant auto-restore for English words
-void ime_instant_restore(bool enabled);
-
+//
+// typedef enum { FFI_INPUT_METHOD_TELEX=0, FFI_INPUT_METHOD_VNI=1 } FfiInputMethod;
+// typedef enum { FFI_TONE_STYLE_TRADITIONAL=0, FFI_TONE_STYLE_MODERN=1 } FfiToneStyle;
+// typedef struct { FfiInputMethod input_method; FfiToneStyle tone_style; bool smart_mode; } FfiConfig_v2;
+// typedef struct { char *text; uint8_t backspace_count; bool consumed; } FfiProcessResult_v2;
+// typedef struct { uint32_t major,minor,patch,api_version; } FfiVersionInfo;
+// typedef void* FfiEnginePtr;
+//
+// FfiEnginePtr ime_create_engine_v2(const FfiConfig_v2 *config);
+// void ime_destroy_engine_v2(FfiEnginePtr engine);
+// int32_t ime_process_key_v2(FfiEnginePtr engine, char key_char, FfiProcessResult_v2 *out);
+// int32_t ime_get_config_v2(FfiEnginePtr engine, FfiConfig_v2 *out);
+// int32_t ime_set_config_v2(FfiEnginePtr engine, const FfiConfig_v2 *config);
+// int32_t ime_get_version_v2(FfiVersionInfo *out);
+// void ime_free_string_v2(char *ptr);
+// int32_t ime_add_shortcut_v2(FfiEnginePtr engine, const char *trigger, const char *expansion);
+// int32_t ime_remove_shortcut_v2(FfiEnginePtr engine, const char *trigger);
+// int32_t ime_clear_shortcuts_v2(FfiEnginePtr engine);
+// int32_t ime_shortcuts_count_v2(FfiEnginePtr engine);
+// int32_t ime_set_shortcuts_enabled_v2(FfiEnginePtr engine, bool enabled);
+//
 // ============================================================
-// Shortcut Management
+// LEGACY v1 API (REMOVED in v3.0.0)
 // ============================================================
-
-/// Add a text expansion shortcut
-/// Returns true on success, false on error
-bool ime_add_shortcut(const char *trigger, const char *replacement);
-
-/// Remove a shortcut
-void ime_remove_shortcut(const char *trigger);
-
-/// Clear all shortcuts
-void ime_clear_shortcuts(void);
-
-/// Export shortcuts as JSON string (caller must free with ime_free_string)
-char *ime_export_shortcuts_json(void);
-
-/// Import shortcuts from JSON string
-/// Returns number of shortcuts imported, or -1 on error
-int32_t ime_import_shortcuts_json(const char *json);
-
-/// Enable or disable text expansion shortcuts
-void ime_set_shortcuts_enabled(bool enabled);
-
-/// Get current number of shortcuts
-size_t ime_shortcuts_count(void);
-
-/// Get maximum capacity for shortcuts
-size_t ime_shortcuts_capacity(void);
-
-/// Free a string returned by the IME engine
-void ime_free_string(char *str);
-
-// ============================================================
-// Word Restore
-// ============================================================
-
-/// Restore buffer from a Vietnamese word string
-void ime_restore_word(const char *word);
+// All v1 functions (ime_init, ime_key, ime_free, etc.) have been removed.
+// Use RustEngineV2 wrapper functions (ime_init_v2, ime_key_v2, etc.) instead.
 
 #endif /* GoxViet_Bridging_Header_h */
