@@ -3234,21 +3234,26 @@ impl Engine {
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
         let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
 
-        let keys_for_phonotactic = {
+        let filtered_boundary_keys: Vec<(u16, bool)>;
+        let keys_for_phonotactic: &[(u16, bool)] = {
             use crate::data::keys as k;
             const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
             let is_telex = self.method
                 == crate::infrastructure::engine::types::config::InputMethod::Telex as u8;
-            let last_is_tone_mod = raw_keys
-                .last()
-                .map_or(false, |&(k, _)| TELEX_TONE_MODIFIERS.contains(&k));
-            // Trim if Telex AND the last raw key is a tone modifier AND raw is longer than buf
-            // (meaning at least one key was absorbed as a Telex transform).
-            // Use > rather than ==+1 because compound modifiers like 'ow'→ω absorb 2 raw keys
-            // into 1 buf entry, so raw can be 2+ longer than buf.
-            // Example: "bowr" = raw[B,O,W,R], buf[b,ở] → 4>2, trim R → [B,O,W] → no "wr" cluster
-            if is_telex && last_is_tone_mod && raw_keys.len() > buf_keys.len() {
-                &raw_keys[..raw_keys.len() - 1]
+            // Strip all non-initial Telex tone modifier keys when absorption occurred.
+            // A tone modifier absorbed into a diacritic (e.g. 's' → sắc, 'f' → huyền) shows up
+            // in raw_input but NOT in buf, making raw.len() > buf.len(). These absorbed keys look
+            // like English consonants to the phonotactic engine (e.g. SC in "casc", SP in "tieesp",
+            // FN in "dduwofng"), causing false English-restore triggers.
+            // Position 0 is always kept (initial consonants like S in "scope", F in "frost").
+            if is_telex && raw_keys.len() > buf_keys.len() {
+                filtered_boundary_keys = raw_keys
+                    .iter()
+                    .enumerate()
+                    .filter(|&(i, &(key, _))| i == 0 || !TELEX_TONE_MODIFIERS.contains(&key))
+                    .map(|(_, &kv)| kv)
+                    .collect();
+                &filtered_boundary_keys
             } else {
                 &raw_keys[..]
             }
@@ -3357,32 +3362,32 @@ impl Engine {
                 &buf_keys,
             );
 
-        // When the buf is valid Vietnamese AND raw_input is exactly 1 longer than buf
-        // (indicating a Telex tone modifier was the last key consumed by try_tone),
-        // trim that modifier before phonotactic analysis.
-        //
-        // Without trimming, a Vietnamese final -ng followed by hỏi 'r' creates (g,r)="gr"
-        // which is mistakenly detected as an English onset cluster.
-        //
-        // We ONLY trim when viet_validation.is_valid=true so that invalid-Vietnamese inputs
-        // like "acr" (where "ảc" is invalid: hỏi+final-c forbidden) still get the full
-        // raw_keys including 'r', allowing the (c,r)="cr" cluster to trigger English restore.
+        // Strip all non-initial Telex tone modifier keys when absorption occurred.
+        // Absorbed tone keys (s=sắc, f=huyền, r=hỏi, x=ngã, j=nặng) appear in raw_input
+        // but NOT as separate buf entries, so raw.len() > buf.len(). These absorbed keys
+        // look like English consonants to the phonotactic engine:
+        //   "casc"  → raw[C,A,S,C], SC at positions (2,3) → L2 cluster (98) → false restore
+        //   "tieesp"→ raw[T,I,E,E,S,P], SP at (4,5) → L2 cluster (98) → false restore
+        //   "dduwofng" → raw[D,D,U,W,O,F,N], FN at (5,6) → L8 impossible (80) → false restore
+        // Position 0 is always kept so initial consonants like S("scope"), F("frost") are unaffected.
+        let filtered_midword_keys: Vec<(u16, bool)>;
         let phonotactic = {
             use crate::data::keys as k;
             const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
             let is_telex = self.method
                 == crate::infrastructure::engine::types::config::InputMethod::Telex as u8;
-            let should_trim = is_telex
-                && viet_validation.is_valid
-                && raw_keys.len() > self.buf.len()
-                && raw_keys
-                    .last()
-                    .map_or(false, |&(k, _)| TELEX_TONE_MODIFIERS.contains(&k));
-            let keys_for_analysis = if should_trim {
-                &raw_keys[..raw_keys.len() - 1]
-            } else {
-                &raw_keys[..]
-            };
+            let keys_for_analysis: &[(u16, bool)] =
+                if is_telex && raw_keys.len() > self.buf.len() {
+                    filtered_midword_keys = raw_keys
+                        .iter()
+                        .enumerate()
+                        .filter(|&(i, &(key, _))| i == 0 || !TELEX_TONE_MODIFIERS.contains(&key))
+                        .map(|(_, &kv)| kv)
+                        .collect();
+                    &filtered_midword_keys
+                } else {
+                    &raw_keys[..]
+                };
             crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(
                 keys_for_analysis,
             )

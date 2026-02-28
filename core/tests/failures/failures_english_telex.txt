@@ -157,8 +157,6 @@ atr	atr	atr	ảt
 atra	atra	atra	ảta
 atraumatic	atraumatic	atraumatic	ảtaumatic
 atrazine	atrazine	atrazine	ataine
-atresia	atresia	atresia	ảtesia
-atreus	atreus	atreus	ảteus
 atria	atria	atria	ảtia
 atrium	atrium	atrium	ảtium
 atrocities	atrocities	atrocities	ảtocities
@@ -312,7 +310,6 @@ beeton	beeton	beeton	bêton
 beetroot	beetroot	beetroot	bểtoot
 befit	befit	befit	beìt
 befits	befits	befits	beìts
-beja	beja	beja	beạ
 benefice	benefice	benefice	bềnice
 benefices	benefices	benefices	bềnices
 benefit	benefit	benefit	bềnit
@@ -325,7 +322,6 @@ benji	benji	benji	bẹni
 benjy	benjy	benjy	bẹny
 benson	benson	benson	bénon
 beowulf	beowulf	beowulf	beơulf
-besancon	besancon	besancon	beáncon
 beside	beside	beside	beíde
 besides	besides	besides	beídes
 besoin	besoin	besoin	beóin
@@ -370,7 +366,6 @@ bisects	bisects	bisects	biécts
 bison	bison	bison	bión
 bisque	bisque	bisque	bíque
 bisulfite	bisulfite	bisulfite	biúlfite
-bitsy	bitsy	bitsy	bíty
 biwa	biwa	biwa	biưa
 boas	boas	boas	boá
 boats	boats	boats	boát
@@ -527,7 +522,6 @@ catatonia	catatonia	catatonia	câttonia
 catatonic	catatonic	catatonic	câttonic
 catawba	catawba	catawba	cătba
 cathryn	cathryn	cathryn	cảthyn
-catriona	catriona	catriona	cảtiona
 catron	catron	catron	cảton
 catsup	catsup	catsup	cátup
 cauca	cauca	cauca	câuc
@@ -583,10 +577,7 @@ chiapas	chiapas	chiapas	chiấp
 chickasaw	chickasaw	chickasaw	chickasă
 chickasaws	chickasaws	chickasaws	chickasăs
 chief	chief	chief	chiè
-chiefdom	chiefdom	chiefdom	chièdom
-chiefdoms	chiefdoms	chiefdoms	chièdoms
 chiefs	chiefs	chiefs	chié
-chiesa	chiesa	chiesa	chiéa
 chios	chios	chios	chió
 chipset	chipset	chipset	chípet
 chisel	chisel	chisel	chiél
@@ -808,7 +799,6 @@ defuse	defuse	defuse	deùse
 defy	defy	defy	deỳ
 dehradun	dehradun	dehradun	đehraun
 dej	dej	dej	dẹ
-deja	deja	deja	deạ
 dejong	dejong	dejong	deọng
 delgado	delgado	delgado	đelgao
 deme	deme	deme	dêm
@@ -830,8 +820,6 @@ deoxyribose	deoxyribose	deoxyribose	deõyribose
 depew	depew	depew	dêpw
 ders	ders	ders	dé
 des	des	des	dé
-desa	desa	desa	deá
-desai	desai	desai	deái
 desdemona	desdemona	desdemona	đếmona
 deselect	deselect	deselect	dếlect
 desi	desi	desi	deí
@@ -929,7 +917,6 @@ dogwood	dogwood	dogwood	đogwoo
 dois	dois	dois	dói
 dojo	dojo	dojo	dộ
 doklady	doklady	doklady	đoklay
-domesday	domesday	domesday	đomesay
 domo	domo	domo	dôm
 dongola	dongola	dongola	dôngla
 donoghue	donoghue	donoghue	dônghue
@@ -1043,7 +1030,6 @@ eep	eep	eep	êp
 eet	eet	eet	êt
 eets	eets	eets	ết
 eeuw	eeuw	eeuw	êư
-efa	efa	efa	eà
 efc	efc	efc	èc
 efecto	efecto	efecto	ềcto
 efectos	efectos	efectos	ềctos
@@ -1098,9 +1084,6 @@ epsom	epsom	epsom	épom
 epson	epson	epson	épon
 ero	ero	ero	ẻo
 err	err	err	er
-esa	esa	esa	eá
-esas	esas	esas	eás
-esau	esau	esau	eáu
 esb	esb	esb	éb
 esd	esd	esd	éd
 esdp	esdp	esdp	édp
@@ -1155,6 +1138,8 @@ gaps	gaps	gaps	gáp
 gasb	gasb	gasb	gáb
 gases	gases	gases	gaés
 gasoline	gasoline	gasoline	gaóline
+gasp	gasp	gasp	gáp
+gasps	gasps	gasps	gáp
 gata	gata	gata	gât
 gats	gats	gats	gát
 gatsby	gatsby	gatsby	gátby
@@ -1202,8 +1187,6 @@ geometry	geometry	geometry	gêomtry
 geopolitics	geopolitics	geopolitics	geôplitics
 geotextile	geotextile	geotextile	gêõttile
 ges	ges	ges	gé
-gesagt	gesagt	gesagt	geágt
-gesamtausgabe	gesamtausgabe	gesamtausgabe	geámtausgabe
 gesehen	gesehen	gesehen	gếhen
 gesetz	gesetz	gesetz	gêt
 gesetze	gesetze	gesetze	gête
@@ -1262,7 +1245,6 @@ goons	goons	goons	gốn
 goose	goose	goose	gốe
 gos	gos	gos	gó
 goss	goss	goss	gos
-gosub	gosub	gosub	goúb
 goths	goths	goths	góth
 goto	goto	goto	gôt
 gotra	gotra	gotra	gỏta
@@ -1376,7 +1358,6 @@ hedda	hedda	hedda	heđa
 heddle	heddle	heddle	heđle
 heel	heel	heel	hêl
 heer	heer	heer	hể
-hejaz	hejaz	hejaz	hea
 heme	heme	heme	hêm
 hemel	hemel	hemel	hêml
 hemenway	hemenway	hemenway	hêmnway
@@ -1404,8 +1385,6 @@ hesitancy	hesitancy	hesitancy	heítancy
 hess	hess	hess	hes
 heute	heute	heute	hêut
 hex	hex	hex	hẽ
-hexagon	hexagon	hexagon	heãgon
-hexagons	hexagons	hexagons	heãgons
 hexham	hexham	hexham	hẽham
 hexokinase	hexokinase	hexokinase	heõkinase
 hexose	hexose	hexose	hếo
@@ -1431,7 +1410,6 @@ hiss	hiss	hiss	his
 hn	hn	hn	Hà Nội
 hoax	hoax	hoax	hoã
 hoaxes	hoaxes	hoaxes	hoães
-hobsbawm	hobsbawm	hobsbawm	hobsbăm
 hodgepodge	hodgepodge	hodgepodge	hođgepoge
 hoes	hoes	hoes	hoé
 hoff	hoff	hoff	hof
@@ -1594,7 +1572,6 @@ insects	insects	insects	ínects
 insel	insel	insel	ínel
 inset	inset	inset	ínet
 insets	insets	insets	ínets
-insgesamt	insgesamt	insgesamt	íngesamt
 inside	inside	inside	ínide
 insides	insides	insides	ínides
 insight	insight	insight	ínight
@@ -1650,6 +1627,7 @@ isfahan	isfahan	isfahan	iàhan
 isi	isi	isi	ií
 isic	isic	isic	iíc
 isis	isis	isis	iís
+isn	isn	isn	ín
 iso	iso	iso	ió
 isobel	isobel	isobel	ióbel
 isobutane	isobutane	isobutane	ióbutane
@@ -1839,7 +1817,6 @@ lejeune	lejeune	lejeune	lêụne
 lenses	lenses	lenses	lến
 leone	leone	leone	lêon
 leonov	leonov	leonov	leônv
-lesage	lesage	lesage	leáge
 lesbia	lesbia	lesbia	lébia
 lesbian	lesbian	lesbian	lébian
 lesbians	lesbians	lesbians	lébians
@@ -2132,8 +2109,6 @@ menge	menge	menge	mêng
 mengele	mengele	mengele	mêngle
 mensa	mensa	mensa	ména
 meow	meow	meow	meơ
-mesa	mesa	mesa	meá
-mesas	mesas	mesas	meás
 meself	meself	meself	mếlf
 mesenchyme	mesenchyme	mesenchyme	mếnchyme
 mesfet	mesfet	mesfet	mềt
@@ -2277,6 +2252,7 @@ morss	morss	morss	mos
 mosaic	mosaic	mosaic	moáic
 mosaics	mosaics	mosaics	moáic
 mosby	mosby	mosby	móby
+moscow	moscow	moscow	mớc
 mosdy	mosdy	mosdy	módy
 mose	mose	mose	moé
 mosel	mosel	mosel	moél
@@ -2287,7 +2263,6 @@ mosfets	mosfets	mosfets	moét
 mosque	mosque	mosque	móque
 mosques	mosques	mosques	móques
 moss	moss	moss	mos
-mosul	mosul	mosul	moúl
 moths	moths	moths	móth
 moto	moto	moto	môt
 motown	motown	motown	mơtn
@@ -2375,6 +2350,7 @@ nasdaq	nasdaq	nasdaq	nádaq
 nasik	nasik	nasik	naík
 nason	nason	nason	naón
 nass	nass	nass	nas
+nasw	nasw	nasw	nắ
 nata	nata	nata	nât
 natan	natan	natan	nâtn
 nauman	nauman	nauman	nâumn
@@ -2387,7 +2363,6 @@ nays	nays	nays	náy
 neces	neces	neces	nếc
 neel	neel	neel	nêl
 nees	nees	nees	nế
-nefa	nefa	nefa	neà
 neff	neff	neff	nef
 nemesis	nemesis	nemesis	nếmis
 nemeth	nemeth	nemeth	nêmth
@@ -2742,7 +2717,6 @@ pepsico	pepsico	pepsico	pépico
 pepsin	pepsin	pepsin	pépin
 pepsinogen	pepsinogen	pepsinogen	pépinogen
 pes	pes	pes	pé
-pesach	pesach	pesach	peách
 pesetas	pesetas	pesetas	pếtas
 peso	peso	peso	péo
 pesos	pesos	pesos	péo
@@ -2970,14 +2944,12 @@ quanah	quanah	quanah	quânh
 quasimodo	quasimodo	quasimodo	quaímodo
 quatrain	quatrain	quatrain	quẩtin
 quatrains	quatrains	quatrains	quẩtins
-quatre	quatre	quatre	quảte
 quays	quays	quays	quáy
 quayside	quayside	quayside	quaýide
 queene	queene	queene	quêne
 queenie	queenie	queenie	quênie
 queens	queens	queens	quến
 queequeg	queequeg	queequeg	quêqueg
-quesada	quesada	quesada	queáda
 quetelet	quetelet	quetelet	quêtlet
 quijote	quijote	quijote	quiọte
 quips	quips	quips	quíp
@@ -3082,7 +3054,6 @@ reenact	reenact	reenact	rênact
 reese	reese	reese	rếe
 reeve	reeve	reeve	rêve
 reeves	reeves	reeves	rêves
-reexamine	reexamine	reexamine	rêãmine
 refit	refit	refit	reìt
 refocus	refocus	refocus	reòcus
 refuel	refuel	refuel	rêùl
@@ -3340,11 +3311,9 @@ seep	seep	seep	sêp
 seepage	seepage	seepage	sêpage
 seer	seer	seer	sể
 sees	sees	sees	sế
-seesaw	seesaw	seesaw	sếă
 seeth	seeth	seeth	sêth
 seethe	seethe	seethe	sêthe
 sefer	sefer	sefer	sể
-sejanus	sejanus	sejanus	seạnus
 sejm	sejm	sejm	sẹm
 seme	seme	seme	sêm
 semel	semel	semel	sêml
@@ -3372,8 +3341,6 @@ seps	seps	seps	sép
 sepsis	sepsis	sepsis	sépis
 sere	sere	sere	sể
 ses	ses	ses	sé
-sesamoid	sesamoid	sesamoid	seámoid
-sesamum	sesamum	sesamum	seámum
 sese	sese	sese	sế
 sess	sess	sess	ses
 sexes	sexes	sexes	sế
@@ -3406,7 +3373,6 @@ sixths	sixths	sixths	síth
 sixties	sixties	sixties	sĩties
 sixtieth	sixtieth	sixtieth	sĩtieth
 sixtus	sixtus	sixtus	sĩtus
-sixty	sixty	sixty	sĩty
 soaks	soaks	soaks	soák
 soaps	soaps	soaps	soáp
 soas	soas	soas	soá
@@ -3543,10 +3509,6 @@ teeny	teeny	teeny	têny
 teepee	teepee	teepee	têpee
 teeth	teeth	teeth	têth
 tej	tej	tej	tẹ
-tejada	tejada	tejada	teạda
-tejano	tejano	tejano	teạno
-tejanos	tejanos	tejanos	teạnos
-tejas	tejas	tejas	teạs
 temenos	temenos	temenos	têmnos
 tenet	tenet	tenet	tênt
 tenets	tenets	tenets	tênts
@@ -3571,10 +3533,6 @@ tetrahymena	tetrahymena	tetrahymena	tẻtahymena
 tetrapods	tetrapods	tetrapods	tẻtapods
 tetrazolium	tetrazolium	tetrazolium	tetaolium
 tetroxide	tetroxide	tetroxide	tẻtoxide
-texaco	texaco	texaco	teãco
-texan	texan	texan	teãn
-texans	texans	texans	teãns
-texas	texas	texas	teãs
 texel	texel	texel	tễl
 text	text	text	tẽt
 textbox	textbox	textbox	tẽtbox
@@ -3712,7 +3670,6 @@ tramways	tramways	tramways	trămays
 transact	transact	transact	trấnct
 transaminase	transaminase	transaminase	trấnminase
 transaminases	transaminases	transaminases	trấnminases
-transaxle	transaxle	transaxle	trẫnle
 transect	transect	transect	tránect
 transects	transects	transects	tránects
 transept	transept	transept	tránept
@@ -3767,8 +3724,6 @@ truths	truths	truths	trúth
 trw	trw	trw	trư
 tucson	tucson	tucson	túcon
 tues	tues	tues	tué
-tuesday	tuesday	tuesday	tuéday
-tuesdays	tuesdays	tuesdays	tuédays
 tufa	tufa	tufa	tùa
 tuff	tuff	tuff	tuf
 tuns	tuns	tuns	tún
@@ -3894,7 +3849,6 @@ vesey	vesey	vesey	vếy
 vesuvius	vesuvius	vesuvius	veúvius
 viaje	viaje	viaje	viạe
 viana	viana	viana	viân
-vieja	vieja	vieja	viẹa
 viejo	viejo	viejo	viẹo
 viens	viens	viens	vién
 vies	vies	vies	vié
@@ -3921,7 +3875,6 @@ vitriol	vitriol	vitriol	vỉtiol
 vitriolic	vitriolic	vitriolic	vỉtiolic
 vitro	vitro	vitro	vỉto
 vitruvius	vitruvius	vitruvius	vỉtuvius
-vitry	vitry	vitry	vỉty
 vixen	vixen	vixen	viẽn
 vn	vn	vn	Việt Nam
 voisin	voisin	voisin	voíin
