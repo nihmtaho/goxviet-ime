@@ -105,7 +105,7 @@ struct PerAppSettingsView: View {
                 }
             }
             .padding(24)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
             
             Divider()
             
@@ -122,7 +122,7 @@ struct PerAppSettingsView: View {
                     .padding(8)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(nsColor: .textBackgroundColor))
+                            .fill(Color(NSColor.textBackgroundColor))
                     )
                     
                     Divider()
@@ -173,18 +173,18 @@ struct PerAppSettingsView: View {
                         Label("Clear All", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
-                    .alert("Clear All Settings", isPresented: $showClearConfirmation) {
-                        Button("Cancel", role: .cancel) { }
-                        Button("Clear", role: .destructive) {
-                            clearAllSettings()
-                        }
-                    } message: {
-                        Text("This will remove all per-app settings. This action cannot be undone.")
+                    .alert(isPresented: $showClearConfirmation) {
+                        Alert(
+                            title: Text("Clear All Settings"),
+                            message: Text("This will remove all per-app settings. This action cannot be undone."),
+                            primaryButton: .destructive(Text("Clear")) { clearAllSettings() },
+                            secondaryButton: .cancel(Text("Cancel"))
+                        )
                     }
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 12)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.2))
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.2))
             }
             
             Divider()
@@ -322,7 +322,7 @@ struct AppRow: View {
             .padding(.vertical, 4)
             .background(
                 Capsule()
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .fill(Color(NSColor.controlBackgroundColor))
             )
             
             // Toggle
@@ -336,7 +336,7 @@ struct AppRow: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor).opacity(0.5))
         )
         .contentShape(Rectangle())
         .onTapGesture {

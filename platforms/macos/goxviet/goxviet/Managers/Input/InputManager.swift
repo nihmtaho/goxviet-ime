@@ -28,7 +28,7 @@ private func isBreakKey(_ keyCode: CGKeyCode, shift: Bool) -> Bool {
 // MARK: - Input Manager
 
 class InputManager: LifecycleManaged {
-    static let shared = InputManager()
+    nonisolated(unsafe) static var shared: InputManager!
     
     // OPTIMIZATION: String pool for common Vietnamese characters (reduces allocations)
     // Reduces 64B malloc overhead by reusing String objects for frequent chars
@@ -62,7 +62,7 @@ class InputManager: LifecycleManaged {
     private var restoreShortcutEnabled: Bool = SettingsManager.shared.restoreShortcutEnabled
     private var restoreTapHistory: [(flags: UInt64, time: TimeInterval)] = []
     
-    private init() {
+    init() {
         // Initialize Rust bridge v2
         ime_init_v2()
 
@@ -80,10 +80,7 @@ class InputManager: LifecycleManaged {
         setupObservers()
     }
     
-    deinit {
-        stop()
-        Log.info("InputManager deinitialized")
-    }
+    deinit {}
     
     private func loadSavedSettings() {
         let settings = SettingsManager.shared
@@ -378,7 +375,8 @@ class InputManager: LifecycleManaged {
                 Log.info("Toggle shortcut updated: \(shortcut.displayString)")
             } else {
                 self?.currentShortcut = KeyboardShortcut.load()
-                Log.info("Toggle shortcut reloaded: \(self?.currentShortcut.displayString ?? "unknown")")
+                let shortcutName = self?.currentShortcut.displayString ?? "unknown"
+                Log.info("Toggle shortcut reloaded: \(shortcutName)")
             }
             
             // Also reload text expansion shortcuts

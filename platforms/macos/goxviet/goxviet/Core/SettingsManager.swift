@@ -15,7 +15,7 @@ final class SettingsManager: ObservableObject {
     
     // MARK: - Singleton
     
-    static let shared = SettingsManager()
+    nonisolated(unsafe) static let shared = SettingsManager()
     
     // MARK: - Published Settings
     
@@ -161,7 +161,10 @@ final class SettingsManager: ObservableObject {
     
     // MARK: - Initialization
     
-    private init() {
+    nonisolated private init() {}
+
+    /// Must be called once from @MainActor context (AppDelegate) before any settings access.
+    func initialize() {
         loadFromDefaults()
         setupObservers()
         Log.info("SettingsManager initialized")
@@ -316,7 +319,7 @@ final class SettingsManager: ObservableObject {
         setEnabledDebounceWork?.cancel()
         
         // Create new debounced notification (50ms delay)
-        let work = DispatchWorkItem { [weak self] in
+        let work = DispatchWorkItem { @MainActor [weak self] in
             guard let self = self else { return }
             
             // Post notification for UI update

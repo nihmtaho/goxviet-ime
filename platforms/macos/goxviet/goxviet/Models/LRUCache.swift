@@ -41,7 +41,7 @@ final class LRUCache<Key: Hashable, Value> {
     
     // MARK: - Initialization
     
-    init(capacity: Int) {
+    nonisolated init(capacity: Int) {
         self.capacity = max(1, capacity)
     }
     

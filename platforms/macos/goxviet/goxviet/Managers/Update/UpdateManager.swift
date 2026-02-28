@@ -22,8 +22,8 @@ enum UpdateState: Equatable {
     case error(String)
 }
 
-final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
-    static let shared = UpdateManager()
+final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchecked Sendable {
+    nonisolated(unsafe) static let shared = UpdateManager()
 
     @Published private(set) var state: UpdateState = .idle {
         didSet {
@@ -64,35 +64,32 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
 
     @Published private(set) var lastChecked: Date?
     
-    private var downloadSession: URLSession?
-    private var downloadTask: URLSessionDownloadTask?
-    private var downloadingVersion: String?
+    nonisolated(unsafe) private var downloadSession: URLSession?
+    nonisolated(unsafe) private var downloadTask: URLSessionDownloadTask?
+    nonisolated(unsafe) private var downloadingVersion: String?
     private var timer: Timer?
     private(set) var isRunning: Bool = false
-    private let defaults = UserDefaults.standard
-    private var isUserCancelledDownload: Bool = false
+    nonisolated(unsafe) private let defaults = UserDefaults.standard
+    nonisolated(unsafe) private var isUserCancelledDownload: Bool = false
     
     private let autoCheckInterval: TimeInterval = 6 * 60 * 60  // Every 6 hours
     private let autoCheckKey = "com.goxviet.ime.lastUpdateCheck"
     private let skipVersionKey = "com.goxviet.ime.skipVersion"
 
-    private override init() {
+    nonisolated private override init() {
         super.init()
-        let timestamp = defaults.double(forKey: autoCheckKey)
-        if timestamp > 0 {
-            lastChecked = Date(timeIntervalSince1970: timestamp)
-        }
     }
     
-    deinit {
-        // ResourceManager handles cleanup
-        Log.info("UpdateManager would be deinitialized (singleton - skipping stop)")
-    }
+    deinit {}
 
     // MARK: - Public API
 
     func start() {
         guard !isRunning else { return }
+        let timestamp = defaults.double(forKey: autoCheckKey)
+        if timestamp > 0 {
+            lastChecked = Date(timeIntervalSince1970: timestamp)
+        }
         isRunning = true
         refreshSchedule()
     }
@@ -173,31 +170,33 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         }
 
         UpdateChecker.shared.checkForUpdates { [weak self] result in
-            guard let self = self else { return }
-            
-            self.lastChecked = Date()
-            self.defaults.set(self.lastChecked!.timeIntervalSince1970, forKey: self.autoCheckKey)
-            
-            switch result {
-            case .available(let info):
-                let skipped = self.defaults.string(forKey: self.skipVersionKey)
-                if !userInitiated && skipped == info.version {
-                    // Silent check and version skipped -> ignore
-                    self.state = .idle
-                    return
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+
+                self.lastChecked = Date()
+                self.defaults.set(self.lastChecked!.timeIntervalSince1970, forKey: self.autoCheckKey)
+
+                switch result {
+                case .available(let info):
+                    let skipped = self.defaults.string(forKey: self.skipVersionKey)
+                    if !userInitiated && skipped == info.version {
+                        // Silent check and version skipped -> ignore
+                        self.state = .idle
+                        return
+                    }
+                    self.state = .available(info)
+                    if !userInitiated {
+                        // Could show notification here
+                        Log.info("New update available in background: \(info.version)")
+                    }
+
+                case .upToDate:
+                    self.state = .upToDate
+
+                case .error(let message):
+                    self.state = .error(message)
+                    Log.error("Update check failed: \(message)")
                 }
-                self.state = .available(info)
-                if !userInitiated {
-                    // Could show notification here
-                    Log.info("New update available in background: \(info.version)")
-                }
-                
-            case .upToDate:
-                self.state = .upToDate
-                
-            case .error(let message):
-                self.state = .error(message)
-                Log.error("Update check failed: \(message)")
             }
         }
     }
@@ -286,7 +285,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         return nil
     }
 
-    private func finishError(_ msg: String) {
+    nonisolated private func finishError(_ msg: String) {
         DispatchQueue.main.async {
             self.state = .error(msg)
         }
@@ -409,7 +408,7 @@ private extension UpdateManager {
 
 // MARK: - URLSession Download Delegate
 
-extension UpdateManager: URLSessionDownloadDelegate {
+extension UpdateManager: @preconcurrency URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
         let tempDir = FileManager.default.temporaryDirectory

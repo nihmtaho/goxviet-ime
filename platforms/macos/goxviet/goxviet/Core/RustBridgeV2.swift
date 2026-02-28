@@ -35,16 +35,16 @@ enum FfiStatusCode: Int32 {
 // This would make FfiConfig_v2 = 3 bytes instead of the 12 bytes Rust expects.
 struct FfiInputMethod: Equatable {
     let rawValue: Int32
-    init(rawValue: Int32) { self.rawValue = rawValue }
-    static let telex = FfiInputMethod(rawValue: 0)
-    static let vni = FfiInputMethod(rawValue: 1)
+    nonisolated init(rawValue: Int32) { self.rawValue = rawValue }
+    nonisolated(unsafe) static let telex = FfiInputMethod(rawValue: 0)
+    nonisolated(unsafe) static let vni = FfiInputMethod(rawValue: 1)
 }
 
 struct FfiToneStyle: Equatable {
     let rawValue: Int32
-    init(rawValue: Int32) { self.rawValue = rawValue }
-    static let traditional = FfiToneStyle(rawValue: 0)  // Old style: hòa
-    static let modern = FfiToneStyle(rawValue: 1)        // New style: hoà
+    nonisolated init(rawValue: Int32) { self.rawValue = rawValue }
+    nonisolated(unsafe) static let traditional = FfiToneStyle(rawValue: 0)  // Old style: hòa
+    nonisolated(unsafe) static let modern = FfiToneStyle(rawValue: 1)        // New style: hoà
 }
 
 struct FfiConfig_v2 {
@@ -160,7 +160,7 @@ struct ProcessResult {
 
 /// Thread-safe v2 FFI bridge using out parameter pattern
 final class RustBridgeV2 {
-    static let shared = RustBridgeV2()
+    nonisolated(unsafe) static let shared = RustBridgeV2()
     
     // MARK: - Properties
     
@@ -170,7 +170,7 @@ final class RustBridgeV2 {
     
     // MARK: - Lifecycle
     
-    private init() {
+    nonisolated private init() {
         // Default configuration
         currentConfig = FfiConfig_v2(
             input_method: .telex,
@@ -182,9 +182,7 @@ final class RustBridgeV2 {
         )
     }
     
-    deinit {
-        destroyEngine()
-    }
+    deinit {}
     
     // MARK: - Engine Lifecycle
     

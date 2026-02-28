@@ -11,7 +11,7 @@ import Cocoa
 
 /// Centralized manager for app-wide resources
 final class ResourceManager {
-    static let shared = ResourceManager()
+    nonisolated(unsafe) static let shared = ResourceManager()
     
     // MARK: - Properties
     
@@ -31,13 +31,11 @@ final class ResourceManager {
     
     // MARK: - Initialization
     
-    private init() {
-        setupMemoryPressureMonitoring()
+    nonisolated private init() {
+        Task { @MainActor [self] in self.setupMemoryPressureMonitoring() }
     }
     
-    deinit {
-        cleanup()
-    }
+    deinit {}
     
     // MARK: - Timer Management
     
@@ -123,10 +121,10 @@ final class ResourceManager {
         // Dispatch-based memory pressure signal (warning/critical)
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler { [weak self] in
-            self?.handleMemoryPressure()
+            Task { @MainActor [weak self] in self?.handleMemoryPressure() }
         }
         source.setCancelHandler { [weak self] in
-            self?.memoryPressureSource = nil
+            Task { @MainActor [weak self] in self?.memoryPressureSource = nil }
         }
         source.resume()
         memoryPressureSource = source

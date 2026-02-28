@@ -280,12 +280,21 @@ struct AboutSettingsView: View {
                             Spacer()
                             
                             if case .available = updateManager.state {
-                                Button {
-                                    updateManager.downloadUpdate()
-                                } label: {
-                                    Label("Update Now", systemImage: "arrow.down.circle.fill")
+                                if #available(macOS 12.0, *) {
+                                    Button {
+                                        updateManager.downloadUpdate()
+                                    } label: {
+                                        Label("Update Now", systemImage: "arrow.down.circle.fill")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                } else {
+                                    Button {
+                                        updateManager.downloadUpdate()
+                                    } label: {
+                                        Label("Update Now", systemImage: "arrow.down.circle.fill")
+                                    }
+                                    .buttonStyle(.bordered)
                                 }
-                                .buttonStyle(.borderedProminent)
                             } else {
                                 Button {
                                     updateManager.checkForUpdatesManually()
@@ -316,7 +325,7 @@ struct AboutSettingsView: View {
                         if case .downloading(let progress) = updateManager.state {
                             VStack(spacing: 8) {
                                 ProgressView(value: progress)
-                                    .progressViewStyle(.linear)
+                                    .progressViewStyle(LinearProgressViewStyle())
                                 HStack {
                                     Text("\(Int(progress * 100))% downloaded")
                                         .font(.system(size: 11))
@@ -383,9 +392,9 @@ struct LinkButton: View {
 
 // Changelog View
 struct ChangelogView: View {
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.presentationMode) var presentationMode
     @State private var changelogContent = "Loading changelog..."
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -394,7 +403,7 @@ struct ChangelogView: View {
                     .font(.title2)
                 Spacer()
                 Button {
-                    dismiss()
+                    presentationMode.wrappedValue.dismiss()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
@@ -408,11 +417,20 @@ struct ChangelogView: View {
             
             // Content
             ScrollView {
-                Text(changelogContent)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
+                Group {
+                    if #available(macOS 12.0, *) {
+                        Text(changelogContent)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                    } else {
+                        Text(changelogContent)
+                            .font(.system(size: 12, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                    }
+                }
             }
         }
         .frame(width: 600, height: 500)

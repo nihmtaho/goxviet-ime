@@ -28,12 +28,12 @@ enum InjectionMethod {
 /// Handles text injection with proper sequencing to prevent race conditions
 /// Following Single Responsibility Principle - only handles text injection
 public final class TextInjector {
-    static let shared = TextInjector()
+    nonisolated(unsafe) static let shared = TextInjector()
 
     // Semaphore to block keyboard callback until injection completes
     private let semaphore = DispatchSemaphore(value: 1)
 
-    private init() {}
+    nonisolated private init() {}
 
     /// Post break key (Enter, punctuation) synthetically after text injection
     /// Used for auto-restore to ensure correct event ordering

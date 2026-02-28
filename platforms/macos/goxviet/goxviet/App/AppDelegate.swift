@@ -60,7 +60,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Disable automatic window restoration to avoid className errors
         UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
-        
+
+        // Initialize settings — must happen before InputManager is created
+        SettingsManager.shared.initialize()
+
+        // Create InputManager singleton on main actor (init has @MainActor dependencies)
+        InputManager.shared = InputManager()
+
         // Apply Dock visibility from user preference
         applyActivationPolicyFromPreference()
         
@@ -574,18 +580,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    deinit {
-        cleanupObservers()
-        stopAccessibilityPollTimer()
-        
-        // Release status item
-        if let item = statusItem {
-            NSStatusBar.system.removeStatusItem(item)
-            statusItem = nil
-        }
-        
-        Log.info("AppDelegate deinitialized")
-    }
+    deinit {}
     
     func checkPermissionOnActivate() {
         let accessEnabled = AXIsProcessTrusted()
