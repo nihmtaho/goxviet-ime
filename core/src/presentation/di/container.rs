@@ -16,7 +16,7 @@ use crate::infrastructure::adapters::transformation::{
     VietnameseMarkAdapter, VietnameseToneAdapter,
 };
 use crate::infrastructure::adapters::validation::{
-    FsmValidatorAdapter, LanguageDetectorAdapter,
+    LanguageDetectorAdapter, SyllableStructureValidator,
 };
 use std::sync::{Arc, Mutex};
 
@@ -74,7 +74,7 @@ impl Container {
         // ProcessorService takes domain ports directly (not use cases)
         ProcessorService::new(
             input_method_box,
-            Box::new(FsmValidatorAdapter::new()),
+            Box::new(SyllableStructureValidator::new()),
             Box::new(VietnameseToneAdapter::new(
                 crate::domain::ports::transformation::ToneStrategy::default(),
             )),
@@ -95,9 +95,9 @@ impl Container {
         }
     }
 
-    /// Create syllable validator (FSM-based)
+    /// Create syllable validator (PAD/NA/PAC structure-based)
     fn create_syllable_validator() -> Arc<dyn SyllableValidator> {
-        Arc::new(FsmValidatorAdapter::new())
+        Arc::new(SyllableStructureValidator::new())
     }
 
     /// Create language detector
