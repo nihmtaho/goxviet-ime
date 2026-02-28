@@ -3142,8 +3142,22 @@ impl Engine {
         }
 
         // Priority 2: Phonotactic analysis on raw key sequence
+        // In Telex, when tone modifiers were consumed (raw longer than rendered),
+        // filter them out so patterns like SP in "tieesp" don't falsely fire.
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
-        let phonotactic = PhonotacticEngine::analyze(&raw_keys);
+        let filtered_keys_owned: Vec<(u16, bool)>;
+        let filtered_keys: &[(u16, bool)] = if self.method == 0 && raw_keys.len() > output.chars().count() {
+            use crate::data::keys as k;
+            const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
+            filtered_keys_owned = raw_keys.iter().enumerate()
+                .filter(|&(i, &(key, _))| i == 0 || !TELEX_TONE_MODIFIERS.contains(&key))
+                .map(|(_, &kv)| kv)
+                .collect();
+            &filtered_keys_owned
+        } else {
+            &raw_keys
+        };
+        let phonotactic = PhonotacticEngine::analyze(filtered_keys);
         phonotactic.english_confidence >= 80
     }
 
