@@ -11,7 +11,12 @@ name = "goxviet_core"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-# Minimal dependencies for core engine
+# Vietnamese dictionary O(1) lookup (phf = perfect hash function)
+phf = { version = "0.11", features = ["macros"] }
+
+[build-dependencies]
+# Build-time generation of phf sets from dictionary files
+phf_codegen = "0.11"
 
 [dev-dependencies]
 rstest = "0.18"
