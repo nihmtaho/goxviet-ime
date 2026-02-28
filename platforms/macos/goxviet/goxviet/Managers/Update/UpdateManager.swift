@@ -320,9 +320,9 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
         echo "PID to wait for: \(currentPID)" >> "\(logFile)"
         echo "Temp App: \(tempApp)" >> "\(logFile)"
         echo "Dest App: \(destApp)" >> "\(logFile)"
-        
+
         is_running() { kill -0 $1 > /dev/null 2>&1; }
-        
+
         echo "Waiting for PID \(currentPID) to exit..." >> "\(logFile)"
         MAX_RETRIES=100
         COUNT=0
@@ -336,24 +336,24 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged {
                 break
             fi
         done
-        
+
         echo "Process terminated (or timeout), proceeding with update..." >> "\(logFile)"
-        
+
         log() { echo "$1" >> "\(logFile)"; }
-        
-        log "Syncing files..."
-        if rsync -a --delete "\(tempApp)/" "\(destApp)/"; then
-            log "Rsync successful"
+
+        log "Replacing app bundle atomically..."
+        rm -rf "\(destApp)"
+        if mv "\(tempApp)" "\(destApp)" 2>/dev/null; then
+            log "Atomic move successful"
+        elif ditto "\(tempApp)" "\(destApp)" && rm -rf "\(tempApp)"; then
+            log "Ditto copy successful (cross-volume fallback)"
         else
-            log "Rsync failed with code $?"
+            log "App replacement failed with code $?"
             exit 1
         fi
-        
-        log "Cleaning up temp app..."
-        rm -rf "\(tempApp)"
-        
+
         log "Relaunching app..."
-        if open -n "\(destApp)"; then
+        if open "\(destApp)" --args --post-update; then
             log "App launch successful"
         else
             log "Failed to open app"

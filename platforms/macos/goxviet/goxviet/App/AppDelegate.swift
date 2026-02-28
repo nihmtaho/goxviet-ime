@@ -17,10 +17,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // Timer for auto-polling accessibility permission
     private var accessibilityPollTimer: Timer?
-    
+
     // Flag to track if permission was granted while modal was showing
     private var permissionGrantedWhileModalActive = false
     private var isModalAlertActive = false
+
+    // Flag: app was launched right after an auto-update
+    private var isPostUpdateLaunch: Bool = false
     private let notificationCenter = NotificationCenter.default
 
     private enum ObserverKey {
@@ -77,9 +80,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // smartModeMenuBarItem = SmartModeMenuBarItem()
         // Log.info("Smart Mode menu bar indicator initialized")
         
+        // Detect post-update launch (flag passed by update script)
+        isPostUpdateLaunch = CommandLine.arguments.contains("--post-update")
+        if isPostUpdateLaunch {
+            Log.info("Post-update launch detected")
+        }
+
         // Check and request Accessibility Permission
         // InputManager will only start if permission is granted
-        checkAccessibilityPermission()
+        // Delay slightly on post-update launches to let macOS TCC settle
+        let delay: TimeInterval = isPostUpdateLaunch ? 0.8 : 0.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.checkAccessibilityPermission()
+        }
 
         // Start background update checks
         UpdateManager.shared.start()
@@ -91,14 +104,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Accessed via Cmd+, or "Settings..." menu item
     
     // MARK: - Accessibility Permission
-    
-    func checkAccessibilityPermission() {
+
+    func checkAccessibilityPermission(retryCount: Int = 0) {
         // Check WITHOUT showing system prompt (no duplicate dialogs)
         let accessEnabled = AXIsProcessTrusted()
-        
+
         if !accessEnabled {
+            // On post-update launches macOS TCC may need a moment to recognise the
+            // new binary as the previously-trusted app. Retry up to 3 times (1.5 s
+            // total) before surfacing the alert to the user.
+            let maxRetries = isPostUpdateLaunch ? 3 : 0
+            if retryCount < maxRetries {
+                Log.info("Accessibility not yet granted, retrying (\(retryCount + 1)/\(maxRetries))…")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.checkAccessibilityPermission(retryCount: retryCount + 1)
+                }
+                return
+            }
+
             Log.warning("Accessibility permission not granted")
-            
+
             // Show only our custom alert (not system prompt)
             DispatchQueue.main.async { [weak self] in
                 self?.showAccessibilityAlert()
@@ -106,7 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             Log.info("Accessibility permission granted")
             stopAccessibilityPollTimer()
-            
+
             // Start InputManager only after permission is confirmed
             InputManager.shared.start()
         }
@@ -187,21 +212,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         isModalAlertActive = true
         
         let alert = NSAlert()
-        alert.messageText = "🔐 Accessibility Permission Required"
-        alert.informativeText = """
-        GoxViet needs Accessibility permission to capture keyboard input for Vietnamese typing.
-        📝 Quick Setup (one-time only):
-        
-        1️⃣ Click "Open System Settings" below
-        2️⃣ Find "GoxViet" in the list and toggle it ON
-        3️⃣ That's it! Permission will be auto-detected
-        
-        💡 The permission is remembered - you won't need to do this again after rebuilding the app.
-        
-        ⚠️ If GoxViet is not in the list:
-           • Click the + button to add it manually
-           • Or drag GoxViet.app into the list
-        """
+        if isPostUpdateLaunch {
+            alert.messageText = "🔄 Re-enable Accessibility After Update"
+            alert.informativeText = """
+            GoxViet was just updated. macOS requires you to re-enable Accessibility permission for the new version.
+
+            📝 Quick re-enable (takes ~10 seconds):
+
+            1️⃣ Click "Open System Settings" below
+            2️⃣ Find "GoxViet" in the list — toggle it OFF, then back ON
+            3️⃣ That's it! Permission will be auto-detected
+
+            ⚠️ If GoxViet is not in the list, click + to add it.
+            """
+        } else {
+            alert.messageText = "🔐 Accessibility Permission Required"
+            alert.informativeText = """
+            GoxViet needs Accessibility permission to capture keyboard input for Vietnamese typing.
+            📝 Quick Setup (one-time only):
+
+            1️⃣ Click "Open System Settings" below
+            2️⃣ Find "GoxViet" in the list and toggle it ON
+            3️⃣ That's it! Permission will be auto-detected
+
+            💡 The permission is remembered - you won't need to do this again after rebuilding the app.
+
+            ⚠️ If GoxViet is not in the list:
+               • Click the + button to add it manually
+               • Or drag GoxViet.app into the list
+            """
+        }
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Quit")
