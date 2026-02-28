@@ -381,6 +381,21 @@ impl Engine {
 
         // Check for word boundary shortcuts ONLY on SPACE
         if key == keys::SPACE {
+            // Word-boundary English detection: runs on the FULL word before clearing.
+            // This catches English words where mid-word phonotactic had insufficient signal
+            // (e.g. V+R rhotic patterns like "bar", "firm", double-vowels like "book", "beer").
+            // Must run BEFORE shortcuts so shortcut handling sees the already-restored buffer.
+            if let Some(english_result) = self.check_and_restore_english_at_boundary() {
+                if !self.buf.is_empty() {
+                    self.word_history.push(&self.buf, &self.raw_input);
+                    self.spaces_after_commit = 1;
+                }
+                self.clear();
+                self.is_english_word = false;
+                self.raw_input.clear();
+                return english_result;
+            }
+
             let shortcut_result = self.try_word_boundary_shortcut();
 
             // Push to history before clearing (for backspace-after-space feature)
@@ -1007,19 +1022,10 @@ impl Engine {
             } else {
                 true // VNI mode: always allow tone checking
             };
-            eprintln!(
-                "DEBUG: should_check_tone={} for key={}",
-                should_check_tone, key
-            );
 
             if should_check_tone {
                 let tone_result = m.tone(key);
-                eprintln!("DEBUG: m.tone({}) = {:?}", key, tone_result);
                 if let Some(tone_type) = tone_result {
-                    eprintln!(
-                        "DEBUG: tone() returned Some for key={}, tone_type={:?}",
-                        key, tone_type
-                    );
                     let targets = m.tone_targets(key);
                     if let Some(result) = self.try_tone(key, caps, tone_type, targets) {
                         self.is_english_word = false;
@@ -1084,13 +1090,8 @@ impl Engine {
                                     && self.buf.last().map_or(false, |c| !keys::is_vowel(c.key))
                                     && self.buf.get(0).map_or(false, |c| !keys::is_vowel(c.key)));
 
-                            eprintln!(
-                                "DEBUG: try_tone failed for key={}, was_tone_attempt={}",
-                                key, was_tone_attempt
-                            );
 
                             if was_tone_attempt {
-                                eprintln!("DEBUG: Consuming keystroke without output");
                                 // FIX: Add the char to buffer to match platform display.
                                 // Platform passes through (action=0) so the char IS displayed.
                                 // Buffer must track it to avoid buffer-display mismatch.
@@ -1489,65 +1490,42 @@ impl Engine {
     fn can_apply_diacritical(&self, target_pos: usize, is_backward_application: bool) -> bool {
         use crate::data::keys;
 
-        eprintln!(
-            "DEBUG can_apply_diacritical: ENTRY target_pos={}, buf.len()={}",
-            target_pos,
-            self.buf.len()
-        );
 
         if target_pos >= self.buf.len() {
-            eprintln!("DEBUG can_apply_diacritical: target_pos out of bounds, ALLOW");
             return true; // Invalid position - allow
         }
 
         // Work directly with buffer keys
         let target_char = self.buf.get(target_pos).unwrap();
-        eprintln!(
-            "DEBUG can_apply_diacritical: target_char.key={}",
-            target_char.key
-        );
 
         // Ensure target is a vowel
         if !keys::is_vowel(target_char.key) {
-            eprintln!("DEBUG can_apply_diacritical: target is not vowel, ALLOW");
             return true; // Can't apply diacritical to non-vowel anyway
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════════
         // CHECK CASE 1: Consonant immediately after
-        eprintln!("DEBUG can_apply_diacritical: Checking CASE 1 (consonant after)");
         if target_pos + 1 < self.buf.len() {
             let next_char = self.buf.get(target_pos + 1).unwrap();
-            eprintln!(
-                "DEBUG can_apply_diacritical: next_char.key={}",
-                next_char.key
-            );
 
             // If next is a vowel, no consonant immediately after
             if !keys::is_vowel(next_char.key) {
                 // Next is a consonant. Is it a final consonant?
                 if let Some(cons_char) = crate::utils::key_to_char(next_char.key, false) {
                     let cons_str = cons_char.to_string();
-                    eprintln!(
-                        "DEBUG can_apply_diacritical: next is consonant '{}', checking if final",
-                        cons_str
-                    );
 
                     if crate::infrastructure::external::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str)
                     {
-                        eprintln!("DEBUG can_apply_diacritical: CASE 1 FOUND FINAL CONSONANT");
 
                         // SPECIAL CASE: Backward application
                         // When backward applying diacritical (e.g., "cam" + "a" → "câm"),
                         // the final consonant IS AT THE END, which is EXPECTED and ALLOWED
                         if is_backward_application && target_pos + 2 >= self.buf.len() {
-                            eprintln!("DEBUG can_apply_diacritical: backward application with final consonant at end, ALLOW");
                             return true; // ALLOW backward application
                         }
 
                         // Check if it's truly final (not part of a 2-char consonant followed by vowel)
                         if target_pos + 2 >= self.buf.len() {
-                            eprintln!("DEBUG can_apply_diacritical: final consonant at end of buffer, REJECT");
                             return false; // REJECT: vowel followed by final consonant at end
                         }
 
@@ -1561,14 +1539,12 @@ impl Engine {
 
                         if is_digraph {
                              // SPECIAL CASE: It's a valid digraph final (ng, nh, ch)
-                             eprintln!("DEBUG can_apply_diacritical: found digraph final");
 
                              // Check what follows the digraph
                              if target_pos + 3 >= self.buf.len() {
                                   // End of buffer.
                                   // Backward application allows final consonant at end.
                                   if is_backward_application {
-                                      eprintln!("DEBUG can_apply_diacritical: backward application with digraph final at end, ALLOW");
                                       return true;
                                   }
 
@@ -1579,14 +1555,12 @@ impl Engine {
                                   // But "ung" is valid.
                                   // If this function returns false, tone is blocked.
                                   // We should probably allow if it's a valid final consonant at end.
-                                  eprintln!("DEBUG can_apply_diacritical: valid digraph matching end of buffer, ALLOW");
                                   return true;
                              }
 
                              // If not end of buffer, check what's after digraph.
                              let after_digraph = self.buf.get(target_pos + 3).unwrap();
                              if !keys::is_vowel(after_digraph.key) {
-                                  eprintln!("DEBUG can_apply_diacritical: digraph followed by non-vowel, REJECT");
                                   return false; // REJECT
                              }
 
@@ -1596,18 +1570,15 @@ impl Engine {
                              // This is complex but for now we assume rejection or allow based on validator.
                              // But here we are VALIDATING DIACRITICAL PLACEMENT.
                              // Safest to reject if followed by vowel as it changes syllable structure?
-                             eprintln!("DEBUG can_apply_diacritical: digraph followed by vowel, REJECT");
                              return false;
                         }
 
                         // Not a digraph. Check single char.
                         if !keys::is_vowel(after_cons.key) {
-                            eprintln!("DEBUG can_apply_diacritical: final consonant followed by non-vowel, REJECT");
                             return false; // REJECT: vowel followed by final consonant
                         }
 
                         // Single final consonant followed by vowel = it's part of the syllable
-                        eprintln!("DEBUG can_apply_diacritical: final consonant followed by vowel, REJECT");
                         return false; // REJECT
                     }
                 }
@@ -1626,22 +1597,15 @@ impl Engine {
         //   1. Check if prev_pos is a potential final consonant (c, ch, m, n, ng, nh, p, t)
         //   2. If yes, check if there's a vowel BEFORE it (making it a true final)
         //   3. If both true → REJECT (target starts new syllable after complete syllable)
-        eprintln!("DEBUG can_apply_diacritical: Checking CASE 2 (preceding final consonant)");
         if target_pos > 0 {
             let prev_pos = target_pos - 1;
             if let Some(prev_char) = self.buf.get(prev_pos) {
-                eprintln!(
-                    "DEBUG can_apply_diacritical: prev_char.key={}, is_vowel={}",
-                    prev_char.key,
-                    keys::is_vowel(prev_char.key)
-                );
 
                 // Check if immediately preceding character is a consonant
                 if !keys::is_vowel(prev_char.key) {
                     // Previous is consonant. Check if it could be a final consonant
                     if let Some(prev_cons_char) = crate::utils::key_to_char(prev_char.key, false) {
                         let prev_cons_str = prev_cons_char.to_string();
-                        eprintln!("DEBUG can_apply_diacritical: prev is consonant '{}', checking if final", prev_cons_str);
 
                         // Is this consonant type potentially final? (c, ch, m, n, ng, nh, p, t)
                         if crate::infrastructure::external::diacritical_validator::DiacriticalValidator::is_final_consonant(&prev_cons_str) {
@@ -1656,10 +1620,8 @@ impl Engine {
                             };
 
                             if has_vowel_before {
-                                eprintln!("DEBUG can_apply_diacritical: CASE 2 FOUND TRUE FINAL CONSONANT (has vowel before), REJECT");
                                 return false; // REJECT: target vowel starts new syllable after complete one
                             } else {
-                                eprintln!("DEBUG can_apply_diacritical: consonant '{}' is potentially final but NO vowel before it (initial consonant), ALLOW", prev_cons_str);
                             }
                         }
                     }
@@ -1668,7 +1630,6 @@ impl Engine {
         }
 
         // No final consonants blocking this vowel = ALLOW
-        eprintln!("DEBUG can_apply_diacritical: No final consonants found, ALLOW");
         true
     }
 
@@ -1781,10 +1742,6 @@ impl Engine {
             } else if tone_type == ToneType::Horn {
                 // For horn modifier, apply smart vowel selection based on Vietnamese phonology
                 target_positions = self.find_horn_target_with_switch(targets, tone_val);
-                println!(
-                    "DEBUG: find_horn_target_with_switch returned {:?}, targets={:?}",
-                    target_positions, targets
-                );
             } else {
                 // FALLBACK: Normal tone application (e.g. aa -> â, ee -> ê, oo -> ô)
                 // For Circumflex (doubling patterns), the target vowel must be ADJACENT (last in buffer)
@@ -1862,16 +1819,10 @@ impl Engine {
                     };
 
                     if should_check_backward {
-                        eprintln!(
-                            "DEBUG try_tone: Checking backward application, last_char_key={}",
-                            last_char.key
-                        );
 
                         // Look backward to find matching vowel that can receive this diacritical
                         for pos in (0..last_buf_idx).rev() {
                             if let Some(c) = self.buf.get(pos) {
-                                eprintln!("DEBUG try_tone backward: Checking pos={}, key={}, is_vowel={}, tone={}",
-                                    pos, c.key, keys::is_vowel(c.key), c.tone);
 
                                 // For VNI mode: match by tone targets (e.g., 6 can apply to a,e,o)
                                 // For Telex mode: match by key (e.g., 'a' matches 'a')
@@ -1949,9 +1900,6 @@ impl Engine {
         };
 
         if is_backward_application {
-            eprintln!(
-                "DEBUG try_tone: BACKWARD APPLICATION DETECTED - allowing final consonant at end"
-            );
         }
 
         // If switching, clear old tones first for proper rebuild
@@ -2075,18 +2023,10 @@ impl Engine {
         // VALIDATION CHECK: Verify the tone application resulted in valid Vietnamese
         // If validation fails, this indicates English word typing - trigger instant restore
         let simulated_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        eprintln!(
-            "DEBUG try_tone: Validating buffer keys: {:?}",
-            simulated_keys
-        );
         let validation_result =
             crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(
                 &simulated_keys,
             );
-        eprintln!(
-            "DEBUG try_tone: Validation result: is_valid={}",
-            validation_result.is_valid
-        );
         if !validation_result.is_valid {
             // Validation failed - revert the tone and trigger instant restore
             for &pos in &target_positions {
@@ -2112,14 +2052,7 @@ impl Engine {
 
     /// Try to apply mark transformation (circumflex, breve, horn)
     fn try_mark(&mut self, key: u16, caps: bool, mark_val: u8) -> Option<Result> {
-        eprintln!(
-            "DEBUG try_mark ENTRY: key={}, mark_val={}, buf.len={}",
-            key,
-            mark_val,
-            self.buf.len()
-        );
         if self.buf.is_empty() {
-            eprintln!("DEBUG try_mark: buffer is empty, returning None");
             return None;
         }
 
@@ -2278,16 +2211,10 @@ impl Engine {
         // Tone marks ARE allowed after final consonants (e.g., "tiền", "sàn").
         // Only diacritical marks (handled by try_tone()) are prohibited after final consonants.
 
-        eprintln!("DEBUG try_mark: About to apply mark at pos={}", pos);
         if let Some(c) = self.buf.get_mut(pos) {
-            eprintln!(
-                "DEBUG try_mark: Applying mark={} to char at pos={}",
-                mark_val, pos
-            );
             c.mark = mark_val;
             self.last_transform = Some(Transform::Mark(key, mark_val));
         } else {
-            eprintln!("DEBUG try_mark: FAILED to get_mut({}), returning None", pos);
             return None;
         }
 
@@ -2297,20 +2224,11 @@ impl Engine {
         // VALIDATION CHECK: Verify the mark application resulted in valid Vietnamese
         // (Similar to try_tone validation)
         let simulated_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
-        eprintln!(
-            "DEBUG try_mark: simulated_keys before validation = {:?}",
-            simulated_keys
-        );
         let validation_result =
             crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(
                 &simulated_keys,
             );
-        eprintln!(
-            "DEBUG try_mark: validation_result.is_valid = {}",
-            validation_result.is_valid
-        );
         if !validation_result.is_valid {
-            eprintln!("DEBUG try_mark: VALIDATION FAILED, returning None");
             // Validation failed - revert the mark and trigger instant restore
             if let Some(c) = self.buf.get_mut(pos) {
                 c.mark = mark::NONE;
@@ -2329,10 +2247,6 @@ impl Engine {
 
         // CRITICAL FIX: Track the modifier key in raw_input
         let result = self.rebuild_from(rebuild_pos);
-        eprintln!(
-            "DEBUG try_mark: About to return Some(result), backspace={}",
-            result.backspace
-        );
         return Some(result);
     }
 
@@ -2615,12 +2529,6 @@ impl Engine {
 
     /// Handle normal letter input
     fn handle_normal_letter(&mut self, key: u16, caps: bool, _shift: bool) -> Result {
-        eprintln!(
-            "DEBUG handle_normal_letter: ENTRY key={}, caps={}, buf.len={}",
-            key,
-            caps,
-            self.buf.len()
-        );
         // Detect if typing special characters with Shift (e.g., @, #, $)
         // These indicate English input, so mark as English word
         //
@@ -2660,28 +2568,12 @@ impl Engine {
             // Example: buffer=[c, â (with tone), m], adding 'a' → [c, â, m, a] (TWO syllables) → REJECT
             // This prevents invalid sequences after backward diacritical application
             if keys::is_vowel(key) && self.buf.len() >= 2 {
-                eprintln!(
-                    "DEBUG handle_normal_letter: Checking vowel '{}' against buffer len={}",
-                    key,
-                    self.buf.len()
-                );
                 let last_idx = self.buf.len() - 1;
 
                 // Check pattern: [..., vowel-with-tone, final-consonant] + new-vowel
                 if let (Some(last_char), Some(prev_char)) =
                     (self.buf.get(last_idx), self.buf.get(last_idx - 1))
                 {
-                    eprintln!(
-                        "DEBUG handle_normal_letter: last_char.key={}, is_vowel={}",
-                        last_char.key,
-                        keys::is_vowel(last_char.key)
-                    );
-                    eprintln!(
-                        "DEBUG handle_normal_letter: prev_char.key={}, is_vowel={}, tone={}",
-                        prev_char.key,
-                        keys::is_vowel(prev_char.key),
-                        prev_char.tone
-                    );
 
                     // Last char is final consonant AND previous char is vowel with Vietnamese tone mark
                     // NOTE: Only check mark (Vietnamese tones: sắc/huyền/hỏi/ngã/nặng), NOT tone
@@ -2692,16 +2584,10 @@ impl Engine {
                         && keys::is_vowel(prev_char.key)
                         && prev_char.mark != 0
                     {
-                        eprintln!("DEBUG handle_normal_letter: Pattern matched! Checking if last is final consonant");
                         // Check if last is actually a final consonant
                         if let Some(cons_char) = crate::utils::key_to_char(last_char.key, false) {
                             let cons_str = cons_char.to_string();
-                            eprintln!(
-                                "DEBUG handle_normal_letter: cons_str='{}', checking if final",
-                                cons_str
-                            );
                             if crate::infrastructure::external::diacritical_validator::DiacriticalValidator::is_final_consonant(&cons_str) {
-                                eprintln!("DEBUG handle_normal_letter: Multi-syllable detected after [vowel-with-mark, final-consonant]");
                                 // Still add the vowel to buffer to keep buffer-display in sync,
                                 // then let check_and_restore_english handle English words.
                                 // Don't reject (return Result::default) as it causes mismatch.
@@ -3311,6 +3197,99 @@ impl Engine {
         restore::instant_restore_english(&self.buf, &self.raw_input)
     }
 
+    /// Restore to raw ASCII with trailing space (used at word boundary / SPACE key)
+    fn auto_restore_english_with_space(&self) -> Result {
+        restore::auto_restore_english(&self.buf, &self.raw_input)
+    }
+
+    /// Word-boundary English detection: runs at SPACE keypress on the FULL word.
+    ///
+    /// Unlike `check_and_restore_english` (mid-word, partial evidence), this runs
+    /// after the complete word is in raw_input, giving phonotactic much richer signal.
+    /// Returns `Some(result)` with trailing space included, or `None` to let SPACE
+    /// fall through to normal shortcut / commit handling.
+    fn check_and_restore_english_at_boundary(&mut self) -> Option<Result> {
+        if !self.instant_restore_enabled || self.is_english_word {
+            return None;
+        }
+        if !self.has_vietnamese_transforms() {
+            return None;
+        }
+
+        // Highest priority: English dictionary match
+        let is_dict = self.is_english_dictionary_word();
+        if is_dict {
+            self.is_english_word = true;
+            let result = self.auto_restore_english_with_space();
+            self.sync_buffer_with_raw_input();
+            self.last_transform = None;
+            return Some(result);
+        }
+
+        // Phonotactic on full word, but trim trailing Telex tone modifier from raw_input.
+        // In Telex mode, the last raw key may be a tone modifier (r=hỏi, s=sắc, f=huyền, x=ngã, j=nặng)
+        // that was consumed to produce a Vietnamese diacritic — it's not a letter in the word.
+        // Without trimming, "bangr"=[B,A,N,G,R] would detect "GR" as an English cluster and
+        // falsely restore valid Vietnamese words like "bảng".
+        let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
+        let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+
+        let keys_for_phonotactic = {
+            use crate::data::keys as k;
+            const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
+            let is_telex = self.method
+                == crate::infrastructure::engine::types::config::InputMethod::Telex as u8;
+            let last_is_tone_mod = raw_keys
+                .last()
+                .map_or(false, |&(k, _)| TELEX_TONE_MODIFIERS.contains(&k));
+            // Trim if Telex AND the last raw key is a tone modifier AND raw is longer than buf
+            // (meaning at least one key was absorbed as a Telex transform).
+            // Use > rather than ==+1 because compound modifiers like 'ow'→ω absorb 2 raw keys
+            // into 1 buf entry, so raw can be 2+ longer than buf.
+            // Example: "bowr" = raw[B,O,W,R], buf[b,ở] → 4>2, trim R → [B,O,W] → no "wr" cluster
+            if is_telex && last_is_tone_mod && raw_keys.len() > buf_keys.len() {
+                &raw_keys[..raw_keys.len() - 1]
+            } else {
+                &raw_keys[..]
+            }
+        };
+
+        let phonotactic =
+            crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(
+                keys_for_phonotactic,
+            );
+
+        if phonotactic.english_confidence == 0 {
+            return None;
+        }
+
+        let viet_validation =
+            crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(
+                &buf_keys,
+            );
+
+        let should_restore = if viet_validation.is_valid {
+            // Valid Vietnamese collision: require confidence > 97 to override.
+            // L6 prefixes return 95 (e.g. "con-", "dis-") which is NOT enough —
+            // those fire false positives on valid Vietnamese words like "cong", "con".
+            // Only L2 onset clusters (98) and L1 invalid initials (100) are strong enough.
+            phonotactic.english_confidence >= 97
+        } else {
+            // Invalid Vietnamese output: lower threshold — almost certainly English
+            phonotactic.english_confidence >= 60
+        };
+
+        if should_restore {
+            self.is_english_word = true;
+            let result = self.auto_restore_english_with_space();
+            self.sync_buffer_with_raw_input();
+            self.last_transform = None;
+            return Some(result);
+        }
+
+        None
+    }
+
     /// Called when ESC is pressed. Replaces transformed output with original keystrokes.
     /// Example: "tẽt" (from typing "text" in Telex) → "text"
     /// Delegates to restore module.
@@ -3358,12 +3337,8 @@ impl Engine {
         // PRIORITY CHECK: If raw input is in English dictionary (programming terms, common words),
         // ALWAYS restore immediately, regardless of Vietnamese validation or confidence scores
         // This ensures words like "console" don't become "cónole"
-        let raw_key_list: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
         let is_dict = self.is_english_dictionary_word();
-        eprintln!("DEBUG check_and_restore: has_transforms={}, buf.len={}, raw_input.len={}, is_dict={}, raw_keys={:?}",
-            self.has_vietnamese_transforms(), self.buf.len(), self.raw_input.len(), is_dict, raw_key_list);
         if is_dict {
-            eprintln!("DEBUG: Restoring from dictionary match");
             self.is_english_word = true;
             let mut result = self.instant_restore_english();
             // Adjust backspace to account for pending characters (buffer > screen)
@@ -3374,17 +3349,44 @@ impl Engine {
         }
 
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
-        let phonotactic =
-            crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(
-                &raw_keys,
-            );
 
-        // Get Vietnamese validation
+        // Get Vietnamese validation first (needed to decide phonotactic key trimming)
         let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
         let viet_validation =
             crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(
                 &buf_keys,
             );
+
+        // When the buf is valid Vietnamese AND raw_input is exactly 1 longer than buf
+        // (indicating a Telex tone modifier was the last key consumed by try_tone),
+        // trim that modifier before phonotactic analysis.
+        //
+        // Without trimming, a Vietnamese final -ng followed by hỏi 'r' creates (g,r)="gr"
+        // which is mistakenly detected as an English onset cluster.
+        //
+        // We ONLY trim when viet_validation.is_valid=true so that invalid-Vietnamese inputs
+        // like "acr" (where "ảc" is invalid: hỏi+final-c forbidden) still get the full
+        // raw_keys including 'r', allowing the (c,r)="cr" cluster to trigger English restore.
+        let phonotactic = {
+            use crate::data::keys as k;
+            const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
+            let is_telex = self.method
+                == crate::infrastructure::engine::types::config::InputMethod::Telex as u8;
+            let should_trim = is_telex
+                && viet_validation.is_valid
+                && raw_keys.len() > self.buf.len()
+                && raw_keys
+                    .last()
+                    .map_or(false, |&(k, _)| TELEX_TONE_MODIFIERS.contains(&k));
+            let keys_for_analysis = if should_trim {
+                &raw_keys[..raw_keys.len() - 1]
+            } else {
+                &raw_keys[..]
+            };
+            crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(
+                keys_for_analysis,
+            )
+        };
 
         // Check dictionary (already checked above, but keep variable for backward compatibility)
         let _is_dict = is_dict;
@@ -3439,10 +3441,10 @@ impl Engine {
                     phonotactic.english_confidence >= 95
                 }
             } else {
-                // For documented Vietnamese words or longer words, use conservative threshold: 95
-                // Dictionary-based restore uses lower threshold (80+) to catch common English
-                // words like "cost", "most", "best" etc. that collide with valid Vietnamese.
-                (phonotactic.english_confidence >= 95)
+                // For documented Vietnamese words or longer words, use conservative threshold: 97.
+                // This requires L2 onset clusters (98) or L1 invalid initials (100) to override
+                // valid Vietnamese. L6 prefixes (95) are NOT strong enough on their own.
+                (phonotactic.english_confidence >= 97)
                     || (phonotactic.english_confidence >= 80 && is_raw_dict)
             }
         } else {
@@ -4876,25 +4878,21 @@ mod tests {
 
         // Test patterns with "ngh" prefix
         let result = type_word(&mut e, "nghia");
-        eprintln!("nghia -> '{}'", result);
 
         e = Engine::new();
         e.set_method(0);
         e.set_enabled(true);
         let result = type_word(&mut e, "nghiaa");
-        eprintln!("nghiaa -> '{}'", result);
 
         e = Engine::new();
         e.set_method(0);
         e.set_enabled(true);
         let result = type_word(&mut e, "nghie");
-        eprintln!("nghie -> '{}'", result);
 
         e = Engine::new();
         e.set_method(0);
         e.set_enabled(true);
         let result = type_word(&mut e, "nghiee");
-        eprintln!("nghiee -> '{}'", result);
         assert_eq!(result, "nghiê", "nghiee should become nghiê");
     }
 

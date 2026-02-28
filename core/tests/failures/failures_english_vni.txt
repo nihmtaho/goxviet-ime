@@ -1,0 +1,4 @@
+WORD	INPUT	EXPECTED	ACTUAL
+hcm	hcm	hcm	Hồ Chí Minh
+hn	hn	hn	Hà Nội
+vn	vn	vn	Việt Nam
