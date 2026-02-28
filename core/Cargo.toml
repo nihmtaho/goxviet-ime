@@ -13,6 +13,9 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 # Vietnamese dictionary O(1) lookup (phf = perfect hash function)
 phf = { version = "0.11", features = ["macros"] }
+# JSON serialization for InputMethodConfig FFI transfer
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [build-dependencies]
 # Build-time generation of phf sets from dictionary files
@@ -56,4 +59,8 @@ harness = false
 
 [[bench]]
 name = "clean_arch_bench"
+harness = false
+
+[[bench]]
+name = "sprint_d_bench"
 harness = false

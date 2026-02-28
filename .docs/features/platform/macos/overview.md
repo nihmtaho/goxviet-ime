@@ -4,68 +4,132 @@ The macOS platform implementation of GoxViet is a **hybrid application** combini
 
 ## High-Level Architecture
 
-The application follows a layered architecture designed for low latency and native system integration.
-
-```mermaid
-graph TD
-    User[User Keyboard Input] --> EventTap[CGEventTap (Swift)]
-    EventTap --> InputManager[InputManager (Swift)]
-    
-    subgraph Swift Layer
-        InputManager --> AppState[AppState (Settings)]
-        InputManager --> RustBridge[RustBridge (FFI Wrapper)]
-        InputManager --> TextInjector[TextInjector (Output)]
-    end
-    
-    subgraph Rust Core
-        RustBridge --> FFIBoundary[C FFI Boundary]
-        FFIBoundary --> Engine[Core Engine (Rust)]
-        Engine --> Buffer[Input Buffer]
-        Engine --> English[English Detection]
-    end
-    
-    TextInjector --> TargetApp[Target Application]
+```
+User Keyboard Input
+        │
+        ▼
+CGEventTap (system-wide intercept)
+        │
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Swift Platform Layer                                   │
+│                                                         │
+│  InputManager (singleton)                               │
+│    │                                                     │
+│    ├── PerAppModeManagerEnhanced  (Smart Mode check)    │
+│    ├── RustBridgeV2 / RustEngineV2  (FFI v2 wrapper)   │
+│    └── TextInjectionHelper  (text output)               │
+│                                                         │
+│  AppState / SettingsManager  (settings, UserDefaults)   │
+│  NotificationCenter  (reactive settings broadcast)      │
+└─────────────────────────────────────────────────────────┘
+        │  FFI v2 (out-parameter pattern)
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Rust Core Engine (libgoxviet_core.a)                   │
+│  presentation/ffi/api.rs                                │
+│    → application / domain / infrastructure              │
+└─────────────────────────────────────────────────────────┘
+        │
+        ▼
+Target Application (text field)
 ```
 
 ## Key Components
 
-### 1. Application Entry Point (`AppDelegate.swift`)
--   **Status Bar App**: Runs primarily as a `LSUIElement` (agent application) in the menu bar.
--   **Lifecycle Management**: Handles app launch, termination, and window activation.
--   **Permission Handling**: Checks for Accessibility API permissions (`AXIsProcessTrusted`) required for key interception.
+### App Entry (`App/`)
 
-### 2. Input Management (`InputManager.swift`)
-The heart of the macOS platform layer.
--   **Event Tapping**: Uses `CGEvent.tapCreate` to intercept system-wide keyboard events.
--   **Filtering**: Selectively captures relevant keystrokes while passing through command shortcuts and navigation keys.
--   **Dispatch**: Forwards valid keys to the Rust core for processing.
+| File | Role |
+|---|---|
+| `AppDelegate.swift` | Status-bar app lifecycle, Accessibility permission check (`AXIsProcessTrusted`), `NSStatusItem` setup |
+| `GoxVietApp.swift` | SwiftUI `@main` App definition |
 
-### 3. State Management (`AppState.swift`, `SettingsRootView.swift`)
--   **Persistent Settings**: Stores user preferences (Input Method, Tone Style) using `UserDefaults`.
--   **Per-App State**: Tracks enabled/disabled state for individual applications (Smart Mode).
--   **Reactive UI**: Uses SwiftUI (`ObservableObject`) to update the Settings window and Menu Bar instantly.
+### Core Layer (`Core/`)
 
-### 4. Rust Bridge (`RustBridge.swift`)
--   **FFI Wrapper**: Provides a safe Swift API over the unsafe C bindings exposed by `goxviet-Bridging-Header.h`.
--   **Memory Safety**: Manages the allocation and freeing of pointers returned by the Rust core.
+| File | Role |
+|---|---|
+| `RustBridgeV2.swift` | Declares FFI v2 types (`FfiConfig_v2`, `FfiProcessResult_v2`, `FfiStatusCode`) and `@_silgen_name` function bindings. **The only place raw FFI symbols are declared.** |
+| `RustEngineV2.swift` | Thread-safe Swift wrapper around `RustBridgeV2`. Owns the engine pointer, applies config, exposes `processKey(_:) -> ProcessResult` |
+| `SettingsManager.swift` | Single source of truth for `UserDefaults`-backed settings. Syncs config changes to the Rust engine via `RustEngineV2` |
+| `OutputEncoding.swift` | `OutputEncoding` enum (Unicode / VIQR / TCVN3) for encoding conversion |
+| `TypedNotifications.swift` | Type-safe `NotificationCenter` wrappers for settings changes |
+| `RustBridgeError.swift` | `RustBridgeError` enum for FFI error propagation |
 
-## Directory Structure
+### Managers (`Managers/`)
 
-```text
-platforms/macos/goxviet/goxviet/
-├── App/
-│   ├── AppDelegate.swift       # App lifecycle & Menu Bar setup
-│   └── GoxVietApp.swift        # SwiftUI App definition
-├── Input/
-│   ├── InputManager.swift      # Core event loop & logic
-│   ├── TextInjectionHelper.swift # Text insertion logic
-│   └── RustBridge.swift        # FFI bridge to Rust
-├── UI/
-│   ├── SettingsRootView.swift  # Main settings window
-│   ├── MenuToggleView.swift    # Custom menu items
-│   └── ...
-├── Core/
-│   └── AppState.swift          # Central state management
-└── Resources/
-    └── goxviet-Bridging-Header.h # C header for Rust FFI
+| File | Role |
+|---|---|
+| `Input/InputManager.swift` | **Singleton CGEventTap event loop.** Highest-risk file — intercepts all keystrokes, dispatches to `RustEngineV2`, applies backspaces + text injection. |
+| `Injection/TextInjectionHelper.swift` | Injects backspace events + text via `CGEvent` posts |
+| `PerAppModeManagerEnhanced.swift` | Per-application Smart Mode config stored in `UserDefaults` |
+| `ResourceManager.swift` | Asset / resource loading helpers |
+| `Update/UpdateManager.swift` | Auto-update coordinator |
+| `Update/UpdateChecker.swift` | Version check against GitHub releases |
+| `WindowManager.swift` | Settings window presentation (`NSWindow`) |
+
+### Models (`Models/`)
+
+| File | Role |
+|---|---|
+| `KeyboardShortcut.swift` | Toggle shortcut model (key + modifiers) |
+| `RestoreShortcut.swift` | Restore-word shortcut model |
+| `LRUCache.swift` | Generic LRU cache (used for character pool) |
+
+### Services (`Services/`)
+
+| File | Role |
+|---|---|
+| `InputSourceMonitor.swift` | Monitors macOS input source changes |
+| `Log.swift` | Structured logging to `~/Library/Logs/GoxViet/` |
+
+### UI (`UI/`)
+
+| Path | Role |
+|---|---|
+| `UI/Settings/SettingsRootView.swift` | Root SwiftUI settings window (Glass style) |
+| `UI/Settings/GeneralSettingsView.swift` | Input method, tone style settings |
+| `UI/Settings/AdvancedSettingsView.swift` | Smart Mode, ESC restore, etc. |
+| `UI/Settings/PerAppSettingsView.swift` | Per-app enable/disable table |
+| `UI/Settings/TextExpansionSettingsView.swift` | Shortcut CRUD UI |
+| `UI/MenuBar/MenuToggleView.swift` | Menu bar toggle item |
+| `UI/MenuBar/SmartModeIndicator.swift` | Smart Mode status indicator |
+
+### Utilities (`Utilities/`)
+
+| File | Role |
+|---|---|
+| `HighPriorityKeyboardEventCapture.swift` | CGEventTap priority setup |
+| `ActivationPolicyCoordinator.swift` | Switches between `accessory` and `regular` activation policy |
+| `SpecialPanelAppDetector.swift` | Detects apps that need special handling (password fields, etc.) |
+| `LifecycleManaged.swift` | Protocol for `start()`/`stop()` lifecycle |
+| `KeyCodes.swift` | macOS virtual keycode constants and sets |
+
+## Data Flow: Keystroke → Text Output
+
+1. `CGEventTap` fires in `InputManager.handleEvent(_:)`
+2. Self-generated events filtered by marker `0x564E5F494D45`
+3. Break keys (space, arrows, punctuation) → commit word, pass through
+4. Toggle shortcut? → toggle IME on/off
+5. Smart Mode disabled for this app? → pass through
+6. `RustEngineV2.processKey(char)` → `ime_process_key_v2(engine, key, &result)`
+7. If `result.consumed`:
+   - Post `backspace_count` backspace `CGEvent`s
+   - Post synthetic key events for `result.text`
+8. Free `result.text` via `ime_free_string_v2`
+
+## Settings Sync Flow
+
 ```
+SettingsManager.shared.inputMethod = .vni
+    → builds FfiConfig_v2
+    → RustEngineV2.applyConfig(config)
+    → ime_set_config_v2(enginePtr, &config)
+    → posts TypedNotification (SwiftUI reacts)
+```
+
+## Thread Safety
+
+- `InputManager` runs on the CGEventTap callback thread (high priority).
+- `RustEngineV2` serializes all calls under a `NSLock`.
+- UI updates must be dispatched to `DispatchQueue.main`.
+- Settings changes from UI call `SettingsManager` on main thread, which posts notification and calls `RustEngineV2.applyConfig` (thread-safe).

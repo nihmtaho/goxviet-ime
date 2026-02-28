@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## [2.0.11] - 2026-02-14
+
+### ✨ Features (Sprint D — Data-Driven InputMethodConfig)
+
+- **`InputMethodConfig` domain type** (T6.1): New `domain/entities/input_method_config.rs` with `InputAction` enum (14 variants) and `InputMethodConfig` struct. Built-in `telex()` and `vni()` factories with JSON serialization via `serde`. Replaces hardcoded Telex/VNI logic with a data-driven pattern (based on KieuGo.ini approach).
+- **`ime_load_input_config_v2` FFI endpoint** (T6.2): New C-compatible function accepts a JSON-encoded `InputMethodConfig` (raw bytes + length), parses it, and updates the engine's active input method. Returns `FfiStatusCode` including new `ErrorParseError = -12`. Container gains `load_input_config()` and `get_input_method_config()` methods.
+- **Swift binding + InputManager integration** (T6.3): `RustBridgeV2.swift` declares `@_silgen_name("ime_load_input_config_v2")` and exposes `loadInputConfig(_:)` method. New `InputMethodDefinition.swift` provides pre-built JSON for Telex and VNI. `InputManager.swift` calls `loadInputConfig` at init and on every `setInputMethod` change.
+
+### 🧪 Tests & Benchmarks
+
+- **Sprint D integration tests** (T7.1): 15 new tests in `tests/sprint_d_integration_test.rs` covering Vietnamese typing, English auto-restore, and `InputMethodConfig` JSON roundtrip.
+- **Sprint D benchmarks** (T7.2): New `benches/sprint_d_bench.rs` benchmarks config construction, JSON serialization/deserialization, `load_input_config`, and keystroke latency after config load.
+
+### 📦 Dependencies
+- Added `serde = { version = "1", features = ["derive"] }` and `serde_json = "1"` to `core/Cargo.toml`
+
+---
+
 ## [2.0.9] - 2026-02-10
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.9.md](.release-notes/release_note_2.0.9.md)

@@ -21,6 +21,7 @@ platforms/macos/goxviet/archive/
 !/AGENTS.md
 !/README.md
 !/CHANGELOG.md
+!/STRUCTURE.md
 /*.txt
 
 # ============================================

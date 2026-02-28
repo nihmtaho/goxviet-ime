@@ -91,6 +91,15 @@ class InputManager: LifecycleManaged {
         // Apply saved input method
         ime_method_v2(UInt8(settings.inputMethod))
         Log.info("Loaded input method: \(settings.inputMethod == 0 ? "Telex" : "VNI")")
+
+        // Sprint D (T6.3): also load data-driven config so Rust core has full mapping
+        let ffiMethod: FfiInputMethod = settings.inputMethod == 1 ? .vni : .telex
+        let configJson = InputMethodDefinition.json(for: ffiMethod)
+        do {
+            try RustBridgeV2.shared.loadInputConfig(configJson)
+        } catch {
+            Log.warning("loadInputConfig (init) failed: \(error.localizedDescription)")
+        }
         
         // Apply saved tone style
         ime_modern_v2(settings.modernToneStyle)
@@ -431,6 +440,16 @@ class InputManager: LifecycleManaged {
     func setInputMethod(_ method: Int) {
         SettingsManager.shared.setInputMethod(method)
         ime_method_v2(UInt8(method))
+
+        // Sprint D (T6.3): load data-driven InputMethodConfig via new FFI endpoint
+        let ffiMethod: FfiInputMethod = method == 1 ? .vni : .telex
+        let configJson = InputMethodDefinition.json(for: ffiMethod)
+        do {
+            try RustBridgeV2.shared.loadInputConfig(configJson)
+        } catch {
+            Log.warning("loadInputConfig failed: \(error.localizedDescription)")
+        }
+
         Log.info("Input method changed: \(method == 0 ? "Telex" : "VNI")")
     }
     
