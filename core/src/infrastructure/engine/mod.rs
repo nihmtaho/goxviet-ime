@@ -62,7 +62,6 @@ pub use self::core_types::{Action, Result, Transform};
 pub use self::state::history::WordHistory;
 
 // Re-export external english detection (integrated with infrastructure::external::english)
-pub use crate::infrastructure::external::english::dictionary::Dictionary;
 pub use crate::infrastructure::external::english::language_decision::{
     DecisionResult, LanguageDecisionEngine,
 };
@@ -525,7 +524,9 @@ impl Engine {
             let mut temp_keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
             temp_keys.push(key);
 
-            let is_dict_word = crate::infrastructure::external::english::dictionary::Dictionary::is_english(&temp_keys);
+            let temp_keys_caps: Vec<(u16, bool)> = temp_keys.iter().map(|&k| (k, false)).collect();
+            let is_dict_word = crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(&temp_keys_caps)
+                .english_confidence >= 80;
 
             // DEBUG
             if temp_keys.len() >= 4 {
@@ -1042,9 +1043,7 @@ impl Engine {
                             // check if the COMPLETE raw input matches an English dictionary word.
                             // This catches words like "been"→"bên", "floor"→"flôr", etc.
                             if self.instant_restore_enabled && self.has_vietnamese_transforms() {
-                                let raw_keys: Vec<u16> =
-                                    self.raw_input.iter().map(|item| item.0).collect();
-                                if crate::infrastructure::adapters::validation::english::dictionary::Dictionary::is_english(&raw_keys) {
+                                if self.is_english_dictionary_word() {
                                     self.is_english_word = true;
                                     let restore = self.instant_restore_english();
                                     self.sync_buffer_with_raw_input();
@@ -1122,8 +1121,7 @@ impl Engine {
                         && self.buf.len() > 1
                         && self.has_vietnamese_transforms()
                     {
-                        let raw_keys: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
-                        if crate::infrastructure::external::english::dictionary::Dictionary::is_english(&raw_keys) {
+                        if self.is_english_dictionary_word() {
                             self.is_english_word = true;
                             let restore = self.instant_restore_english();
                             self.sync_buffer_with_raw_input();
@@ -3234,25 +3232,33 @@ impl Engine {
         false
     }
 
-    /// Check if current raw input is in the English dictionary
+    /// Check if current buffer is an English word using Vietnamese-first detection.
+    ///
+    /// Pipeline:
+    /// 1. If rendered buffer output is in TuDien (Vietnamese syllable dict) → not English.
+    /// 2. Use PhonotacticEngine on raw key sequence → return English if confidence ≥ 80.
     fn is_english_dictionary_word(&self) -> bool {
         let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
 
-        // FIX: In Telex, if the last key is 'w' (a tone modifier for horn/breve),
-        // don't mark as English dictionary word because 'w' will be processed as a tone modifier.
-        // Examples: 'naw' -> 'nă' (Telex), 'law' -> 'lă' (Telex), not English words
+        // In Telex, 'w' is a tone modifier (naw→nă, law→lă). Never treat as English.
         if self.method == 0 {
-            // Telex mode
             if let Some(&last_key) = keys.last() {
                 if last_key == keys::W {
-                    // In Telex, 'w' is a tone modifier. Let it go through tone handling
-                    // instead of marking as English dictionary word.
                     return false;
                 }
             }
         }
 
-        Dictionary::is_english(&keys)
+        // Priority 1: Vietnamese dictionary check — rendered output against TuDien
+        let output = self.buf.to_full_string();
+        if crate::data::viet_syllables::is_valid_vietnamese_syllable(&output) {
+            return false;
+        }
+
+        // Priority 2: Phonotactic analysis on raw key sequence
+        let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
+        let phonotactic = PhonotacticEngine::analyze(&raw_keys);
+        phonotactic.english_confidence >= 80
     }
 
     /// Check for DEFINITE English patterns (e.g. invalid Vietnamese initials)
@@ -3353,9 +3359,7 @@ impl Engine {
         // ALWAYS restore immediately, regardless of Vietnamese validation or confidence scores
         // This ensures words like "console" don't become "cónole"
         let raw_key_list: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
-        let is_dict = crate::infrastructure::external::english::dictionary::Dictionary::is_english(
-            &raw_key_list,
-        );
+        let is_dict = self.is_english_dictionary_word();
         eprintln!("DEBUG check_and_restore: has_transforms={}, buf.len={}, raw_input.len={}, is_dict={}, raw_keys={:?}",
             self.has_vietnamese_transforms(), self.buf.len(), self.raw_input.len(), is_dict, raw_key_list);
         if is_dict {
@@ -3397,10 +3401,7 @@ impl Engine {
             // Only restore if we are SUPER confident it's English
             // CRITICAL FIX: Check dictionary against RAW input, not transformed buffer
             let raw_keys_only: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
-            let is_raw_dict =
-                crate::infrastructure::external::english::dictionary::Dictionary::is_english(
-                    &raw_keys_only,
-                );
+            let is_raw_dict = self.is_english_dictionary_word();
 
             // SPECIAL HANDLING: For short 2-character valid Vietnamese words that are NOT
             // in the Vietnamese dictionary (like "re" which appears in English but not as standalone Vietnamese),
@@ -3450,12 +3451,7 @@ impl Engine {
             // unless it looks like Vietnamese phonotactics.
             // Lowered threshold to 60 because invalid Vietnamese SHOULD be restored.
             // This catches short words like "res" (confidence 75), "off" (confidence 70), etc.
-            let raw_keys_only: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
-
-            let is_raw_dict =
-                crate::infrastructure::external::english::dictionary::Dictionary::is_english(
-                    &raw_keys_only,
-                );
+            let is_raw_dict = self.is_english_dictionary_word();
 
             if strict_mode {
                 is_raw_dict
@@ -3604,12 +3600,9 @@ impl Engine {
             return phonotactic_confidence;
         }
 
-        // LAYER 2 (FINAL): Dictionary check as confidence booster
-        // If word is in dictionary, boost to 100% confidence (conflicts filtered offline)
-        use crate::infrastructure::external::english::dictionary::Dictionary;
-        let keys_only: Vec<u16> = raw_keys.iter().map(|(k, _)| *k).collect();
-        if Dictionary::is_english(&keys_only) {
-            return 100; // Dictionary match = 100% confidence
+        // LAYER 2 (FINAL): Vietnamese-first dictionary check as confidence booster
+        if self.is_english_dictionary_word() {
+            return 100; // English confirmed = 100% confidence
         }
 
         // Return phonotactic confidence (may be low, but it's the best we have)
@@ -5159,16 +5152,18 @@ mod tests {
         e.set_method(0); // Telex
         e.set_enabled(true);
 
-        // "cost" → 's' applies sắc to 'o' → "cóst" should restore to "cost"
+        // Vietnamese-first (Sprint C): "cost" → 's' applies sắc to 'o' → "cốt" (valid Vietnamese)
+        // "cốt" is a valid Vietnamese syllable, so it is KEPT as Vietnamese (not auto-restored).
         e.on_key_ext(keys::C, false, false, false);
         e.on_key_ext(keys::O, false, false, false);
         e.on_key_ext(keys::S, false, false, false);
         e.on_key_ext(keys::T, false, false, false);
 
+        // The buffer should contain Vietnamese-transformed characters ("cốt")
         let has_transforms = e.buf.iter().any(|c| c.tone != 0 || c.mark != 0 || c.stroke);
         assert!(
-            !has_transforms,
-            "'cost' should have no Vietnamese transforms after auto-restore"
+            has_transforms,
+            "'cost' should keep Vietnamese transforms (cốt) with Vietnamese-first policy"
         );
     }
 

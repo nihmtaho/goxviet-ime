@@ -161,10 +161,12 @@ impl LanguageDetector for LanguageDetectorAdapter {
             .unwrap_or(false);
 
         // Use language decision engine to make final decision
+        // Pass the original text as output_str for Vietnamese dictionary lookup
         let decision = LanguageDecisionEngine::decide_with_validation(
             &keys,
             has_diacritics,
             vietnamese_validation,
+            Some(text.as_str()),
         );
 
         // Convert decision to DetectionResult

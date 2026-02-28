@@ -4,7 +4,6 @@
 // but "merge" works fine. This test helps identify why.
 
 use goxviet_core::data::keys;
-use goxviet_core::engine_v2::english::dictionary::Dictionary;
 use goxviet_core::engine_v2::english::language_decision::LanguageDecisionEngine;
 use goxviet_core::engine_v2::english::phonotactic::PhonotacticEngine;
 use goxviet_core::engine_v2::vietnamese_validator::VietnameseSyllableValidator;
@@ -79,38 +78,33 @@ fn make_key_vec_from_str(s: &str) -> Vec<u16> {
 
 #[test]
 fn test_dict_lookup_syntax() {
-    // Test if "syntax" is found in dictionary
-    let keys = make_key_vec_from_str("syntax");
-    let is_english = Dictionary::is_english(&keys);
-    println!("Dictionary lookup 'syntax': {}", is_english);
-    assert!(
-        is_english,
-        "syntax should be found in dictionary as English word"
-    );
+    // Sprint C: English dictionary removed. "syntax" has 0 phonotactic confidence.
+    // Words without strong phoneme patterns are detected via output_str TuDien lookup.
+    let keys = make_key_tuple_from_str("syntax");
+    let result = PhonotacticEngine::analyze(&keys);
+    println!("Phonotactic detection 'syntax': confidence={}", result.english_confidence);
+    assert_eq!(result.english_confidence, 0, "syntax has no phonotactic English signal");
 }
 
 #[test]
 fn test_dict_lookup_parse() {
-    // Test if "parse" is found in dictionary
-    let keys = make_key_vec_from_str("parse");
-    let is_english = Dictionary::is_english(&keys);
-    println!("Dictionary lookup 'parse': {}", is_english);
+    // Sprint C: "parse" has strong phonotactic signal via '-ar-se' pattern
+    let keys = make_key_tuple_from_str("parse");
+    let result = PhonotacticEngine::analyze(&keys);
+    println!("Phonotactic detection 'parse': confidence={}", result.english_confidence);
     assert!(
-        is_english,
-        "parse should be found in dictionary as English word"
+        result.english_confidence >= 60,
+        "parse should be detected via phonotactics (confidence >= 60)"
     );
 }
 
 #[test]
 fn test_dict_lookup_merge() {
-    // Test if "merge" is found in dictionary
-    let keys = make_key_vec_from_str("merge");
-    let is_english = Dictionary::is_english(&keys);
-    println!("Dictionary lookup 'merge': {}", is_english);
-    assert!(
-        is_english,
-        "merge should be found in dictionary as English word"
-    );
+    // Sprint C: "merge" has 0 phonotactic confidence without the dictionary.
+    let keys = make_key_tuple_from_str("merge");
+    let result = PhonotacticEngine::analyze(&keys);
+    println!("Phonotactic detection 'merge': confidence={}", result.english_confidence);
+    assert_eq!(result.english_confidence, 0, "merge has no phonotactic English signal");
 }
 
 #[test]
@@ -201,7 +195,7 @@ fn test_language_decision_syntax() {
     let viet_confidence = vietnamese_validation.confidence;
 
     let decision =
-        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
+        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation), None);
     println!(
         "Language decision 'syntax': is_english={}, confidence={}",
         decision.is_english, decision.confidence
@@ -222,7 +216,7 @@ fn test_language_decision_parse() {
     let viet_confidence = vietnamese_validation.confidence;
 
     let decision =
-        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
+        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation), None);
     println!(
         "Language decision 'parse': is_english={}, confidence={}",
         decision.is_english, decision.confidence
@@ -243,7 +237,7 @@ fn test_language_decision_merge() {
     let viet_confidence = vietnamese_validation.confidence;
 
     let decision =
-        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation));
+        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation), None);
     println!(
         "Language decision 'merge': is_english={}, confidence={}",
         decision.is_english, decision.confidence
