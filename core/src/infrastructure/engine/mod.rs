@@ -707,10 +707,19 @@ impl Engine {
                         // Don't set is_english_word yet - let revert happen first
                         // Fall through to revert check
                     } else {
-                        self.is_english_word = true;
+                        // Guard: if buf has explicit Vietnamese diacritical modifiers (circumflex/horn/breve
+                        // from 'aa', 'ee', 'oo', 'aw', 'ow', 'uw'), do NOT flag as English or restore.
+                        // The user intentionally used Telex diacritical shortcuts → they're typing Vietnamese.
+                        let has_diacritical_modifier = self.buf.iter().any(|c| c.tone != tone::NONE);
+                        if !has_diacritical_modifier {
+                            self.is_english_word = true;
+                        }
 
                         // INSTANT RESTORE: If already transformed, undo immediately
-                        if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                        if self.instant_restore_enabled
+                            && self.has_vietnamese_transforms()
+                            && !has_diacritical_modifier
+                        {
                             let result = self.instant_restore_english();
                             self.sync_buffer_with_raw_input();
                             self.last_transform = None; // Clear stale transform after English restore
@@ -750,10 +759,17 @@ impl Engine {
                         if result.is_some() {
                             // Fall through to modifier handling
                         } else {
-                            self.is_english_word = true;
+                            let has_diacritical_modifier =
+                                self.buf.iter().any(|c| c.tone != tone::NONE);
+                            if !has_diacritical_modifier {
+                                self.is_english_word = true;
+                            }
 
                             // INSTANT RESTORE: If already transformed, undo immediately
-                            if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                            if self.instant_restore_enabled
+                                && self.has_vietnamese_transforms()
+                                && !has_diacritical_modifier
+                            {
                                 let result = self.instant_restore_english();
                                 self.sync_buffer_with_raw_input();
                                 return result;
@@ -796,9 +812,16 @@ impl Engine {
                         if result.is_some() {
                             // Fall through to modifier handling
                         } else {
-                            self.is_english_word = true;
+                            let has_diacritical_modifier =
+                                self.buf.iter().any(|c| c.tone != tone::NONE);
+                            if !has_diacritical_modifier {
+                                self.is_english_word = true;
+                            }
 
-                            if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                            if self.instant_restore_enabled
+                                && self.has_vietnamese_transforms()
+                                && !has_diacritical_modifier
+                            {
                                 let result = self.instant_restore_english();
                                 self.sync_buffer_with_raw_input();
                                 return result;
@@ -1039,22 +1062,37 @@ impl Engine {
                             matches!(tone_type, ToneType::Horn | ToneType::Breve);
 
                         if !is_horn_or_breve {
-                            // Post-transform confidence check: restore if high English confidence
-                            if let Some(restore_result) = self.check_and_restore_english(0, false) {
-                                self.last_transform = None;
-                                return restore_result;
-                            }
+                            // Guard: if the current buf is a valid Vietnamese syllable structure,
+                            // skip mid-word English detection entirely. This prevents false restore
+                            // on intermediate states like "bâ" (from typing "baau"→"bâu") where
+                            // raw "baa" matches the English dict but the word is NOT complete.
+                            // The boundary check (check_and_restore_english_at_boundary) will
+                            // correctly evaluate the COMPLETE word when space is pressed.
+                            // Example: "baau" → after 'aa'→'â', buf=[B,â] is valid Vietnamese
+                            //   intermediate → SKIP English checks → 'u' completes "bâu" ✓
+                            // Example: "stoo" → after 'oo'→'ô', buf=[S,T,ô] has invalid cluster
+                            //   "ST" → buf_is_viet=FALSE → English checks still fire ✓
+                            let buf_keys_tonecheck: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+                            let buf_tones_tonecheck: Vec<u8> = self.buf.iter().map(|c| c.tone).collect();
+                            let buf_is_viet = crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate_with_tones(&buf_keys_tonecheck, &buf_tones_tonecheck).is_valid;
 
-                            // After diacritical is applied (aa→â, ee→ê, oo→ô),
-                            // check if the COMPLETE raw input matches an English dictionary word.
-                            // This catches words like "been"→"bên", "floor"→"flôr", etc.
-                            if self.instant_restore_enabled && self.has_vietnamese_transforms() {
-                                if self.is_english_dictionary_word() {
-                                    self.is_english_word = true;
-                                    let restore = self.instant_restore_english();
-                                    self.sync_buffer_with_raw_input();
+                            if !buf_is_viet {
+                                // Post-transform confidence check: restore if high English confidence
+                                if let Some(restore_result) = self.check_and_restore_english(0, false) {
                                     self.last_transform = None;
-                                    return restore;
+                                    return restore_result;
+                                }
+
+                                // After diacritical is applied (aa→â, ee→ê, oo→ô),
+                                // check if the raw input matches an English dictionary word.
+                                if self.instant_restore_enabled && self.has_vietnamese_transforms() {
+                                    if self.is_english_dictionary_word() {
+                                        self.is_english_word = true;
+                                        let restore = self.instant_restore_english();
+                                        self.sync_buffer_with_raw_input();
+                                        self.last_transform = None;
+                                        return restore;
+                                    }
                                 }
                             }
                         }
@@ -1112,24 +1150,12 @@ impl Engine {
                 if let Some(result) = self.try_mark(key, caps, mark_val) {
                     self.is_english_word = false;
 
-                    // After tone mark is applied, check if the COMPLETE raw input matches
-                    // an English dictionary word. This catches words ending in s/f/r/x/j
-                    // like "his"→"hí", "terms"→"tém", "bus"→"bú" etc.
-                    // Only uses dictionary (not phonotactic) to avoid false positives.
-                    // SKIP for single-vowel + mark (buf.len()==1): "o"+"f"→"ò", "i"+"s"→"í"
-                    // These are clearly intentional Vietnamese marks, not English words.
-                    if self.instant_restore_enabled
-                        && self.buf.len() > 1
-                        && self.has_vietnamese_transforms()
-                    {
-                        if self.is_english_dictionary_word() {
-                            self.is_english_word = true;
-                            let restore = self.instant_restore_english();
-                            self.sync_buffer_with_raw_input();
-                            self.last_transform = None; // Clear stale transform after English restore
-                            return restore;
-                        }
-                    }
+                    // NOTE: Immediate English restore after mark is intentionally DEFERRED to
+                    // the word-boundary check (check_and_restore_english_at_boundary).
+                    // Checking here causes false positives: the buf is still a PARTIAL word
+                    // (e.g., "bâ" from "baau") and intermediate raw may match English dict
+                    // (e.g., "baa") even though the final word is Vietnamese ("bâu").
+                    // The boundary check correctly uses the FULL word for disambiguation.
 
                     return result; // Return the result from try_mark with correct backspace
                 } else if keys::is_number(key) {
@@ -1825,15 +1851,23 @@ impl Engine {
                             if let Some(c) = self.buf.get(pos) {
 
                                 // For VNI mode: match by tone targets (e.g., 6 can apply to a,e,o)
-                                // For Telex mode: match by key (e.g., 'a' matches 'a')
+                                // For Telex mode: circumflex doubling (aa/ee/oo) requires key match;
+                                // tone modifiers (s/f/r/x/j) only need targets match.
                                 let vowel_matches = if self.method == 1 {
                                     // VNI mode: check if vowel is in targets for this tone
                                     keys::is_vowel(c.key) && targets.contains(&c.key)
                                 } else {
-                                    // Telex mode: vowel must match the key being pressed
-                                    keys::is_vowel(c.key)
-                                        && c.key == key
-                                        && targets.contains(&c.key)
+                                    // Telex mode: for circumflex doubling (aa→â, ee→ê, oo→ô),
+                                    // the key pressed must match the vowel key (e.g., 'a' on 'a').
+                                    // For tone modifiers (s=sắc, f=huyền, r=hỏi, x=ngã, j=nặng),
+                                    // the key is never a vowel, so only check targets.
+                                    if matches!(tone_type, ToneType::Circumflex) {
+                                        keys::is_vowel(c.key)
+                                            && c.key == key
+                                            && targets.contains(&c.key)
+                                    } else {
+                                        keys::is_vowel(c.key) && targets.contains(&c.key)
+                                    }
                                 };
 
                                 if vowel_matches && c.tone == tone::NONE {
@@ -2420,6 +2454,15 @@ impl Engine {
 
                     let result = self.revert_and_rebuild(pos, key, caps);
 
+                    // Trim raw_input to match buf length after tone revert.
+                    // When `oo` was typed, the second `o` applied circumflex (oo→ô), so
+                    // raw_input has one extra entry vs buf. After reverting ô back to plain `oo`,
+                    // buf and raw_input should be in sync again. Without this trim, a phantom
+                    // discrepancy remains and causes the sync-to-raw logic below to mis-fire.
+                    while self.raw_input.len() > self.buf.len() {
+                        self.raw_input.pop();
+                    }
+
                     // Mark as English after tone revert - double modifier key = likely English
                     self.is_english_word = true;
 
@@ -2605,7 +2648,14 @@ impl Engine {
             // to buf) when it applied the mark/tone. If is_english_word is set (by the
             // revert handler) and raw_input has MORE entries than buf, sync buf with
             // raw_input so subsequent output is correct (e.g., "asign" → "assign").
-            if self.is_english_word && self.raw_input.len() > self.buf.len() {
+            //
+            // GUARD: Do NOT sync when the buf has active diacritical transforms (tone != NONE).
+            // When a vowel modifier was absorbed into a circumflex/horn transform (oo→ô, aa→â),
+            // raw_input legitimately has more entries than buf. Syncing in that case would strip
+            // the Vietnamese transform and output raw ASCII instead of the correct Vietnamese
+            // characters (e.g., "loong" would produce "loon" instead of "lông").
+            let has_active_diacritical = self.buf.iter().any(|c| c.tone != tone::NONE);
+            if self.is_english_word && self.raw_input.len() > self.buf.len() && !has_active_diacritical {
                 // displayed = chars on screen BEFORE this keystroke (buf.len after push - 1)
                 let displayed = (self.buf.len() - 1).min(u8::MAX as usize) as u8;
                 let raw_chars: Vec<char> = self
@@ -3126,19 +3176,33 @@ impl Engine {
     fn is_english_dictionary_word(&self) -> bool {
         let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
 
-        // In Telex, 'w' is a tone modifier (naw→nă, law→lă). Never treat as English.
+        // Priority 1 (HIGHEST): Vietnamese syllable check — if the current buffer renders
+        // to a valid Vietnamese syllable, this is almost certainly Vietnamese input.
+        // This must run BEFORE the English dict check so that words like "beets" (Telex for
+        // "bết") are not falsely restored as English even though "beets" is in the English dict.
+        let output = self.buf.to_full_string();
+        if crate::data::viet_syllables::is_valid_vietnamese_syllable(&output) {
+            return false;
+        }
+
+        // Priority 0: English word dictionary lookup — only reached if current buffer is NOT
+        // valid Vietnamese. Check before W-guard so words ending in 'w' (caw, bylaw, curfew)
+        // are found when they produce an invalid Vietnamese buffer.
+        let raw_word: String = self.raw_input.iter()
+            .filter_map(|(k, _)| crate::utils::key_to_char(k, false))
+            .collect();
+        if !raw_word.is_empty() && crate::data::english_words::is_english_word(&raw_word) {
+            return true;
+        }
+
+        // In Telex, 'w' is a tone modifier (naw→nă, law→lă). Never treat as English
+        // unless found in the English dictionary above (or produces invalid Vietnamese).
         if self.method == 0 {
             if let Some(&last_key) = keys.last() {
                 if last_key == keys::W {
                     return false;
                 }
             }
-        }
-
-        // Priority 1: Vietnamese dictionary check — rendered output against TuDien
-        let output = self.buf.to_full_string();
-        if crate::data::viet_syllables::is_valid_vietnamese_syllable(&output) {
-            return false;
         }
 
         // Priority 2: Phonotactic analysis on raw key sequence
@@ -3223,21 +3287,42 @@ impl Engine {
     /// Returns `Some(result)` with trailing space included, or `None` to let SPACE
     /// fall through to normal shortcut / commit handling.
     fn check_and_restore_english_at_boundary(&mut self) -> Option<Result> {
-        if !self.instant_restore_enabled || self.is_english_word {
-            return None;
-        }
-        if !self.has_vietnamese_transforms() {
+        let raw_len = self.raw_input.iter().count();
+        let buf_len = self.buf.iter().count();
+        // raw_len > buf_len means a Telex modifier was consumed (tone/mark/revert) but the
+        // rendered buf is shorter than the typed keys — a restore may still be needed.
+        let has_pending_restore = raw_len > buf_len;
+
+        // Guard: skip if not enabled. Skip if already English AND no pending restore.
+        // (is_english_word=true is set by revert_tone/revert_mark to mark double-key reverts,
+        // but those don't immediately restore the raw word — that still needs to happen here.)
+        if !self.instant_restore_enabled || (self.is_english_word && !has_pending_restore) {
             return None;
         }
 
-        // Highest priority: English dictionary match
-        let is_dict = self.is_english_dictionary_word();
-        if is_dict {
-            self.is_english_word = true;
-            let result = self.auto_restore_english_with_space();
-            self.sync_buffer_with_raw_input();
-            self.last_transform = None;
-            return Some(result);
+        // English dictionary check: runs before transforms guard.
+        // Handles both normal transforms and double-key reverts (raw > buf).
+        if has_pending_restore || self.has_vietnamese_transforms() {
+            let is_dict = self.is_english_dictionary_word();
+            if is_dict {
+                // If the user explicitly applied a Vietnamese tone mark (sắc/huyền/hỏi/ngã/nặng)
+                // via a Telex modifier key (s/f/r/x/j), respect that intent — do NOT restore to
+                // English even if the word appears in the English dictionary.
+                // Example: "hoax" (hoã) — user typed x=ngã intentionally.
+                let has_explicit_viet_tone = self.buf.iter().any(|c| c.mark != 0);
+                if has_explicit_viet_tone {
+                    return None;
+                }
+                self.is_english_word = true;
+                let result = self.auto_restore_english_with_space();
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+        }
+
+        if !self.has_vietnamese_transforms() {
+            return None;
         }
 
         // Phonotactic on full word, but trim trailing Telex tone modifier from raw_input.
@@ -3248,19 +3333,27 @@ impl Engine {
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
         let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
 
+        // Pre-compute Vietnamese validity to inform phonotactic key selection.
+        // When Vietnamese output is invalid, use the full raw keys so phonotactic can
+        // detect English patterns (e.g. V+R rhotic in "yard", coda cluster in "parabol")
+        // that would be stripped by the tone-modifier filter.
+        let viet_validation =
+            crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(
+                &buf_keys,
+            );
+
         let filtered_boundary_keys: Vec<(u16, bool)>;
         let keys_for_phonotactic: &[(u16, bool)] = {
             use crate::data::keys as k;
             const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
             let is_telex = self.method
                 == crate::infrastructure::engine::types::config::InputMethod::Telex as u8;
-            // Strip all non-initial Telex tone modifier keys when absorption occurred.
-            // A tone modifier absorbed into a diacritic (e.g. 's' → sắc, 'f' → huyền) shows up
-            // in raw_input but NOT in buf, making raw.len() > buf.len(). These absorbed keys look
-            // like English consonants to the phonotactic engine (e.g. SC in "casc", SP in "tieesp",
-            // FN in "dduwofng"), causing false English-restore triggers.
+            // Strip all non-initial Telex tone modifier keys when absorption occurred AND the
+            // Vietnamese output is valid. When Vietnamese output is invalid (e.g. "yard" → "yảd",
+            // "parabol" → "pảrabol"), keep all raw keys so phonotactic can correctly detect
+            // English patterns like the V+R rhotic (A→R in "yard") or coda clusters.
             // Position 0 is always kept (initial consonants like S in "scope", F in "frost").
-            if is_telex && raw_keys.len() > buf_keys.len() {
+            if is_telex && raw_keys.len() > buf_keys.len() && viet_validation.is_valid {
                 filtered_boundary_keys = raw_keys
                     .iter()
                     .enumerate()
@@ -3281,11 +3374,6 @@ impl Engine {
         if phonotactic.english_confidence == 0 {
             return None;
         }
-
-        let viet_validation =
-            crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(
-                &buf_keys,
-            );
 
         let should_restore = if viet_validation.is_valid {
             // Valid Vietnamese collision: require confidence > 97 to override.
@@ -3351,6 +3439,22 @@ impl Engine {
         // 1. Has transforms (tones/marks)
         if !self.has_vietnamese_transforms() {
             return None;
+        }
+
+        // Guard: if buffer is a valid Vietnamese syllable structure WITH its diacritical marks,
+        // defer the English decision to the word-boundary check. This prevents mid-word false
+        // restore when the raw input matches an English word but the RENDERED output is valid
+        // Vietnamese (e.g. "bốt" from "boots": "bôt" after typing t is valid Vietnamese,
+        // even though "boot" is in the English dict).
+        // Note: we check c.tone (diacritical modifier: circumflex=1, horn=2) not c.mark (tone mark).
+        // validate_with_tones([B,O,T],[0,CIRC,0]) = TRUE → defer to boundary ✓
+        // validate_with_tones([A,B],[CIRC,0]) = FALSE (B not valid coda) → allow English check ✓
+        let buf_keys_guard: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        let buf_tones_guard: Vec<u8> = self.buf.iter().map(|c| c.tone).collect();
+        let guard_valid = crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate_with_tones(&buf_keys_guard, &buf_tones_guard).is_valid;
+        eprintln!("[DEBUG check_and_restore] buf_keys={:?} buf_tones={:?} guard_valid={} offset={}", buf_keys_guard, buf_tones_guard, guard_valid, offset);
+        if guard_valid {
+            return None; // Valid Vietnamese structure — let boundary check decide
         }
 
         // PRIORITY CHECK: If raw input is in English dictionary (programming terms, common words),

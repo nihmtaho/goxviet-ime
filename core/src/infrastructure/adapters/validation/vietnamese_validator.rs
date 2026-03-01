@@ -447,8 +447,9 @@ impl VietnameseSyllableValidator {
             return true;
         }
 
-        // ka, ko, ku (should be ca, co, cu)
-        if k1 == keys::K && matches!(k2, keys::A | keys::O | keys::U) {
+        // ka, ko (should be ca, co)
+        // Note: ku is allowed for loan words like "kuýp" (cup/coup)
+        if k1 == keys::K && matches!(k2, keys::A | keys::O) {
             return true;
         }
 
@@ -591,6 +592,15 @@ impl VietnameseSyllableValidator {
         // We should skip it for vowel sequence validation.
         if keys[start] == keys::I && start > 0 && keys[start - 1] == keys::G {
             // Check if there are other vowels after 'i'
+            if end > start {
+                start += 1;
+            }
+        }
+
+        // Special handling for 'qu':
+        // The 'u' in 'qu' is part of the initial consonant cluster, not the vowel nucleus.
+        // Skip it to correctly validate vowels in words like "quáu", "quạu", "quều".
+        if keys[start] == keys::U && start > 0 && keys[start - 1] == keys::Q {
             if end > start {
                 start += 1;
             }
