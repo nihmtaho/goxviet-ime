@@ -1645,9 +1645,22 @@ impl Engine {
                                 false // Consonant at position 0 can't be final (no vowel before it)
                             };
 
-                            if has_vowel_before {
+                            // A consonant is truly "final" only when directly preceded by a vowel.
+                            // If prev_pos's consonant is itself preceded by another consonant
+                            // (e.g. a stop coda C before N in "tuôcna"), then it is a
+                            // new-syllable initial, not a final coda. Allow diacritical.
+                            //
+                            // Example: buf=[T,U,Ô,C,N,A], target=A(5), prev=N(4)
+                            //   Char before N is C (stop coda of "tuôc") → N is new syllable initial
+                            //   → ALLOW breve on A ✓
+                            // Example: buf=[C,A,N,A], target=A(3), prev=N(2)
+                            //   Char before N is A (vowel) → N is the final coda of "can"
+                            //   → REJECT (A starts new syllable) ✓
+                            let prev_directly_after_vowel = prev_pos > 0
+                                && self.buf.get(prev_pos - 1).map_or(false, |c| keys::is_vowel(c.key));
+
+                            if has_vowel_before && prev_directly_after_vowel {
                                 return false; // REJECT: target vowel starts new syllable after complete one
-                            } else {
                             }
                         }
                     }
@@ -2055,13 +2068,18 @@ impl Engine {
         }
 
         // VALIDATION CHECK: Verify the tone application resulted in valid Vietnamese
-        // If validation fails, this indicates English word typing - trigger instant restore
+        // If validation fails, this indicates English word typing - trigger instant restore.
+        // EXCEPTION: Horn/Breve are explicit Vietnamese typing intent signals (user typed 'w'/'7'/'8').
+        // For multi-syllable Vietnamese sequences (e.g. "tuôcnăng"), the key sequence
+        // crosses syllable boundaries and fails single-syllable validation, but that's correct.
+        // Skipping the check for Horn/Breve prevents wrongly treating them as English.
+        let is_horn_or_breve = matches!(tone_type, ToneType::Horn | ToneType::Breve);
         let simulated_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
         let validation_result =
             crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate(
                 &simulated_keys,
             );
-        if !validation_result.is_valid {
+        if !is_horn_or_breve && !validation_result.is_valid {
             // Validation failed - revert the tone and trigger instant restore
             for &pos in &target_positions {
                 if let Some(c) = self.buf.get_mut(pos) {
@@ -3452,9 +3470,31 @@ impl Engine {
         let buf_keys_guard: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
         let buf_tones_guard: Vec<u8> = self.buf.iter().map(|c| c.tone).collect();
         let guard_valid = crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate_with_tones(&buf_keys_guard, &buf_tones_guard).is_valid;
-        eprintln!("[DEBUG check_and_restore] buf_keys={:?} buf_tones={:?} guard_valid={} offset={}", buf_keys_guard, buf_tones_guard, guard_valid, offset);
         if guard_valid {
             return None; // Valid Vietnamese structure — let boundary check decide
+        }
+
+        // Guard: multi-syllable Vietnamese detection.
+        // If the buffer has two diacritical-transformed vowels (tone != 0) separated by
+        // at least one consonant, this is almost certainly a multi-syllable Vietnamese
+        // sequence (e.g., "tuôcnăng"). Restoring it as English would be wrong.
+        // Examples:
+        //   tuôcnăng: ô(pos=2), ă(pos=5), consonants C+N between → multi-syllable Vietnamese ✓
+        //   được: ư(pos=1), ợ(pos=2), adjacent → single syllable, not blocked ✓
+        let tone_positions: Vec<usize> = self.buf.iter().enumerate()
+            .filter(|(_, c)| c.tone != 0)
+            .map(|(i, _)| i)
+            .collect();
+        if tone_positions.len() >= 2 {
+            for pair in tone_positions.windows(2) {
+                let (p1, p2) = (pair[0], pair[1]);
+                let has_consonant_between = (p1 + 1..p2).any(|i| {
+                    self.buf.get(i).map_or(false, |c| !crate::data::keys::is_vowel(c.key))
+                });
+                if has_consonant_between {
+                    return None; // Multi-syllable Vietnamese sequence — don't restore as English
+                }
+            }
         }
 
         // PRIORITY CHECK: If raw input is in English dictionary (programming terms, common words),

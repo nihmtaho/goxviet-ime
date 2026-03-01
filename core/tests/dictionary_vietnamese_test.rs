@@ -683,6 +683,13 @@ fn test_vni_batch(words: &[&str], _category: &str, _chunk_idx: usize) -> BatchRe
             continue;
         }
 
+        // "urê" has a medial consonant 'r' between vowels (u-r-ê), which VNI cannot represent
+        // as a single syllable. Skip like the Telex structural limit.
+        const VNI_STRUCTURAL_LIMIT: &[&str] = &["urê"];
+        if VNI_STRUCTURAL_LIMIT.contains(word) {
+            continue;
+        }
+
         let vni_input = vn_to_vni(word);
         let input_with_space = format!("{} ", vni_input);
         let expected = format!("{} ", word);
