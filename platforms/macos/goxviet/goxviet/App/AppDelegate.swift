@@ -34,6 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let inputMethod = "AppDelegate.inputMethodObserver"
         static let settingsClose = "AppDelegate.settingsCloseObserver"
         static let settingsCleanup = "AppDelegate.settingsCleanupObserver"
+        static let accessibilityRevoked = "AppDelegate.accessibilityRevokedObserver"
     }
     
     var isEnabled: Bool {
@@ -86,8 +87,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // smartModeMenuBarItem = SmartModeMenuBarItem()
         // Log.info("Smart Mode menu bar indicator initialized")
         
-        // Detect post-update launch (flag passed by update script)
+        // Detect post-update launch: explicit flag OR version change since last run
         isPostUpdateLaunch = CommandLine.arguments.contains("--post-update")
+        if !isPostUpdateLaunch {
+            let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+            let lastVersion = UserDefaults.standard.string(forKey: "GoxViet.lastKnownVersion") ?? ""
+            if !lastVersion.isEmpty && lastVersion != currentVersion {
+                isPostUpdateLaunch = true
+                Log.info("Version changed \(lastVersion) → \(currentVersion): treating as post-update launch")
+            }
+            UserDefaults.standard.set(currentVersion, forKey: "GoxViet.lastKnownVersion")
+        }
         if isPostUpdateLaunch {
             Log.info("Post-update launch detected")
         }
@@ -563,6 +573,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ResourceManager.shared.register(observer: cleanupToken, identifier: ObserverKey.settingsCleanup, center: notificationCenter)
 
+        // Listen for CGEventTap being disabled by accessibility revocation
+        let revokedToken = notificationCenter.addObserver(
+            forName: .accessibilityPermissionRevoked,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            Log.warning("Accessibility permission revoked — prompting user to re-grant")
+            // Mark as post-update so the alert message instructs toggle OFF/ON
+            self.isPostUpdateLaunch = true
+            self.checkAccessibilityPermission()
+        }
+        ResourceManager.shared.register(observer: revokedToken, identifier: ObserverKey.accessibilityRevoked, center: notificationCenter)
+
     }
     
     private func cleanupObservers() {
@@ -573,7 +597,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ObserverKey.appActivation,
             ObserverKey.inputMethod,
             ObserverKey.settingsClose,
-            ObserverKey.settingsCleanup
+            ObserverKey.settingsCleanup,
+            ObserverKey.accessibilityRevoked
         ]
         identifiers.forEach { identifier in
             ResourceManager.shared.unregister(observerIdentifier: identifier, center: notificationCenter)
