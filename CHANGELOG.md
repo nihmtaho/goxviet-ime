@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [2.0.12] - 2026-03-01
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.12.md](.release-notes/release_note_2.0.12.md)
+
+### 🐛 Bug Fixes
+
+- **Accessibility Permission Reset (post-update)**: Sửa lỗi CGEventTap bị vô hiệu hóa âm thầm khi macOS thu hồi quyền accessibility sau update — xử lý `tapDisabledByTimeout` (tự re-enable) và `tapDisabledByUserInput` (thông báo AppDelegate re-prompt)
+- **Post-update Detection**: Bổ sung so sánh `Bundle` version với `GoxViet.lastKnownVersion` trong UserDefaults để tự động phát hiện bản cập nhật kể cả khi thiếu `--post-update` flag (ví dụ: cài qua Homebrew hoặc thay DMG thủ công)
+
+### 🔧 CI/Chores
+
+- **Release Workflow**: Xóa `notify` job thừa (Ubuntu runner chỉ echo text) và `upload DMG artifact` (1-day retention, redundant với GitHub Release attachment); rút gọn `generate release summary` từ ~30 xuống ~10 dòng
+- **Extract Changelog Script**: Thêm `scripts/extract-changelog.sh` để workflow CI tự động trích xuất changelog section cho từng version
+
 ## [2.0.11] - 2026-03-01
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.11.md](.release-notes/release_note_2.0.11.md)
