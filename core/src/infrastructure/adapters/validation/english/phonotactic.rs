@@ -270,6 +270,7 @@ impl PhonotacticEngine {
             &[keys::R, keys::I, keys::N, keys::G], // -ring (monitoring, recurring)
             &[keys::D, keys::I, keys::N, keys::G], // -ding (adding, doing)
             &[keys::A, keys::S, keys::P, keys::H], // -asph (blasphemy, blasphemous)
+            &[keys::Y, keys::A, keys::S, keys::T], // -yast (dynasty, gymnast)
         ];
 
         const SUFFIXES_5: &[&[u16; 5]] = &[
@@ -298,6 +299,10 @@ impl PhonotacticEngine {
             }
             // -al: same reason — 'l' is not a valid Vietnamese final consonant.
             if prev == keys::A && last == keys::L && keys.len() >= 4 {
+                return 90;
+            }
+            // -yc: unusual Vietnamese final (psych, sync, etc.)
+            if prev == keys::Y && last == keys::C && keys.len() >= 4 {
                 return 90;
             }
         }
