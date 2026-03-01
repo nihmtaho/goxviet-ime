@@ -270,7 +270,7 @@ impl PhonotacticEngine {
             &[keys::R, keys::I, keys::N, keys::G], // -ring (monitoring, recurring)
             &[keys::D, keys::I, keys::N, keys::G], // -ding (adding, doing)
             &[keys::A, keys::S, keys::P, keys::H], // -asph (blasphemy, blasphemous)
-            &[keys::Y, keys::A, keys::S, keys::T], // -yast (dynasty, gymnast)
+            &[keys::Y, keys::C, keys::A, keys::T], // -ycat (Telex-filtered -ycast: raycast)
         ];
 
         const SUFFIXES_5: &[&[u16; 5]] = &[
@@ -279,6 +279,7 @@ impl PhonotacticEngine {
             &[keys::A, keys::T, keys::I, keys::N, keys::G], // -ating (creating, operating)
             &[keys::I, keys::Z, keys::I, keys::N, keys::G], // -izing (realizing, organizing)
             &[keys::S, keys::T, keys::O, keys::R, keys::E], // -store (restore, store, offshore)
+            &[keys::Y, keys::C, keys::A, keys::S, keys::T], // -ycast (raycast, skycast)
         ];
 
         // Check 2-char suffix: -ed (without requiring trailing SPACE)

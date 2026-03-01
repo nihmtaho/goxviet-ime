@@ -3521,6 +3521,23 @@ impl Engine {
             return None;
         }
 
+        // PRIORITY CHECK: If raw input is in English dictionary (programming terms, common words),
+        // ALWAYS restore immediately — even before the Vietnamese guard below.
+        // The guard would block words like "safari" (buf="sẩi" looks like valid Vietnamese sâi)
+        // even though the raw input is clearly an English dictionary word.
+        // is_english_dictionary_word() already checks: if buf is valid Vietnamese → return false,
+        // so intentional Vietnamese words (e.g. "bốt") are still protected.
+        let is_dict = self.is_english_dictionary_word();
+        if is_dict {
+            self.is_english_word = true;
+            let mut result = self.instant_restore_english();
+            // Adjust backspace to account for pending characters (buffer > screen)
+            result.backspace = result.backspace.saturating_sub(offset);
+            self.sync_buffer_with_raw_input();
+            self.last_transform = None; // Clear stale transform after English restore
+            return Some(result);
+        }
+
         // Guard: if buffer is a valid Vietnamese syllable structure WITH its diacritical marks,
         // defer the English decision to the word-boundary check. This prevents mid-word false
         // restore when the raw input matches an English word but the RENDERED output is valid
@@ -3557,20 +3574,6 @@ impl Engine {
                     return None; // Multi-syllable Vietnamese sequence — don't restore as English
                 }
             }
-        }
-
-        // PRIORITY CHECK: If raw input is in English dictionary (programming terms, common words),
-        // ALWAYS restore immediately, regardless of Vietnamese validation or confidence scores
-        // This ensures words like "console" don't become "cónole"
-        let is_dict = self.is_english_dictionary_word();
-        if is_dict {
-            self.is_english_word = true;
-            let mut result = self.instant_restore_english();
-            // Adjust backspace to account for pending characters (buffer > screen)
-            result.backspace = result.backspace.saturating_sub(offset);
-            self.sync_buffer_with_raw_input();
-            self.last_transform = None; // Clear stale transform after English restore
-            return Some(result);
         }
 
         // Raw-suffix instant restore: check unfiltered raw_input for Telex-ambiguous suffixes.
