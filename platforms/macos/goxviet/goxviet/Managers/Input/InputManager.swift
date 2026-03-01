@@ -472,18 +472,39 @@ class InputManager: LifecycleManaged {
     // MARK: - Event Handling
     
     private func handleEvent(event: CGEvent, type: CGEventType, proxy: CGEventTapProxy) -> Unmanaged<CGEvent>? {
-        // 1. Ignore our own injected events
+        // 1. Handle CGEventTap system events — must be first, before marker check
+        // tapDisabledByTimeout (0xFFFFFFFE): macOS disabled tap because callback was too slow.
+        // Re-enable immediately to resume key capture.
+        if type.rawValue == 0xFFFFFFFE {
+            if let tap = eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+                Log.warning("CGEventTap disabled by timeout — re-enabled")
+            }
+            return nil
+        }
+        // tapDisabledByUserInput (0xFFFFFFFF): accessibility permission was revoked.
+        // Mark as stopped and let AppDelegate handle re-requesting permission.
+        if type.rawValue == 0xFFFFFFFF {
+            Log.warning("CGEventTap disabled by system (accessibility revoked)")
+            isRunning = false
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .accessibilityPermissionRevoked, object: nil)
+            }
+            return nil
+        }
+
+        // 2. Ignore our own injected events
         let marker = event.getIntegerValueField(.eventSourceUserData)
         if marker == 0x564E5F494D45 { // "VN_IME"
             return Unmanaged.passUnretained(event)
         }
-        
-        // 2. Handle flags changed (for modifier-only shortcuts)
+
+        // 3. Handle flags changed (for modifier-only shortcuts)
         if type == .flagsChanged {
             return handleFlagsChanged(event: event, proxy: proxy)
         }
-        
-        // 3. Only process key down events
+
+        // 4. Only process key down events
         guard type == .keyDown else {
             return Unmanaged.passUnretained(event)
         }
