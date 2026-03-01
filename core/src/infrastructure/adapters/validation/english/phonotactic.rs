@@ -251,6 +251,8 @@ impl PhonotacticEngine {
             &[keys::T, keys::I, keys::C],     // -tic (static, mystic, plastic)
         ];
 
+        const SUFFIXES_4_CORE: &[u16; 4] = &[keys::C, keys::O, keys::R, keys::E]; // -core (hardcore, multicore)
+
         const SUFFIXES_4: &[&[u16; 4]] = &[
             &[keys::T, keys::I, keys::O, keys::N], // -tion
             &[keys::S, keys::I, keys::O, keys::N], // -sion
@@ -325,6 +327,16 @@ impl PhonotacticEngine {
                 {
                     return 90;
                 }
+            }
+            // Check -core suffix (hardcore, multicore)
+            let start = keys.len() - 4;
+            if &keys[start..start + 4]
+                .iter()
+                .map(|k| k.0)
+                .collect::<Vec<_>>()[..]
+                == &SUFFIXES_4_CORE[..]
+            {
+                return 90;
             }
         }
 
@@ -429,6 +441,8 @@ impl PhonotacticEngine {
             &[keys::A, keys::C, keys::H, keys::R], // achr- (achromatic, achromic)
         ];
 
+        const PREFIXES_4_CORE: &[u16; 4] = &[keys::C, keys::O, keys::R, keys::E]; // core- (core-dump, core-based)
+
         if keys.len() >= 3 {
             for prefix in PREFIXES_3 {
                 if keys[0].0 == prefix[0] && keys[1].0 == prefix[1] && keys[2].0 == prefix[2] {
@@ -446,6 +460,14 @@ impl PhonotacticEngine {
                 {
                     return 95; // Very high confidence for 4-char prefixes (rest-)
                 }
+            }
+            // Check core- prefix (core-dump, core-based)
+            if keys[0].0 == PREFIXES_4_CORE[0]
+                && keys[1].0 == PREFIXES_4_CORE[1]
+                && keys[2].0 == PREFIXES_4_CORE[2]
+                && keys[3].0 == PREFIXES_4_CORE[3]
+            {
+                return 95;
             }
         }
 
