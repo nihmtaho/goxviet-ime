@@ -319,7 +319,7 @@ final class SettingsManager: ObservableObject {
         setEnabledDebounceWork?.cancel()
         
         // Create new debounced notification (50ms delay)
-        let work = DispatchWorkItem { @MainActor [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             
             // Post notification for UI update

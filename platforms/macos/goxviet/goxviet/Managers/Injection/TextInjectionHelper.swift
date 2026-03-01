@@ -671,10 +671,10 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
 
     // Electron apps - higher delays for Monaco editor
     if bundleId == BundleConstants.claude {
-        return cached(.slow, (8000, 15000, 8000), "slow:claude")
+        return cached(.slow, (0, 0, 0), "slow:claude")
     }
     if bundleId == BundleConstants.notion {
-        return cached(.slow, (12000, 25000, 12000), "slow:notion")
+        return cached(.slow, (0, 0, 0), "slow:notion")
     }
 
     // Microsoft Office apps - use backspace method
@@ -686,7 +686,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     }
     
     // Default: safe delays (changed from instant to fast)
-    return cached(.fast, (1000, 3000, 1500), "default")
+    return cached(.fast, (0, 0, 0), "default")
 }
 
 // MARK: - Screen Text Reading (for word restoration)
