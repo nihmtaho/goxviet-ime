@@ -581,8 +581,6 @@ pub extern "C" fn ime_set_shortcuts_enabled_v2(
 }
 
 /// Restore current buffer to raw ASCII input (undo all Vietnamese transforms)
-///
-/// Used when user presses Double OPTION key to restore raw typing.
 /// Returns the raw ASCII text with backspace count to replace current display.
 ///
 /// # Safety
@@ -622,5 +620,56 @@ pub extern "C" fn ime_restore_to_raw_v2(
     match result {
         Ok(status) => status.to_c_int(),
         Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
+    }
+}
+
+// ============================================================================
+// Input Method Config API (T6.2)
+// ============================================================================
+
+/// Load a data-driven InputMethodConfig from JSON (v2 API — Sprint D)
+///
+/// Accepts a JSON-encoded `InputMethodConfig` and updates the engine's
+/// active input method. Based on KieuGo.ini pattern.
+///
+/// # JSON format
+/// ```json
+/// {"name":"telex","mappings":{"s":"tone_sac","f":"tone_huyen","dd":"stroke_d"}}
+/// ```
+///
+/// # Safety
+/// * `engine_ptr` must be valid and non-NULL
+/// * `config_json` must point to at least `len` readable bytes
+/// * Does NOT require NUL terminator — use raw pointer + length
+#[no_mangle]
+pub extern "C" fn ime_load_input_config_v2(
+    engine_ptr: *mut c_void,
+    config_json: *const u8,
+    len: usize,
+) -> FfiStatusCode {
+    use crate::domain::entities::input_method_config::InputMethodConfig;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    if engine_ptr.is_null() || config_json.is_null() || len == 0 {
+        return FfiStatusCode::ErrorInvalidArgument;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: caller guarantees config_json points to `len` bytes
+        let bytes = unsafe { std::slice::from_raw_parts(config_json, len) };
+
+        let config = match InputMethodConfig::from_json_bytes(bytes) {
+            Ok(c) => c,
+            Err(_) => return FfiStatusCode::ErrorParseError,
+        };
+
+        let container = unsafe { &mut *(engine_ptr as *mut Container) };
+        container.load_input_config(config);
+        FfiStatusCode::Success
+    }));
+
+    match result {
+        Ok(status) => status,
+        Err(_) => FfiStatusCode::ErrorPanic,
     }
 }

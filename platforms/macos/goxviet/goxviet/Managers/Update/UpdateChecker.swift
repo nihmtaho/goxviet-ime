@@ -26,15 +26,15 @@ enum UpdateCheckResult {
 
 // MARK: - Update Checker
 
-class UpdateChecker {
-    static let shared = UpdateChecker()
+class UpdateChecker: @unchecked Sendable {
+    nonisolated(unsafe) static let shared = UpdateChecker()
 
     private let githubAPIURL = "https://api.github.com/repos/nihmtaho/goxviet-ime/releases/latest"
 
-    private init() {}
+    nonisolated private init() {}
 
     /// Check for updates asynchronously
-    func checkForUpdates(completion: @escaping (UpdateCheckResult) -> Void) {
+    nonisolated func checkForUpdates(completion: @escaping @Sendable (UpdateCheckResult) -> Void) {
         guard let url = URL(string: githubAPIURL) else {
             completion(.error("Invalid API URL"))
             return
@@ -81,7 +81,7 @@ class UpdateChecker {
         task.resume()
     }
 
-    private func parseResponse(data: Data, completion: @escaping (UpdateCheckResult) -> Void) {
+    nonisolated private func parseResponse(data: Data, completion: @escaping @Sendable (UpdateCheckResult) -> Void) {
         do {
             let release = try JSONDecoder().decode(ReleaseResponse.self, from: data)
             
@@ -117,12 +117,12 @@ class UpdateChecker {
     
     // MARK: - Version Comparison Helpers
     
-    private func normalizeVersion(_ version: String?) -> String? {
+    nonisolated private func normalizeVersion(_ version: String?) -> String? {
         guard let version = version else { return nil }
         return version.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
     }
 
-    private func isNewerVersion(_ latest: String, than current: String) -> Bool {
+    nonisolated private func isNewerVersion(_ latest: String, than current: String) -> Bool {
         let latestParts = latest.split(separator: ".").compactMap { Int($0) }
         let currentParts = current.split(separator: ".").compactMap { Int($0) }
 
@@ -146,7 +146,7 @@ private struct ReleaseResponse: Decodable {
     let publishedAt: String
     let assets: [ReleaseAsset]
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlURL = "html_url"
         case body
@@ -154,7 +154,16 @@ private struct ReleaseResponse: Decodable {
         case assets
     }
 
-    var preferredDownloadURL: URL? {
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tagName = try container.decode(String.self, forKey: .tagName)
+        htmlURL = try container.decode(String.self, forKey: .htmlURL)
+        body = try container.decode(String.self, forKey: .body)
+        publishedAt = try container.decode(String.self, forKey: .publishedAt)
+        assets = try container.decode([ReleaseAsset].self, forKey: .assets)
+    }
+
+    nonisolated var preferredDownloadURL: URL? {
         if let dmgAsset = assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }) {
             return URL(string: dmgAsset.browserDownloadURL)
         }
@@ -166,8 +175,14 @@ private struct ReleaseAsset: Decodable {
     let name: String
     let browserDownloadURL: String
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case name
         case browserDownloadURL = "browser_download_url"
+    }
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        browserDownloadURL = try container.decode(String.self, forKey: .browserDownloadURL)
     }
 }

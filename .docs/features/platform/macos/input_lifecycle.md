@@ -1,55 +1,141 @@
 # Input Handling & Lifecycle
 
-## Lifecycle Management (`InputManager.swift`)
+## Lifecycle Management (`Managers/Input/InputManager.swift`)
 
-The `InputManager` is a singleton that manages the active session of the IME. It implements the `LifecycleManaged` protocol.
+`InputManager` is a singleton that manages the active IME session. It implements the `LifecycleManaged` protocol (`start()` / `stop()`).
+
+### Initialization
+
+```swift
+private init() {
+    ime_init_v2()                          // Creates Rust engine (FFI v2)
+    self.currentShortcut = KeyboardShortcut.load()
+    loadSavedSettings()
+    SettingsManager.shared.syncShortcutsToEngine()
+    setupObservers()
+}
+```
 
 ### Start Sequence
-1.  **Permission Check**: `AppDelegate` verifies Accessibility permissions (`AXIsProcessTrusted`).
-2.  **Initialization**: `InputManager.shared.start()` is called.
-3.  **Tap Creation**: Creates a `CGEventTap` at `.cghidEventTap` location, formatted as `.headInsertEventTap`.
-4.  **Run Loop**: Adds the tap source to the current `CFRunLoop` (`.commonModes`).
 
-### Event Loop (`handleEvent`)
-Every keystroke on the system passes through `handleEvent`. The pipeline is:
+1. `AppDelegate` checks Accessibility permissions (`AXIsProcessTrusted`).
+2. `InputManager.shared.start()` is called.
+3. Creates `CGEventTap` at `.cghidEventTap` / `.headInsertEventTap`.
+4. Adds tap source to `CFRunLoop.current` (`.commonModes`).
+5. Sets up `NSEvent` mouse monitor to reset engine state on click.
 
-1.  **Self-Check**: Ignores events injected by GoxViet itself (marker `0x564E5F494D45`).
-2.  **Modifier filtering**: Passes through purely modifier keys (Cmd, Ctrl, Opt), unless they trigger a specific shortcut.
-3.  **Toggle Check**: Checks if the key matches the Global Toggle Shortcut (default `Ctrl+Space`).
-4.  **State Check**: If IME is disabled (globally or for current app), pass event through.
-5.  **Rust Processing**: Calls `ime_key_ext` via `RustBridge`.
+### Stop Sequence
 
-## Text Injection (`TextInjectionHelper.swift`)
+1. Removes `CGEventTap` from run loop.
+2. Disables event tap.
+3. Removes mouse monitor.
 
-When the Rust core returns a transformation, the `InputManager` must update the target application's text field.
+---
 
-### Processing Results
-The helper handles three main actions from the Rust core:
+## Event Loop (`handleEvent`)
 
--   **Pass Through (`Action = 0`)**: The event is returned `Unmanaged.passUnretained(event)`, allowing the system to handle it normally.
--   **Send (`Action = 1`)**:
-    1.  **Backspace**: Deletes `N` characters (the partial buffer) using `CGEvent` posts (Backspace key).
-    2.  **Insert**: Inserts the new Vietnamese text.
-    -   *Optimization*: The input manager often coalesces backspaces or diffs the current buffer to minimize flicker.
--   **Restore (`Action = 2`)**: Used for "Undo" functionality (e.g., pressing ESC).
-    -   Deletes the current transformed word.
-    -   Re-types the original raw keystrokes.
+Every system keystroke passes through `handleEvent`. Processing order:
+
+1. **Self-filter**: Events injected by GoxViet carry marker `0x564E5F494D45` — ignored immediately.
+2. **Modifier-only keys**: Pure Cmd/Ctrl/Opt pass through unchanged.
+3. **Toggle shortcut**: Check against `currentShortcut` (default `Ctrl+Space`) → toggle IME on/off.
+4. **Smart Mode check**: `PerAppModeManagerEnhanced` checks current frontmost app — if disabled, pass through.
+5. **Break key check**: Space, Tab, Enter, arrows, punctuation, Shift+numbers → call `RustEngineV2.resetBuffer()`, pass through.
+6. **Rust processing**: `RustEngineV2.processKey(char)` → `ime_process_key_v2(engine, key, &result)`.
+7. **Apply result**:
+   - If `consumed == false`: return event unmodified.
+   - If `consumed == true`: suppress original event, apply backspaces + inject text.
+
+---
+
+## Text Injection (`Managers/Injection/TextInjectionHelper.swift`)
+
+When the Rust core returns a transformation, `TextInjectionHelper` updates the target application.
+
+### Action Types
+
+| `consumed` | `backspace_count` | `text` | Action |
+|---|---|---|---|
+| `false` | — | — | Pass original event through |
+| `true` | 0 | non-null | Insert text only (first char of word) |
+| `true` | > 0 | non-null | Delete N chars, insert new text (mid-word transform) |
+| `true` | > 0 | null/empty | Backspace only (soft delete) |
+
+### Injection Mechanism
+
+```swift
+// 1. Post synthetic Backspace key events
+for _ in 0..<result.backspaceCount {
+    postBackspaceEvent()
+}
+
+// 2. Post synthetic key events for each Unicode scalar in result.text
+for scalar in text.unicodeScalars {
+    postUnicodeEvent(scalar)
+}
+```
+
+Events are posted at `.cghidEventTap` with the self-marker to avoid re-processing.
 
 ### Backspace Handling
-To reduce flicker, GoxViet handles the Backspace key (`Keycode 51`) specially:
--   Instead of letting the system handle it, the engine calculates the new state.
--   If the engine is empty, it passes the backspace through.
--   If the engine has content, it instructs the `injector` to update the pre-edit text in place.
 
-## App Lifecycle (`AppDelegate.swift`)
+`Keycode 51` (Backspace) is intercepted:
+- If engine buffer is empty → pass through to OS.
+- If engine has content → call `RustEngineV2.processKey(backspace)` → get new buffer state → inject minimal diff.
+- Rapid backspaces are coalesced to reduce flicker.
 
--   **Launch**:
-    -   Registers defaults.
-    -   checks Accessibility permissions continuously (polling timer).
-    -   Sets up the Menu Bar item (`NSStatusItem`).
--   **Activation**:
-    -   Observes `NSApplication.didBecomeActiveNotification`.
-    -   Re-checks permissions if they were previously missing.
--   **Termination**:
-    -   Ensures `InputManager` is stopped cleanly.
-    -   Removes the Status Item.
+### Mouse Click Reset
+
+An `NSEvent` monitor watches for `leftMouseDown` and `rightMouseDown`:
+```swift
+NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
+    RustEngineV2.shared.resetBuffer()  // clears engine state on focus change
+}
+```
+
+---
+
+## Per-App Smart Mode (`Managers/PerAppModeManagerEnhanced.swift`)
+
+```swift
+// Check before processing each key
+let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+if !perAppManager.isEnabled(for: bundleID) {
+    return passThrough(event)
+}
+```
+
+State stored in `UserDefaults` as a dictionary `[bundleID: Bool]`. Updated via `PerAppSettingsView`.
+
+---
+
+## App Lifecycle (`App/AppDelegate.swift`)
+
+### Launch
+- Registers `UserDefaults` defaults.
+- Starts Accessibility permission polling timer (every 2s until granted).
+- Initializes `NSStatusItem` (menu bar icon).
+- Calls `InputManager.shared.start()` when permissions are available.
+
+### Activation Policy
+- `ActivationPolicyCoordinator` switches between `.accessory` (background, no Dock icon) and `.regular` (when Settings window is open).
+
+### Termination
+- `InputManager.shared.stop()` (removes CGEventTap).
+- `NSStatusItem` is removed.
+
+---
+
+## Restore Shortcut
+
+A configurable double-tap shortcut (default: double `Shift`) restores the last auto-transformed word to its original ASCII keystrokes.
+
+```swift
+// RestoreShortcut detection in handleEvent
+if restoreShortcutEnabled {
+    if detectDoubleTap(key: event.keyCode, flags: event.modifierFlags) {
+        RustEngineV2.shared.triggerEscRestore()
+        return nil  // consume
+    }
+}
+```
