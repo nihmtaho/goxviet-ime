@@ -362,81 +362,19 @@ jobs:
           fail_on_unmatched_files: true
 
       # ============================================
-      # ARTIFACTS & SUMMARY
+      # SUMMARY
       # ============================================
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.APP_NAME }}-${{ steps.version.outputs.version }}-macos
-          path: ${{ steps.create_dmg.outputs.dmg_file }}
-          retention-days: 1
-
       - name: Generate release summary
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          DMG_FILE=${{ steps.create_dmg.outputs.dmg_file }}
           DMG_NAME=${{ steps.create_dmg.outputs.dmg_name }}
-          DMG_SIZE=$(ls -lh "$DMG_FILE" | awk '{print $5}')
-          HAS_CHANGELOG=${{ steps.release_notes.outputs.has_changelog }}
-          HAS_DETAILED_NOTE=${{ steps.release_notes.outputs.has_detailed_note }}
-          RELEASE_URL=${{ steps.create_release.outputs.url }}
-
-          echo "## 🎉 Release ${{ steps.version.outputs.tag }} Created Successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          DMG_SIZE=$(ls -lh "${{ steps.create_dmg.outputs.dmg_file }}" | awk '{print $5}')
+          echo "## Release ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Version** | ${{ steps.version.outputs.tag }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Release URL** | ${RELEASE_URL} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **DMG File** | ${DMG_NAME} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **DMG Size** | ${DMG_SIZE} |" >> $GITHUB_STEP_SUMMARY
-          
-          # Release notes status
-          if [ "$HAS_CHANGELOG" = "true" ]; then
-            echo "| **Changelog** | ✅ Extracted from CHANGELOG.md |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release URL** | ${{ steps.create_release.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **DMG** | \`${DMG_NAME}\` (${DMG_SIZE}) |" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.release_notes.outputs.has_changelog }}" = "true" ]; then
+            echo "| **Changelog** | ✅ from CHANGELOG.md |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| **Changelog** | ⚠️ Not found in CHANGELOG.md |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "$HAS_DETAILED_NOTE" = "true" ]; then
-            echo "| **Detailed Release Note** | ✅ Available |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| **Detailed Release Note** | ℹ️ Not provided |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Assets Uploaded" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${DMG_NAME}\` - Unsigned DMG for Homebrew/community distribution" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📝 Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Verify the release at: ${RELEASE_URL}" >> $GITHUB_STEP_SUMMARY
-          echo "2. Test the DMG installation on a clean macOS system" >> $GITHUB_STEP_SUMMARY
-          echo "3. Update Homebrew cask if applicable" >> $GITHUB_STEP_SUMMARY
-
-  # ============================================
-  # NOTIFICATION JOB
-  # ============================================
-  notify:
-    name: Release Notification
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: [check-release, build-macos]
-    if: always()
-
-    steps:
-      - name: Check release status
-        run: |
-          RELEASE_EXISTS=${{ needs.check-release.outputs.release_exists }}
-          if [ "$RELEASE_EXISTS" = "true" ]; then
-            echo "ℹ️ Release already existed for tag ${GITHUB_REF#refs/tags/}. No action taken."
-            exit 0
-          fi
-
-          # If build-macos job was skipped due to an earlier exit, report accordingly
-          if [ "${{ needs.build-macos.result }}" == "success" ]; then
-            echo "✅ Release workflow completed successfully!"
-            echo "🎉 GoxViet ${{ github.ref_name }} has been released!"
-          else
-            echo "❌ Release workflow failed!"
-            echo "Please check the build-macos job logs for details."
-            exit 1
+            echo "| **Changelog** | ⚠️ not found |" >> $GITHUB_STEP_SUMMARY
           fi
