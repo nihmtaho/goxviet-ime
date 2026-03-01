@@ -185,6 +185,7 @@ impl PhonotacticEngine {
             &[keys::W, keys::H], // wh
             &[keys::W, keys::R], // wr
             &[keys::S, keys::H], // sh (English-only digraph; not a valid Vietnamese initial or final)
+            &[keys::B, keys::H], // bh- (unusual English/foreign onset cluster)
         ];
 
         if keys.len() < 2 {
@@ -242,6 +243,12 @@ impl PhonotacticEngine {
             &[keys::I, keys::T, keys::Y],     // -ity (quality, city, ability)
             &[keys::A, keys::L, keys::L],     // -all (overall, install)
             &[keys::F, keys::U, keys::L],     // -ful (beautiful, careful)
+            &[keys::I, keys::C, keys::K],     // -ick (thick, click, trick)
+            &[keys::I, keys::T, keys::H],     // -ith (with, zenith, filth)
+            &[keys::I, keys::A, keys::N],     // -ian (ician, guardian, median)
+            &[keys::O, keys::T, keys::H],     // -oth (cloth, month, growth)
+            &[keys::R, keys::T, keys::H],     // -rth (birth, north, earth)
+            &[keys::T, keys::I, keys::C],     // -tic (static, mystic, plastic)
         ];
 
         const SUFFIXES_4: &[&[u16; 4]] = &[
@@ -260,6 +267,7 @@ impl PhonotacticEngine {
             &[keys::T, keys::I, keys::N, keys::G], // -ting (getting, starting)
             &[keys::R, keys::I, keys::N, keys::G], // -ring (monitoring, recurring)
             &[keys::D, keys::I, keys::N, keys::G], // -ding (adding, doing)
+            &[keys::A, keys::S, keys::P, keys::H], // -asph (blasphemy, blasphemous)
         ];
 
         const SUFFIXES_5: &[&[u16; 5]] = &[
@@ -267,6 +275,7 @@ impl PhonotacticEngine {
             &[keys::I, keys::T, keys::I, keys::O, keys::N], // -ition (position, condition)
             &[keys::A, keys::T, keys::I, keys::N, keys::G], // -ating (creating, operating)
             &[keys::I, keys::Z, keys::I, keys::N, keys::G], // -izing (realizing, organizing)
+            &[keys::S, keys::T, keys::O, keys::R, keys::E], // -store (restore, store, offshore)
         ];
 
         // Check 2-char suffix: -ed (without requiring trailing SPACE)
@@ -408,12 +417,16 @@ impl PhonotacticEngine {
             &[keys::E, keys::X, keys::P], // exp- (express, export, explain)
             &[keys::C, keys::O, keys::N], // con- (control, consider, content)
             &[keys::S, keys::U, keys::B], // sub- (subject, submit)
+            &[keys::A, keys::R, keys::C], // arc- (arch, arctic, archive)
+            &[keys::A, keys::L, keys::N], // aln- (alignment, alnylam)
+            &[keys::B, keys::I, keys::I], // bii- (double-i onset pattern)
         ];
 
         const PREFIXES_4: &[&[u16; 4]] = &[
             &[keys::R, keys::E, keys::S, keys::T], // rest- (restore, restrict)
             &[keys::O, keys::V, keys::E, keys::R], // over- (overall, overcome)
             &[keys::U, keys::N, keys::D, keys::E], // unde- (under, understand)
+            &[keys::A, keys::C, keys::H, keys::R], // achr- (achromatic, achromic)
         ];
 
         if keys.len() >= 3 {

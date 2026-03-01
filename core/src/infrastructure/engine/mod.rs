@@ -2226,6 +2226,11 @@ impl Engine {
         // Skip foreign word detection if free_tone mode is enabled
         if !self.free_tone_enabled && !has_horn_transforms && !has_stroke_transforms {}
 
+        // Normalize ie/ye/uye → iê/yê/uyê compound before placing mark
+        // In Vietnamese, "ie"/"ye"/"uye" before a coda always needs circumflex on 'e'.
+        // E.g. "mienx" → auto-circumflex on 'e' → "miên" → apply ngã → "miễn"
+        let rebuild_from_ie = self.normalize_ie_compound();
+
         // Issue #29: Normalize ưo → ươ compound before placing mark
         // In Vietnamese, "ưo" is never valid - it's always "ươ"
         let rebuild_from_compound = self.normalize_uo_compound();
@@ -2270,8 +2275,12 @@ impl Engine {
             return None;
         }
 
-        // Rebuild from the earlier position if compound was formed
-        let rebuild_pos = rebuild_from_compound.map_or(pos, |cp| cp.min(pos));
+        // Rebuild from the earliest position if any compound was formed
+        let rebuild_pos = [rebuild_from_ie, rebuild_from_compound]
+            .iter()
+            .flatten()
+            .copied()
+            .fold(pos, |acc, cp| acc.min(cp));
 
         // VALIDATION CHECK: Verify the mark application resulted in valid Vietnamese
         // (Similar to try_tone validation)
@@ -2300,6 +2309,10 @@ impl Engine {
         // CRITICAL FIX: Track the modifier key in raw_input
         let result = self.rebuild_from(rebuild_pos);
         return Some(result);
+    }
+
+    fn normalize_ie_compound(&mut self) -> Option<usize> {
+        vowel_compound::normalize_ie_compound(&mut self.buf)
     }
 
     /// Normalize ưo → ươ compound
@@ -3189,27 +3202,61 @@ impl Engine {
     /// Check if current buffer is an English word using Vietnamese-first detection.
     ///
     /// Pipeline:
-    /// 1. If rendered buffer output is in TuDien (Vietnamese syllable dict) → not English.
-    /// 2. Use PhonotacticEngine on raw key sequence → return English if confidence ≥ 80.
+    /// 1. If last Telex key was NOT a tone modifier AND raw word is in English dict → English.
+    ///    Rationale: "core" (last key 'e') → "coẻ" looks like Vietnamese, but user didn't
+    ///    intend any Vietnamese tone. Check dict first to catch this class of words.
+    /// 2. If rendered buffer is a valid Vietnamese syllable → not English.
+    ///    Rationale: "beets" (last key 's'=modifier) → "bết" valid Vietnamese → not English.
+    /// 3. Fallback: phonotactic analysis on raw key sequence.
     fn is_english_dictionary_word(&self) -> bool {
         let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
 
+        // Determine whether the LAST typed key was an explicit Telex tone modifier.
+        // When the last key is a modifier (s/f/r/x/j), the user explicitly applied a
+        // Vietnamese tone — respect that intent and let Vietnamese check run first.
+        // When the last key is NOT a modifier, any marks in buf came from mid-word
+        // absorption (e.g. 'r' in "core" absorbs as hỏi on 'o'), not from explicit intent.
+        let last_key_is_telex_modifier = self.method == 0 && {
+            use crate::data::keys as k;
+            const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
+            self.raw_input
+                .iter()
+                .last()
+                .map_or(false, |(key, _)| TELEX_TONE_MODIFIERS.contains(&key))
+        };
+
+        let raw_word: String = self
+            .raw_input
+            .iter()
+            .filter_map(|(k, _)| crate::utils::key_to_char(k, false))
+            .collect();
+
         // Priority 1 (HIGHEST): Vietnamese syllable check — if the current buffer renders
-        // to a valid Vietnamese syllable, this is almost certainly Vietnamese input.
-        // This must run BEFORE the English dict check so that words like "beets" (Telex for
-        // "bết") are not falsely restored as English even though "beets" is in the English dict.
+        // to a valid Vietnamese syllable, keep it as Vietnamese even if the raw input
+        // matches an English dictionary word.
+        // Example: "veen"→"vên" — "vên" IS valid Vietnamese, "veen" is an obscure English word;
+        //          prefer Vietnamese to avoid false restore.
+        // Example: "core"→"cỏe" — "cỏe" is NOT valid Vietnamese; continue to dict check.
         let output = self.buf.to_full_string();
         if crate::data::viet_syllables::is_valid_vietnamese_syllable(&output) {
             return false;
         }
 
-        // Priority 0: English word dictionary lookup — only reached if current buffer is NOT
-        // valid Vietnamese. Check before W-guard so words ending in 'w' (caw, bylaw, curfew)
-        // are found when they produce an invalid Vietnamese buffer.
-        let raw_word: String = self.raw_input.iter()
-            .filter_map(|(k, _)| crate::utils::key_to_char(k, false))
-            .collect();
-        if !raw_word.is_empty() && crate::data::english_words::is_english_word(&raw_word) {
+        // Priority 0 (early): English dict — only when last key is NOT an explicit Telex modifier.
+        // This catches words like "core" → "coẻ" (looks Vietnamese but isn't intended as such).
+        if !last_key_is_telex_modifier
+            && !raw_word.is_empty()
+            && crate::data::english_words::is_english_word(&raw_word)
+        {
+            return true;
+        }
+
+        // Priority 0 (fallback): English dict when last key WAS a modifier but Vietnamese
+        // output is still invalid (unusual case).
+        if last_key_is_telex_modifier
+            && !raw_word.is_empty()
+            && crate::data::english_words::is_english_word(&raw_word)
+        {
             return true;
         }
 
@@ -3280,12 +3327,13 @@ impl Engine {
 
         let phonotactic = PhonotacticEngine::analyze(&raw_keys);
 
-        // Highly confident English (>=95%) is "definite"
-        // This excludes Coda clusters (91%) like 'st' which conflict with Telex tones
-        // But includes Onset clusters (98%) and Invalid Initials (100%)
+        // Highly confident English (>=98%) is "definite"
+        // Threshold 98 ensures L6 prefixes (95%, e.g. "rest-") do NOT trigger instant
+        // mid-word restore — those words should wait for the SPACE boundary check instead.
+        // Only L2 onset clusters (98%) and L1 invalid initials (100%) qualify.
         let layer1_invalid_initials = (phonotactic.matched_layers & 1) != 0;
 
-        phonotactic.english_confidence >= 95 || layer1_invalid_initials
+        phonotactic.english_confidence >= 98 || layer1_invalid_initials
     }
 
     /// Instant restore to raw ASCII (no trailing space)
@@ -3324,10 +3372,24 @@ impl Engine {
             let is_dict = self.is_english_dictionary_word();
             if is_dict {
                 // If the user explicitly applied a Vietnamese tone mark (sắc/huyền/hỏi/ngã/nặng)
-                // via a Telex modifier key (s/f/r/x/j), respect that intent — do NOT restore to
-                // English even if the word appears in the English dictionary.
-                // Example: "hoax" (hoã) — user typed x=ngã intentionally.
-                let has_explicit_viet_tone = self.buf.iter().any(|c| c.mark != 0);
+                // If the user explicitly applied a Vietnamese tone mark via a Telex
+                // modifier key (s/f/r/x/j) AS THE LAST KEY, respect that intent — do NOT
+                // restore to English even if the word appears in the English dictionary.
+                // Example: "hoax" → last key 'x'=ngã → user intended Vietnamese.
+                //
+                // When the last key is NOT a modifier (e.g. "core", "restore"), any marks
+                // in buf came from mid-word absorption, not explicit user intent.
+                let has_explicit_viet_tone = if self.method == 0 {
+                    use crate::data::keys as k;
+                    const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
+                    self.raw_input
+                        .iter()
+                        .last()
+                        .map_or(false, |(key, _)| TELEX_TONE_MODIFIERS.contains(&key))
+                } else {
+                    // VNI: number keys are always explicit tone intent
+                    self.buf.iter().any(|c| c.mark != 0)
+                };
                 if has_explicit_viet_tone {
                     return None;
                 }
@@ -3509,6 +3571,30 @@ impl Engine {
             self.sync_buffer_with_raw_input();
             self.last_transform = None; // Clear stale transform after English restore
             return Some(result);
+        }
+
+        // Raw-suffix instant restore: check unfiltered raw_input for Telex-ambiguous suffixes.
+        // In Telex, S(=sắc) and R(=hỏi) are tone modifiers that get stripped from filtered keys,
+        // but in English words like "store"/"restore" they are real consonants.
+        // We check the raw keys directly (before filtering) for these patterns.
+        {
+            use crate::data::keys as k;
+            let raw_len = self.raw_input.len();
+            if raw_len >= 5 {
+                let last5: Vec<u16> = self.raw_input.iter()
+                    .skip(raw_len - 5)
+                    .map(|(key, _)| key)
+                    .collect();
+                // -store suffix: restore, store, offshore, etc.
+                if last5 == [k::S, k::T, k::O, k::R, k::E] {
+                    self.is_english_word = true;
+                    let mut result = self.instant_restore_english();
+                    result.backspace = result.backspace.saturating_sub(offset);
+                    self.sync_buffer_with_raw_input();
+                    self.last_transform = None;
+                    return Some(result);
+                }
+            }
         }
 
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
