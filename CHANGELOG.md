@@ -1,20 +1,34 @@
 # CHANGELOG
 
-## [2.0.11] - 2026-02-14
+## [2.0.11] - 2026-03-01
 
-### ✨ Features (Sprint D — Data-Driven InputMethodConfig)
+> 📝 **Release Note**: [.release-notes/release_note_2.0.11.md](.release-notes/release_note_2.0.11.md)
 
-- **`InputMethodConfig` domain type** (T6.1): New `domain/entities/input_method_config.rs` with `InputAction` enum (14 variants) and `InputMethodConfig` struct. Built-in `telex()` and `vni()` factories with JSON serialization via `serde`. Replaces hardcoded Telex/VNI logic with a data-driven pattern (based on KieuGo.ini approach).
-- **`ime_load_input_config_v2` FFI endpoint** (T6.2): New C-compatible function accepts a JSON-encoded `InputMethodConfig` (raw bytes + length), parses it, and updates the engine's active input method. Returns `FfiStatusCode` including new `ErrorParseError = -12`. Container gains `load_input_config()` and `get_input_method_config()` methods.
-- **Swift binding + InputManager integration** (T6.3): `RustBridgeV2.swift` declares `@_silgen_name("ime_load_input_config_v2")` and exposes `loadInputConfig(_:)` method. New `InputMethodDefinition.swift` provides pre-built JSON for Telex and VNI. `InputManager.swift` calls `loadInputConfig` at init and on every `setInputMethod` change.
+### ✨ Features
 
-### 🧪 Tests & Benchmarks
+- **Vietnamese Dictionary Embedding** (Sprint A): Nhúng TuDien (~7K) và TuDienTuGhep (~68K entries) vào binary qua `phf` — O(1) lookup, không cần file I/O runtime; expose `is_valid_vietnamese_syllable()` và `is_vietnamese_compound()` API
+- **SyllableStructureValidator** (Sprint B): Thay thế FSM bằng PAD/NA/PAC lookup tables với 29 unit tests + 27 integration tests
+- **Vietnamese-first Auto-restore** (Sprint C): Rewrite `language_decision.rs` — TuDien priority 1, phonotactics priority 2–3, diacritics priority 4; xóa `Dictionary` cũ và `dictionary_data.rs`
+- **Data-driven InputMethodConfig** (Sprint D): Domain type `InputMethodConfig` với `InputAction` (14 variants), JSON serialization, FFI endpoint `ime_load_input_config_v2`, Swift binding trong `RustBridgeV2` + `InputManager`
+- **Phonotactic Patterns**: Thêm `-core`/`core-`, `-yc`, `-ycast`, `SH` onset, `-ly`, `-al` suffix patterns cho English detection
 
-- **Sprint D integration tests** (T7.1): 15 new tests in `tests/sprint_d_integration_test.rs` covering Vietnamese typing, English auto-restore, and `InputMethodConfig` JSON roundtrip.
-- **Sprint D benchmarks** (T7.2): New `benches/sprint_d_bench.rs` benchmarks config construction, JSON serialization/deserialization, `load_input_config`, and keystroke latency after config load.
+### 🐛 Bug Fixes
+
+- **Accessibility Permission Reset**: Sửa 3 root causes — malformed entitlements (`<dict/>`), non-atomic bundle swap phá code signature, TCC-settle delay + retry sau auto-update
+- **EXC_BAD_ACCESS on Toggle**: Xóa `@MainActor` thừa khỏi `DispatchWorkItem` closure gây crash khi toggle tiếng Việt
+- **Telex Tone Modifier False Restore**: Filter `{S,F,R,X,J}` khỏi phonotactic analysis khi có Telex absorption; fixes `casc`, `tieesp`, `dduwofng` bị restore sai
+- **Vietnamese 100% Pass Rate**: Đạt 100% Telex + 100% VNI trên 6,538 âm tiết chuẩn (Y→P bigram, qu-initial, Horn/Breve skip)
+- **English Edge Cases**: Sửa `gièm→giềm`, `vên` restore sai, `core` không restore, `safari`/`raycast` instant restore với heavy-absorption bypass
+- **Swift 6 + macOS 11 Migration**: `nonisolated` singletons, `Color(NSColor.)`, `.onChange(of:perform:)`, `.alert` struct API
+
+### ⚡ Improvements
+
+- **English Detection Accuracy**: 59.23% → 64.01% Telex (+475 words) nhờ SH onset, -ly/-al suffixes, xóa dead rules
+- **Vietnamese Baseline**: 99.46% → 99.59% sau Telex tone modifier filter
 
 ### 📦 Dependencies
-- Added `serde = { version = "1", features = ["derive"] }` and `serde_json = "1"` to `core/Cargo.toml`
+
+- Thêm `serde` + `serde_json` vào `core/Cargo.toml` cho InputMethodConfig serialization
 
 ---
 
