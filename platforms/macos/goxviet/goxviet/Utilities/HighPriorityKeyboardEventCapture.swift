@@ -13,8 +13,8 @@ import Cocoa
 /// This provides the highest possible priority and cannot be overridden by
 /// system shortcuts or other applications.
 class HighPriorityKeyboardEventCapture {
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    nonisolated(unsafe) private var eventTap: CFMachPort?
+    nonisolated(unsafe) private var runLoopSource: CFRunLoopSource?
     private let onKeyEvent: (NSEvent) -> Void
     private let onCancel: () -> Void
     
@@ -80,7 +80,7 @@ class HighPriorityKeyboardEventCapture {
     }
     
     /// Stop capturing keyboard events
-    func stop() {
+    nonisolated func stop() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             if let runLoopSource = runLoopSource {

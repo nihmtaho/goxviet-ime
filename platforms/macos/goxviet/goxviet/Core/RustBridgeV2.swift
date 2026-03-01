@@ -22,6 +22,7 @@ enum FfiStatusCode: Int32 {
     case errorInvalidArgument = -5 // Invalid argument (generic)
     case errorProcessingFailed = -10 // Processing failed
     case errorInvalidUtf8 = -11    // Invalid UTF-8 encoding
+    case errorParseError = -12     // JSON parse error
     case errorOutOfMemory = -20    // Out of memory
     case errorAlreadyExists = -30  // Shortcut already exists
     case errorNotFound = -31       // Shortcut not found
@@ -34,16 +35,16 @@ enum FfiStatusCode: Int32 {
 // This would make FfiConfig_v2 = 3 bytes instead of the 12 bytes Rust expects.
 struct FfiInputMethod: Equatable {
     let rawValue: Int32
-    init(rawValue: Int32) { self.rawValue = rawValue }
-    static let telex = FfiInputMethod(rawValue: 0)
-    static let vni = FfiInputMethod(rawValue: 1)
+    nonisolated init(rawValue: Int32) { self.rawValue = rawValue }
+    nonisolated(unsafe) static let telex = FfiInputMethod(rawValue: 0)
+    nonisolated(unsafe) static let vni = FfiInputMethod(rawValue: 1)
 }
 
 struct FfiToneStyle: Equatable {
     let rawValue: Int32
-    init(rawValue: Int32) { self.rawValue = rawValue }
-    static let traditional = FfiToneStyle(rawValue: 0)  // Old style: hòa
-    static let modern = FfiToneStyle(rawValue: 1)        // New style: hoà
+    nonisolated init(rawValue: Int32) { self.rawValue = rawValue }
+    nonisolated(unsafe) static let traditional = FfiToneStyle(rawValue: 0)  // Old style: hòa
+    nonisolated(unsafe) static let modern = FfiToneStyle(rawValue: 1)        // New style: hoà
 }
 
 struct FfiConfig_v2 {
@@ -120,6 +121,11 @@ func ime_reset_buffer_v2(_ engine: FfiEnginePtr?) -> Int32
 @_silgen_name("ime_reset_all_v2")
 func ime_reset_all_v2(_ engine: FfiEnginePtr?) -> Int32
 
+// MARK: - Input Method Config FFI (Sprint D — T6.3)
+
+@_silgen_name("ime_load_input_config_v2")
+func ime_load_input_config_v2(_ engine: FfiEnginePtr?, _ json: UnsafePointer<UInt8>, _ len: Int) -> Int32
+
 // MARK: - Swift Bridge Error
 
 enum RustBridgeV2Error: Error, LocalizedError {
@@ -154,7 +160,7 @@ struct ProcessResult {
 
 /// Thread-safe v2 FFI bridge using out parameter pattern
 final class RustBridgeV2 {
-    static let shared = RustBridgeV2()
+    nonisolated(unsafe) static let shared = RustBridgeV2()
     
     // MARK: - Properties
     
@@ -164,7 +170,7 @@ final class RustBridgeV2 {
     
     // MARK: - Lifecycle
     
-    private init() {
+    nonisolated private init() {
         // Default configuration
         currentConfig = FfiConfig_v2(
             input_method: .telex,
@@ -176,9 +182,7 @@ final class RustBridgeV2 {
         )
     }
     
-    deinit {
-        destroyEngine()
-    }
+    deinit {}
     
     // MARK: - Engine Lifecycle
     
@@ -535,5 +539,42 @@ final class RustBridgeV2 {
         guard status == FfiStatusCode.success.rawValue else {
             throw RustBridgeV2Error.ffiCallFailed("ime_reset_all_v2")
         }
+    }
+
+    // MARK: - Input Method Config (Sprint D — T6.3)
+
+    /// Load a data-driven InputMethodConfig from JSON (Sprint D)
+    ///
+    /// Passes the JSON string to `ime_load_input_config_v2` which parses it
+    /// and updates the engine's active input method.
+    ///
+    /// - Parameter configJson: JSON-encoded InputMethodConfig string
+    /// - Throws: `RustBridgeV2Error.configError` on parse failure
+    func loadInputConfig(_ configJson: String) throws {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+
+        guard let ptr = enginePtr else {
+            throw RustBridgeV2Error.invalidEngine
+        }
+
+        guard let data = configJson.data(using: .utf8) else {
+            throw RustBridgeV2Error.configError
+        }
+
+        let statusCode = data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> Int32 in
+            guard let ptr8 = bytes.bindMemory(to: UInt8.self).baseAddress else {
+                return FfiStatusCode.errorInvalidArgument.rawValue
+            }
+            return ime_load_input_config_v2(ptr, ptr8, data.count)
+        }
+
+        let status = FfiStatusCode(rawValue: statusCode) ?? .errorUnknown
+        guard status == .success else {
+            Log.warning("ime_load_input_config_v2 failed with status: \(statusCode)")
+            throw RustBridgeV2Error.configError
+        }
+
+        Log.info("InputMethodConfig loaded via FFI")
     }
 }

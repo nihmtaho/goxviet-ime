@@ -1,15 +1,44 @@
-# Engine V2 Overview
+# ⚠️ DEPRECATED – Engine V2 Module (`engine_v2/`)
 
-The `engine_v2` module represents the second generation of the core processing engine, focusing on performance, modularity, and more sophisticated language detection. It introduces a layered architecture for phonotactic analysis and strict Vietnamese validation.
+> **Lưu ý:** Module `engine_v2/` đã được migrate sang Clean Architecture trong v3.0.0.  
+> Tài liệu này được giữ lại cho mục đích lịch sử. **Không còn phản ánh codebase hiện tại.**
+>
+> **Xem thay thế:** [clean-architecture.md](../clean-architecture.md)  
+> **Code mới tại:** `infrastructure/adapters/validation/` và `infrastructure/adapters/transformation/`
 
-## Module Structure
+---
 
-- **`english`**: Advanced English detection logic using an 8-layer phonotactic engine and optimized dictionary lookups.
-- **`vietnamese_validator`**: Strict validation of Vietnamese syllables to prevent invalid transformations and improve auto-restore accuracy.
-- **`fsm`**: Finite State Machine data and tables supporting the validator (bigram matrices, character properties).
+## Migration Map
 
-## Key Improvements
+| Legacy `engine_v2/` path | New path (v3.0.0) |
+|---|---|
+| `engine_v2/english/` | `infrastructure/adapters/validation/english/` |
+| `engine_v2/vietnamese_validator/` | `infrastructure/adapters/validation/vietnamese_validator.rs` + `fsm_validator_adapter.rs` |
+| `engine_v2/fsm/` | `infrastructure/adapters/validation/fsm/` |
 
-1.  **Matrix-Based Analysis**: Uses bitmask matrices (`VIETNAMESE_BIGRAMS`) for O(1) validity checks of character pairs.
-2.  **Layered Phonotactics**: English detection is no longer just a dictionary check but a multi-layer analysis of consonant clusters, suffixes, and impossible Vietnamese bigrams.
-3.  **Strict Validation**: The engine can now definitively reject invalid Vietnamese sequences (e.g., "f", "j" initials, invalid vowel combinations), allowing for more aggressive English restoration when Vietnamese validity is low.
+---
+
+# [Historical] Engine V2 Overview
+
+`engine_v2/` was the "Modern Engine" module prior to v3.0.0, designed as the successor to `engine/`. It introduced:
+
+- **Modular English detection**: Phonotactic + dictionary combination.
+- **Vietnamese FSM validator**: Strict syllable validation using a Finite State Machine.
+- **Separate concerns**: Detection and validation decoupled from the main engine loop.
+
+These capabilities are now fully integrated into the Clean Architecture via the `infrastructure/adapters/validation/` adapters.
+
+## Components (Historical → New)
+
+### English Detection
+Previously in `engine_v2/english/`:
+- `PhonotacticEngine` → now at `infrastructure/adapters/validation/english/phonotactic.rs`
+- `Dictionary` → now at `infrastructure/adapters/validation/english/dictionary.rs`
+- `LanguageDecisionEngine` (95% threshold) → now at `infrastructure/adapters/validation/english/language_decision.rs`
+
+### Vietnamese Validator (FSM)
+Previously in `engine_v2/vietnamese_validator/`:
+- `VietnameseSyllableValidator` → now at `infrastructure/adapters/validation/vietnamese_validator.rs`
+- FSM tables → now at `infrastructure/adapters/validation/fsm/tables/`
+
+Both are now accessible as `Box<dyn SyllableValidator>` and `Box<dyn LanguageDetector>` via the DI container.

@@ -28,7 +28,6 @@ pub use crate::infrastructure::external::vietnamese_validator::{
 
 // Re-export english detection (uses infrastructure::external::english)
 pub use crate::infrastructure::external::english::{
-    dictionary::Dictionary,
     language_decision::{DecisionResult, LanguageDecisionEngine},
     phonotactic::{AutoRestoreDecider, PhonotacticEngine, PhonotacticResult},
 };

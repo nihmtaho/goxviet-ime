@@ -8,13 +8,13 @@
 import AppKit
 
 final class ActivationPolicyCoordinator {
-    static let shared = ActivationPolicyCoordinator()
+    nonisolated(unsafe) static let shared = ActivationPolicyCoordinator()
 
     private var pendingPolicy: NSApplication.ActivationPolicy?
     private var scheduled = false
     private let applyDelay: TimeInterval = 0.05
 
-    private init() {}
+    nonisolated private init() {}
 
     func request(_ policy: NSApplication.ActivationPolicy) {
         // Skip if already at target policy

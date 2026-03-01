@@ -32,7 +32,6 @@ impl VietnameseSyllableValidator {
         // Rule 1: Validate initial consonants (comprehensive check from OpenKey)
         // Vietnamese allows specific initial consonants and clusters
         if !Self::is_valid_initial_consonant(keys) {
-            println!("DEBUG: Rule 1 failed");
             return ValidationResult {
                 is_valid: false,
                 confidence: 0,
@@ -45,7 +44,6 @@ impl VietnameseSyllableValidator {
             let k1 = keys[0];
             let k2 = keys[1];
             if Self::is_invalid_consonant_cluster(k1, k2) {
-                println!("DEBUG: Rule 1.5 cluster failed");
                 return ValidationResult {
                     is_valid: false,
                     confidence: 0,
@@ -54,7 +52,6 @@ impl VietnameseSyllableValidator {
 
             // Check c/k/g/gh/ng/ngh distribution rules
             if Self::violates_ck_distribution(k1, k2) {
-                println!("DEBUG: Rule 1.5 distribution failed");
                 return ValidationResult {
                     is_valid: false,
                     confidence: 0,
@@ -96,7 +93,6 @@ impl VietnameseSyllableValidator {
                     (prev, last),
                     (keys::N, keys::G) | (keys::N, keys::H) | (keys::C, keys::H)
                 ) {
-                    println!("DEBUG: Rule 5 Coda failed (invalid coda char)");
                     return ValidationResult {
                         is_valid: false,
                         confidence: 0,
@@ -117,7 +113,6 @@ impl VietnameseSyllableValidator {
             if last == keys::H && prev == keys::C && len >= 3 {
                 let vowel = keys[len - 3];
                 if Self::is_invalid_vowel_before_ch(vowel) {
-                    println!("DEBUG: Rule 6 CH check failed");
                     return ValidationResult {
                         is_valid: false,
                         confidence: 0,
@@ -129,7 +124,6 @@ impl VietnameseSyllableValidator {
             if last == keys::H && prev == keys::N && len >= 3 {
                 let vowel = keys[len - 3];
                 if Self::is_invalid_vowel_before_nh(vowel) {
-                    println!("DEBUG: Rule 6 NH check failed");
                     return ValidationResult {
                         is_valid: false,
                         confidence: 0,
@@ -140,7 +134,6 @@ impl VietnameseSyllableValidator {
             // Check for -ng ending
             if last == keys::G && prev == keys::N && len >= 3 {
                 if !Self::is_valid_vowel_before_ng(keys, len) {
-                    println!("DEBUG: Rule 6 NG check failed");
                     return ValidationResult {
                         is_valid: false,
                         confidence: 0,
@@ -151,7 +144,6 @@ impl VietnameseSyllableValidator {
 
         // Rule 7: Validate vowel combinations (from OpenKey)
         if !Self::is_valid_vowel_sequence(keys) {
-            println!("DEBUG: is_valid_vowel_sequence rejected {:?}", keys);
             return ValidationResult {
                 is_valid: false,
                 confidence: 0,
@@ -287,25 +279,21 @@ impl VietnameseSyllableValidator {
                             // ..ơ
                             // uơ, ươ valid. iơ (giờ) valid
                             if !matches!(k1, keys::U | keys::I) {
-                                println!("DEBUG: Rejected O Horn (ơ) after {:?}", k1);
                                 return false;
                             }
                         } else if k2 == keys::A {
                             // ..ă
                             // oă (xoăn), uă (quặc), iă (giặc) valid
                             if !matches!(k1, keys::O | keys::U | keys::I) {
-                                println!("DEBUG: Rejected A Horn (ă) after {:?}", k1);
                                 return false;
                             }
                         } else if k2 == keys::U {
                             // ..ư
                             // iư (giữ) valid
                             if !matches!(k1, keys::I) {
-                                println!("DEBUG: Rejected U Horn (ư) after {:?}", k1);
                                 return false;
                             }
                         } else {
-                            println!("DEBUG: Rejected Horn on {:?}", k2);
                             return false;
                         }
                     }
@@ -325,7 +313,6 @@ impl VietnameseSyllableValidator {
                 // Rule 3b: O+Circumflex (ô) invalid as first vowel in triphthong
                 // "ngoao" -> "ngôa" invalid. "ngoao" valid.
                 if vowel_keys[0] == keys::O && vowel_tones[0] == tone::CIRCUMFLEX {
-                    println!("DEBUG: Rule 3b Rejected O(Circ) as v1 (len 3)");
                     return false;
                 }
 
@@ -460,8 +447,9 @@ impl VietnameseSyllableValidator {
             return true;
         }
 
-        // ka, ko, ku (should be ca, co, cu)
-        if k1 == keys::K && matches!(k2, keys::A | keys::O | keys::U) {
+        // ka, ko (should be ca, co)
+        // Note: ku is allowed for loan words like "kuýp" (cup/coup)
+        if k1 == keys::K && matches!(k2, keys::A | keys::O) {
             return true;
         }
 
@@ -574,14 +562,9 @@ impl VietnameseSyllableValidator {
 
         for (i, &k) in keys.iter().enumerate() {
             let is_vowel = matches!(k, keys::A | keys::E | keys::I | keys::O | keys::U | keys::Y);
-            println!(
-                "DEBUG: Loop i={} k={} is_vowel={} finished={}",
-                i, k, is_vowel, finished_vowel_block
-            );
 
             if is_vowel {
                 if finished_vowel_block {
-                    println!("DEBUG: Found multi-syllable key {} at index {}", k, i);
                     // Found a second vowel block after consonants -> Multi-syllable/Invalid
                     return false;
                 }
@@ -609,6 +592,15 @@ impl VietnameseSyllableValidator {
         // We should skip it for vowel sequence validation.
         if keys[start] == keys::I && start > 0 && keys[start - 1] == keys::G {
             // Check if there are other vowels after 'i'
+            if end > start {
+                start += 1;
+            }
+        }
+
+        // Special handling for 'qu':
+        // The 'u' in 'qu' is part of the initial consonant cluster, not the vowel nucleus.
+        // Skip it to correctly validate vowels in words like "quáu", "quạu", "quều".
+        if keys[start] == keys::U && start > 0 && keys[start - 1] == keys::Q {
             if end > start {
                 start += 1;
             }

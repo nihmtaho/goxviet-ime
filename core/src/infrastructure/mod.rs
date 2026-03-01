@@ -9,6 +9,7 @@
 //! Infrastructure depends on domain abstractions, not vice versa.
 
 pub mod adapters;
+pub mod data;
 pub mod repositories;
 pub mod external;
 pub mod engine;

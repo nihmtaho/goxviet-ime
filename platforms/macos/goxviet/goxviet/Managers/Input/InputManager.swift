@@ -28,7 +28,7 @@ private func isBreakKey(_ keyCode: CGKeyCode, shift: Bool) -> Bool {
 // MARK: - Input Manager
 
 class InputManager: LifecycleManaged {
-    static let shared = InputManager()
+    nonisolated(unsafe) static var shared: InputManager!
     
     // OPTIMIZATION: String pool for common Vietnamese characters (reduces allocations)
     // Reduces 64B malloc overhead by reusing String objects for frequent chars
@@ -62,7 +62,7 @@ class InputManager: LifecycleManaged {
     private var restoreShortcutEnabled: Bool = SettingsManager.shared.restoreShortcutEnabled
     private var restoreTapHistory: [(flags: UInt64, time: TimeInterval)] = []
     
-    private init() {
+    init() {
         // Initialize Rust bridge v2
         ime_init_v2()
 
@@ -80,10 +80,7 @@ class InputManager: LifecycleManaged {
         setupObservers()
     }
     
-    deinit {
-        stop()
-        Log.info("InputManager deinitialized")
-    }
+    deinit {}
     
     private func loadSavedSettings() {
         let settings = SettingsManager.shared
@@ -91,6 +88,15 @@ class InputManager: LifecycleManaged {
         // Apply saved input method
         ime_method_v2(UInt8(settings.inputMethod))
         Log.info("Loaded input method: \(settings.inputMethod == 0 ? "Telex" : "VNI")")
+
+        // Sprint D (T6.3): also load data-driven config so Rust core has full mapping
+        let ffiMethod: FfiInputMethod = settings.inputMethod == 1 ? .vni : .telex
+        let configJson = InputMethodDefinition.json(for: ffiMethod)
+        do {
+            try RustBridgeV2.shared.loadInputConfig(configJson)
+        } catch {
+            Log.warning("loadInputConfig (init) failed: \(error.localizedDescription)")
+        }
         
         // Apply saved tone style
         ime_modern_v2(settings.modernToneStyle)
@@ -369,7 +375,8 @@ class InputManager: LifecycleManaged {
                 Log.info("Toggle shortcut updated: \(shortcut.displayString)")
             } else {
                 self?.currentShortcut = KeyboardShortcut.load()
-                Log.info("Toggle shortcut reloaded: \(self?.currentShortcut.displayString ?? "unknown")")
+                let shortcutName = self?.currentShortcut.displayString ?? "unknown"
+                Log.info("Toggle shortcut reloaded: \(shortcutName)")
             }
             
             // Also reload text expansion shortcuts
@@ -431,6 +438,16 @@ class InputManager: LifecycleManaged {
     func setInputMethod(_ method: Int) {
         SettingsManager.shared.setInputMethod(method)
         ime_method_v2(UInt8(method))
+
+        // Sprint D (T6.3): load data-driven InputMethodConfig via new FFI endpoint
+        let ffiMethod: FfiInputMethod = method == 1 ? .vni : .telex
+        let configJson = InputMethodDefinition.json(for: ffiMethod)
+        do {
+            try RustBridgeV2.shared.loadInputConfig(configJson)
+        } catch {
+            Log.warning("loadInputConfig failed: \(error.localizedDescription)")
+        }
+
         Log.info("Input method changed: \(method == 0 ? "Telex" : "VNI")")
     }
     

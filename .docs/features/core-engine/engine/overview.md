@@ -1,52 +1,54 @@
-# Engine Overview (`engine/mod.rs`)
+# ⚠️ DEPRECATED – Engine Module (`engine/`)
 
-The `Engine` struct is the central component of the library. It orchestrates the input processing pipeline, managing state, validation, transformation, and output generation.
+> **Lưu ý:** Module `engine/` đã được migrate sang Clean Architecture trong v3.0.0.  
+> Tài liệu này được giữ lại cho mục đích lịch sử. **Không còn phản ánh codebase hiện tại.**
+>
+> **Xem thay thế:** [clean-architecture.md](../clean-architecture.md)  
+> **Code mới tại:** `infrastructure/engine/` và `infrastructure/adapters/`
+
+---
+
+## Migration Map
+
+| Legacy path | New path (v3.0.0) |
+|---|---|
+| `engine/mod.rs` (Engine struct) | `presentation/di/container.rs` (Container) + `application/use_cases/process_keystroke.rs` |
+| `engine/buffer/` | `infrastructure/engine/buffer/` + `shared/buffer/` |
+| `engine/english/` | `infrastructure/adapters/validation/english/` |
+| `engine/vietnamese/` | `infrastructure/adapters/transformation/` + `infrastructure/adapters/validation/` |
+| `engine/features/` | `infrastructure/engine/features/` + `features/` |
+| `engine/state/history.rs` | `infrastructure/engine/state/history.rs` + `infrastructure/adapters/state/simple_history_adapter.rs` |
+
+---
+
+# [Historical] Engine Overview (`engine/mod.rs`)
+
+The `Engine` struct was the central component of the library prior to v3.0.0. It orchestrated the input processing pipeline, managing state, validation, transformation, and output generation.
 
 ## Architecture
 
-The engine uses a **validation-first, pattern-based** approach. Instead of maintaining a complex state machine for every possible character transition, it:
+The engine used a **validation-first, pattern-based** approach:
 
 1.  **Maintains a Buffer**: Holds the current word being composed.
 2.  **Scans the Buffer**: On every keystroke, checking for patterns (English words, shortcuts, Vietnamese structures).
 3.  **Transforms**: Applies changes to the buffer if valid (e.g., adding a tone, modifying a vowel).
 4.  **Rebuilds Output**: Generates the final result for the application.
 
-## Core `Engine` Struct
+## Core `Engine` Struct (Historical)
 
-- **State**
-    - `buf`: The current typing buffer (`Buffer`).
-    - `method`: Current input method (Telex/VNI).
-    - `shortcuts`: User-defined abbreviation table.
-    - `raw_input`: Keystroke history (`RawInputBuffer`) for ESC restore.
-    - `word_history`: Ring buffer of previous words for advanced backspace handling.
+- **State:** `buf`, `method`, `shortcuts`, `raw_input`, `word_history`
+- **Configuration Flags:** `enabled`, `raw_mode`, `skip_w_shortcut`, `esc_restore_enabled`, `free_tone_enabled`, `modern_tone`, `instant_restore_enabled`
 
-- **Configuration Flags**
-    - `enabled`: Global on/off switch.
-    - `raw_mode`: Skips transformations for raw input (e.g., password fields).
-    - `skip_w_shortcut`: Disables `w` -> `ư` at word start.
-    - `esc_restore_enabled`: Enables ESC key to undo transformations.
-    - `free_tone_enabled`: Relaxes validation rules.
-    - `modern_tone`: Toggles between traditional (`òa`) and modern (`oà`) tone placement.
-    - `instant_restore_enabled`: Automatically restores English words.
+## Key Processing Pipeline (Historical)
 
-## Key Processing Pipeline
+1. English Detection (Layer 1)
+2. Modifier Check (tone/vowel/stroke)
+3. Transformation Attempts (stroke → tone → mark → remove → w-shortcut)
+4. Normal Letter
+5. Output Rebuild (`rebuild_output_from_entire_buffer`)
 
-The `process` method is the heart of the engine:
+## Advanced Features (Historical)
 
-1.  **English Detection (Layer 1)**: Checks if the input matches known English words (e.g., "release", "telex"). If so, it may bypass Vietnamese transformations to prevent unwanted changes.
-2.  **Modifier Check**: Determines if the key is a tone mark (`s`, `f`, `1`, `2`), vowel modifier (`w`, `aa`, `ee`), or stroke modifier (`d`).
-    - **Revert**: If the same modifier is pressed again (e.g., `s` then `s`), it removes the tone.
-3.  **Transformation Attempts**:
-    - **Stroke**: Tries to convert `d` to `đ`.
-    - **Tone**: Tries to apply acute, grave, hook, tilde, or dot tones.
-    - **Mark**: Tries to apply circumflex, horn, or breve to vowels.
-    - **Remove**: Tries to remove diacritics (`z` or `0`).
-    - **W-Shortcut**: In Telex, tries to convert `w` to `ư` or `ươ`.
-4.  **Normal Letter**: If no modifier applies, adds the character as a regular letter.
-5.  **Output Rebuild**: After any change, calls `rebuild_output_from_entire_buffer` to generate the diff (backspace + replacements) for the application.
-
-## Advanced Features
-
-- **Word History**: The engine remembers the last few committed words. If the user backspaces over a space, it can "resurrect" the previous word into the buffer for editing.
-- **English Auto-Restore**: If the user types what looks like a valid English word (detected via phonotactics or dictionary), the engine can automatically undo any accidental Vietnamese transformations. To prevent false positives during rapid typing (intermediate tone placement like `phast`), a high confidence threshold (**95%**) is required for words that form valid Vietnamese syllables.
-- **Speculative Modifiers**: Even if a word looks like English, if a user explicitly types a modifier that creates a valid Vietnamese word, the engine allows it (resolving conflicts like "dis" vs "dí").
+- **Word History**: Ring buffer of previous committed words for backspace-over-space restore.
+- **English Auto-Restore**: 95% confidence threshold to avoid false positives.
+- **Speculative Modifiers**: Explicit Vietnamese modifier overrides English detection.

@@ -18,7 +18,7 @@ struct RestoreHotkey: Codable, Equatable {
         CGEventFlags(rawValue: flags).intersection(Self.allowedModifiers)
     }
 
-    static let allowedModifiers: CGEventFlags = [
+    nonisolated static let allowedModifiers: CGEventFlags = [
         .maskCommand,
         .maskAlternate,
         .maskShift,
@@ -35,6 +35,21 @@ struct RestoreHotkey: Codable, Equatable {
         if f.contains(.maskCommand)   { parts.append("⌘") }
         return parts.joined()
     }
+
+    // Explicit nonisolated init so preset statics can be created from nonisolated context
+    nonisolated init(flags: UInt64) {
+        self.flags = flags
+    }
+
+    // Explicit nonisolated Decodable init so JSONDecoder can decode from nonisolated context
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        flags = try container.decode(UInt64.self, forKey: .flags)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case flags
+    }
 }
 
 /// Restore shortcut represented as an ordered sequence of modifier taps.
@@ -48,6 +63,24 @@ struct RestoreShortcut: Codable, Equatable {
 
     /// Maximum interval (seconds) between consecutive taps.
     var tapInterval: TimeInterval = 0.4
+
+    // Explicit nonisolated init so preset statics can be created from nonisolated context
+    nonisolated init(keys: [RestoreHotkey], tapInterval: TimeInterval = 0.4) {
+        self.keys = keys
+        self.tapInterval = tapInterval
+    }
+
+    // Explicit nonisolated Decodable init so JSONDecoder can decode from nonisolated context
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        keys = try container.decode([RestoreHotkey].self, forKey: .keys)
+        tapInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .tapInterval) ?? 0.4
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case keys
+        case tapInterval
+    }
 
     // MARK: - Validation
 
@@ -83,28 +116,28 @@ struct RestoreShortcut: Codable, Equatable {
 
     // MARK: - Presets
 
-    static let doubleOption = RestoreShortcut(keys: [
+    nonisolated static let doubleOption = RestoreShortcut(keys: [
         RestoreHotkey(flags: CGEventFlags.maskAlternate.rawValue),
         RestoreHotkey(flags: CGEventFlags.maskAlternate.rawValue),
     ])
 
-    static let tripleOption = RestoreShortcut(keys: [
+    nonisolated static let tripleOption = RestoreShortcut(keys: [
         RestoreHotkey(flags: CGEventFlags.maskAlternate.rawValue),
         RestoreHotkey(flags: CGEventFlags.maskAlternate.rawValue),
         RestoreHotkey(flags: CGEventFlags.maskAlternate.rawValue),
     ])
 
-    static let doubleCommand = RestoreShortcut(keys: [
+    nonisolated static let doubleCommand = RestoreShortcut(keys: [
         RestoreHotkey(flags: CGEventFlags.maskCommand.rawValue),
         RestoreHotkey(flags: CGEventFlags.maskCommand.rawValue),
     ])
 
-    static let doubleShift = RestoreShortcut(keys: [
+    nonisolated static let doubleShift = RestoreShortcut(keys: [
         RestoreHotkey(flags: CGEventFlags.maskShift.rawValue),
         RestoreHotkey(flags: CGEventFlags.maskShift.rawValue),
     ])
 
-    static let `default` = doubleOption
+    nonisolated static let `default` = doubleOption
 
     static var presets: [RestoreShortcut] {
         [doubleOption, tripleOption, doubleCommand, doubleShift]
@@ -112,9 +145,9 @@ struct RestoreShortcut: Codable, Equatable {
 
     // MARK: - Persistence
 
-    private static let storageKey = "com.goxviet.ime.restoreShortcut"
+    nonisolated private static let storageKey = "com.goxviet.ime.restoreShortcut"
 
-    static func load() -> RestoreShortcut {
+    nonisolated static func load() -> RestoreShortcut {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let shortcut = try? JSONDecoder().decode(RestoreShortcut.self, from: data)
         else {

@@ -6,13 +6,13 @@
 //  and improved detection reliability
 //
 
-import Foundation
+@preconcurrency import Foundation
 import Cocoa
 
 /// Enhanced per-app mode manager with caching and performance optimizations
 final class PerAppModeManagerEnhanced: LifecycleManaged {
     
-    static let shared = PerAppModeManagerEnhanced()
+    nonisolated(unsafe) static let shared = PerAppModeManagerEnhanced()
     
     // MARK: - Properties
     
@@ -35,7 +35,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     // MARK: - Structures
     
-    struct AppMetadata {
+    struct AppMetadata: @unchecked Sendable {
         let bundleId: String
         let name: String
         let icon: NSImage?
@@ -67,12 +67,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     // MARK: - Initialization
     
-    private init() {}
+    nonisolated private init() {}
     
-    deinit {
-        stop()
-        Log.info("PerAppModeManagerEnhanced deinitialized")
-    }
+    deinit {}
     
     // MARK: - Lifecycle
     

@@ -10,35 +10,51 @@ import SwiftUI
 struct GlassBackground: View {
     var opacity: Double = 0.95
     var blur: CGFloat = 20
-    
+
     var body: some View {
         ZStack {
             // Base color with slight gradient
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color(nsColor: .windowBackgroundColor).opacity(opacity),
-                    Color(nsColor: .windowBackgroundColor).opacity(opacity * 0.9)
+                    Color(NSColor.windowBackgroundColor).opacity(opacity),
+                    Color(NSColor.windowBackgroundColor).opacity(opacity * 0.9)
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            
+
             // Subtle texture overlay
             Rectangle()
                 .fill(Color.white.opacity(0.02))
                 .blendMode(.overlay)
         }
-        .background(.ultraThinMaterial)
+        .modifier(GlassBackgroundMaterial())
         .cornerRadius(12)
+    }
+}
+
+private struct GlassBackgroundMaterial: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 12.0, *) {
+            content.background(.ultraThinMaterial)
+        } else {
+            content.background(Color(NSColor.windowBackgroundColor).opacity(0.8))
+        }
     }
 }
 
 struct GlassCard: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+            if #available(macOS 12.0, *) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(NSColor.windowBackgroundColor).opacity(0.8))
+                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+            }
         }
     }
 }

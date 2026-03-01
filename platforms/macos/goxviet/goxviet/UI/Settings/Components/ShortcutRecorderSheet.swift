@@ -43,7 +43,7 @@ struct ShortcutRecorderSheet: View {
                 .padding(16)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .textBackgroundColor))
+                        .fill(Color(NSColor.textBackgroundColor))
                 )
             }
             
