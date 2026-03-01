@@ -1,0 +1,24 @@
+# Tone-early Telex failures (20 / 6544 failed)
+# Format: WORD | TELEX_INPUT | ACTUAL_OUTPUT
+WORD                 TELEX_INPUT               ACTUAL              
+----------------------------------------------------------------------
+nsưt                 nsuwt                     nsuwt               
+choòng               chooong                   choong              
+cõng                 coxng                     coxng               
+goòng                gooong                    goong               
+khuýp                khuysp                    khuysp              
+kroon                krooon                    krooon              
+kuýp                 kuysp                     kuysp               
+moóc                 moooc                     mooc                
+parabol              parabol                   pẩbol               
+quáu                 quaus                     quaus               
+quạu                 quauj                     quauj               
+quều                 queeuf                    quêuf               
+rích                 risch                     risch               
+soóc                 soooc                     sooc                
+sóoc                 sooosc                    soóc                
+tuýp                 tuysp                     tuysp               
+urê                  uree                      uể                  
+yard                 yard                      yảd                 
+ích                  isch                      isch                
+ạch                  ajch                      ajch                

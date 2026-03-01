@@ -7,6 +7,7 @@
 
 pub mod chars;
 pub mod constants;
+pub mod english_words;
 pub mod keys;
 pub mod vowel;
 pub mod viet_syllables;

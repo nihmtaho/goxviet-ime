@@ -1,4 +1,6 @@
 WORD	INPUT	EXPECTED	ACTUAL
+dc	dc	dc	được
 hcm	hcm	hcm	Hồ Chí Minh
 hn	hn	hn	Hà Nội
+ko	ko	ko	không
 vn	vn	vn	Việt Nam
