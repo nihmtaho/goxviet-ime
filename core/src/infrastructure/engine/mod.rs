@@ -3521,21 +3521,34 @@ impl Engine {
             return None;
         }
 
-        // PRIORITY CHECK: If raw input is in English dictionary (programming terms, common words),
-        // ALWAYS restore immediately — even before the Vietnamese guard below.
-        // The guard would block words like "safari" (buf="sẩi" looks like valid Vietnamese sâi)
-        // even though the raw input is clearly an English dictionary word.
-        // is_english_dictionary_word() already checks: if buf is valid Vietnamese → return false,
-        // so intentional Vietnamese words (e.g. "bốt") are still protected.
-        let is_dict = self.is_english_dictionary_word();
-        if is_dict {
-            self.is_english_word = true;
-            let mut result = self.instant_restore_english();
-            // Adjust backspace to account for pending characters (buffer > screen)
-            result.backspace = result.backspace.saturating_sub(offset);
-            self.sync_buffer_with_raw_input();
-            self.last_transform = None; // Clear stale transform after English restore
-            return Some(result);
+        // Heavy-absorption bypass: when raw_input has 2+ more entries than buf,
+        // it means 2+ Telex/VNI modifier keys were absorbed (e.g. "safari" absorbs
+        // f=huyền, aa=â, r=hỏi → 3 absorbed keys, raw=6 > buf=3).
+        // In these cases the buffer is likely a misinterpretation of an English word,
+        // not intentional Vietnamese typing (which typically absorbs at most 1 key for
+        // the structural diacritic + maybe 1 for tone). We bypass the guard_valid
+        // check and go straight to the dict lookup, which itself already has a safety
+        // net: is_valid_vietnamese_syllable(output) → if the rendered buffer IS a real
+        // Vietnamese word, is_english_dictionary_word() returns false and we don't restore.
+        // Example: "safari" raw=6, buf=3, diff=3 ≥ 2 → bypass guard, "safari" in dict,
+        //          "sẩi" not a real Vietnamese word → restore ✓
+        // Example: "beeps" final (b,e,e,p,s) raw=5, buf=3, diff=2 ≥ 2 → bypass guard,
+        //          "beeps" in dict, but "bếp" IS a real Vietnamese word → no restore ✓
+        // Example: "boots" final raw=5, buf=3, diff=2 ≥ 2 → bypass guard,
+        //          "boots" in dict, but "bốt" IS a real Vietnamese word → no restore ✓
+        // Example: "boot" intermediate (b,o,o,t) raw=4, buf=3, diff=1 < 2 → guard fires ✓
+        let raw_len = self.raw_input.len();
+        let buf_len = self.buf.len();
+        if raw_len >= buf_len + 2 {
+            let is_dict = self.is_english_dictionary_word();
+            if is_dict {
+                self.is_english_word = true;
+                let mut result = self.instant_restore_english();
+                result.backspace = result.backspace.saturating_sub(offset);
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
         }
 
         // Guard: if buffer is a valid Vietnamese syllable structure WITH its diacritical marks,
@@ -3640,8 +3653,8 @@ impl Engine {
             )
         };
 
-        // Check dictionary (already checked above, but keep variable for backward compatibility)
-        let _is_dict = is_dict;
+        // Check dictionary for restore decision below
+        let is_dict = self.is_english_dictionary_word();
 
         // Restore if: high English confidence (>=80) OR dictionary match
         // But if buffer is VALID VIETNAMESE, be more conservative:
