@@ -290,7 +290,8 @@ pub static VIETNAMESE_BIGRAMS: [BigramRow; 128] = {
         keys::N,
         keys::M,
         keys::A, // ya
-        keys::E  // ye -> yê (uyê)
+        keys::E, // ye -> yê (uyê)
+        keys::P  // yp -> final consonant p after uy cluster (e.g. khuýp, tuýp)
     );
     // ... complete matrix would go here ...
     // For O(1) performance, we need this matrix precomputed.

@@ -15,7 +15,7 @@ import Cocoa
 /// Monitors keyboard input source changes and automatically disables Vietnamese typing
 /// when non-Latin input methods are active (e.g., Japanese, Korean, Chinese)
 class InputSourceMonitor: LifecycleManaged {
-    static let shared = InputSourceMonitor()
+    nonisolated(unsafe) static let shared = InputSourceMonitor()
     
     // MARK: - Properties
     
@@ -139,12 +139,9 @@ class InputSourceMonitor: LifecycleManaged {
     
     // MARK: - Initialization
     
-    private init() {}
+    nonisolated private init() {}
     
-    deinit {
-        stop()
-        Log.info("InputSourceMonitor deinitialized")
-    }
+    deinit {}
     
     // MARK: - Lifecycle
     

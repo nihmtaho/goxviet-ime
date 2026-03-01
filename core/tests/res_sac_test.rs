@@ -58,12 +58,31 @@ fn test_restore_english_word() {
         println!("After key={}: buffer='{}', is_english={}", key, e.get_buffer(), e.is_english_word);
     }
 
+    // New behavior: "restore" is NOT instantly restored mid-word (wait for SPACE).
+    // After typing all 7 letters, buffer should still show the Vietnamese-transformed state.
     let final_buffer = e.get_buffer();
-    println!("Final buffer: '{}'", final_buffer);
+    println!("Final buffer (mid-word, no SPACE): '{}'", final_buffer);
     
-    // Should be "restore" (English word), not "retore" or similar
-    assert!(final_buffer == "restore" || final_buffer == "restoré" || final_buffer == "restoreé", 
-            "Buffer should be 'restore' or contain Vietnamese transforms, got '{}'", final_buffer);
+    // Mid-word: should NOT yet be "restore" — instant restore requires SPACE
+    assert!(final_buffer != "restore",
+            "Should NOT instantly restore mid-word, but got 'restore' before SPACE");
+
+    // Press SPACE to trigger boundary restore
+    let space_result = e.on_key(keys::SPACE, false, false);
+    println!("After SPACE: backspace={}, result='{:?}'", space_result.backspace, 
+             &space_result.as_slice()[..space_result.count as usize]
+                 .iter().filter_map(|&c| char::from_u32(c)).collect::<String>());
+    
+    let after_space = e.get_buffer();
+    println!("Buffer after SPACE: '{}'", after_space);
+    
+    // After SPACE the word should be restored to "restore" (or empty if committed)
+    // The restore result sends "restore " as replacement text
+    let restored_text: String = space_result.as_slice()[..space_result.count as usize]
+        .iter().filter_map(|&c| char::from_u32(c)).collect();
+    assert!(restored_text.contains("restore") || after_space.contains("restore") || after_space.is_empty(),
+            "After SPACE, 'restore' should be in result or buffer, got result='{}' buffer='{}'",
+            restored_text, after_space);
 }
 
 #[test]

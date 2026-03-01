@@ -57,7 +57,7 @@ struct SettingRow<Content: View>: View {
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
         )
         .contentShape(Rectangle())
     }
@@ -163,7 +163,7 @@ struct SettingRowCustomTitle<Title: View, Content: View>: View {
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
         )
         .contentShape(Rectangle())
     }

@@ -148,6 +148,8 @@ pub enum FfiStatusCode {
     ErrorProcessingFailed = -10,
     /// Invalid UTF-8 encoding
     ErrorInvalidUtf8 = -11,
+    /// JSON parse error (e.g. for ime_load_input_config_v2)
+    ErrorParseError = -12,
     
     // Shortcut errors
     /// Shortcut already exists

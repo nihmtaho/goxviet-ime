@@ -1,132 +1,159 @@
-# SOLID Processors
+# SOLID Processors – Input Method Adapters
 
-## Overview
+Tài liệu này mô tả cách các input method (Telex, VNI) được implement theo kiến trúc SOLID trong Clean Architecture v3.0.0.
 
-Các processors mới được thiết kế theo chuẩn SOLID với các traits rõ ràng và tách biệt.
+> **Xem thêm:** [clean-architecture.md](./clean-architecture.md) để hiểu toàn bộ cấu trúc layer.
 
-## Modules
+---
 
-### 1. Telex Processor
+## Ports (Domain Interfaces)
 
-```rust
-use goxviet_core::processors::TelexProcessor;
-use goxviet_core::state::buffer::CharBuffer;
-use goxviet_core::traits::processor::{InputProcessor, KeyEvent};
-
-let processor = TelexProcessor::new();
-let mut buffer = CharBuffer::new();
-
-// Process a key
-let key_event = KeyEvent::simple('a' as u16, false);
-let result = processor.process_key(&key_event, &mut buffer);
-```
-
-**Key mappings:**
-- Marks: `s`=sắc, `f`=huyền, `r`=hỏi, `x`=ngã, `j`=nặng
-- Tones: `aa`=â, `ee`=ê, `oo`=ô, `w`=ư/ơ/ă
-- Stroke: `dd`=đ
-- Remove: `z`
-
-### 2. VNI Processor
+Defined in `core/src/domain/ports/input/input_method.rs`:
 
 ```rust
-use goxviet_core::processors::VniProcessor;
-use goxviet_core::state::buffer::CharBuffer;
-use goxviet_core::traits::processor::{InputProcessor, KeyEvent};
+pub enum InputMethodId { Telex, Vni, Plain }
 
-let processor = VniProcessor::new();
-let mut buffer = CharBuffer::new();
-
-// Process a key
-let key_event = KeyEvent::simple('a' as u16, false);
-let result = processor.process_key(&key_event, &mut buffer);
-```
-
-**Key mappings:**
-- Marks: `1`=sắc, `2`=huyền, `3`=hỏi, `4`=ngã, `5`=nặng
-- Tones: `6`=circumflex, `7`=horn, `8`=breve
-- Stroke: `9`
-- Remove: `0`
-
-### 3. Processor Registry
-
-```rust
-use goxviet_core::processors::ProcessorRegistryImpl;
-use goxviet_core::traits::input_method::InputMethodId;
-use goxviet_core::traits::processor::ProcessorRegistry;
-
-// Create registry with defaults
-let registry = ProcessorRegistryImpl::with_defaults();
-
-// Get a processor
-if let Some(processor) = registry.get_processor(InputMethodId::Telex) {
-    // Use processor...
+pub trait InputMethod: Send + Sync {
+    fn id(&self) -> InputMethodId;
+    fn classify_key(&self, key: char) -> KeyClassification;
 }
 
-// Get default processor
-let default = registry.default_processor();
+pub enum KeyClassification {
+    ToneMark(ToneType),     // s→Sắc, f→Huyền, r→Hỏi, x→Ngã, j→Nặng
+    VowelModifier(char),    // aa→â, aw→ă, ee→ê, oo→ô, ow→ơ, uw→ư
+    StrokeModifier,         // dd→đ
+    RemoveDiacritic,        // z (Telex), 0 (VNI)
+    Regular(char),          // Normal letter, pass to buffer
+    Consumed,               // Modifier absorbed (double-tap escape)
+}
 ```
 
-## Architecture
+---
 
-### Traits
+## Implementations (Infrastructure Adapters)
 
-1. **InputMethod** (`traits/input_method.rs`)
-   - `method_id()`: Get method identifier
-   - `mark()`: Check if key is a tone mark
-   - `tone_modifier()`: Check if key is a tone modifier
-   - `tone_targets()`: Get valid target vowels
-   - `is_stroke()`: Check if key is stroke modifier
-   - `is_remove()`: Check if key removes diacritics
+### TelexAdapter
 
-2. **InputProcessor** (`traits/processor.rs`)
-   - `input_method()`: Get processor's method ID
-   - `process_key()`: Process a key event
-   - `is_modifier_key()`: Check if key is a modifier
-   - `priority()`: Get processor priority
+**Path:** `core/src/infrastructure/adapters/input/telex_adapter.rs`
 
-### Design Principles
+```rust
+use crate::infrastructure::adapters::input::TelexAdapter;
+// TelexAdapter implements domain::ports::input::InputMethod
 
-1. **Single Responsibility**: Mỗi processor chỉ xử lý một input method
-2. **Open/Closed**: Dễ dàng thêm processor mới bằng cách implement traits
-3. **Interface Segregation**: Các traits nhỏ, tập trung
-4. **Dependency Inversion**: Processors phụ thuộc vào abstractions (traits)
+let adapter = TelexAdapter::new();
+let classification = adapter.classify_key('s');
+// → KeyClassification::ToneMark(ToneType::Sắc)
+```
 
-## Testing
+**Key mappings:**
 
-Chạy tests:
+| Input | Output | Type |
+|---|---|---|
+| `s` | Sắc (´) | ToneMark |
+| `f` | Huyền (`) | ToneMark |
+| `r` | Hỏi (?) | ToneMark |
+| `x` | Ngã (~) | ToneMark |
+| `j` | Nặng (.) | ToneMark |
+| `z` | Remove | RemoveDiacritic |
+| `aa` | â | VowelModifier |
+| `aw` | ă | VowelModifier |
+| `ee` | ê | VowelModifier |
+| `oo` | ô | VowelModifier |
+| `ow` | ơ | VowelModifier |
+| `uw` / `w` | ư | VowelModifier |
+| `dd` | đ | StrokeModifier |
+
+**Double-tap escape:** Gõ lại phím modifier để hủy (ví dụ `ss` → xóa dấu sắc và ra `s`).  
+**Smart `w`:** `ow` → `ơ`, `uw` → `ư`, `uow` → `ươ` (xử lý trong `TransformTextUseCase`).
+
+### VniAdapter
+
+**Path:** `core/src/infrastructure/adapters/input/vni_adapter.rs`
+
+```rust
+use crate::infrastructure::adapters::input::VniAdapter;
+
+let adapter = VniAdapter::new();
+let classification = adapter.classify_key('1');
+// → KeyClassification::ToneMark(ToneType::Sắc)
+```
+
+**Key mappings:**
+
+| Input | Output | Type |
+|---|---|---|
+| `1` | Sắc | ToneMark |
+| `2` | Huyền | ToneMark |
+| `3` | Hỏi | ToneMark |
+| `4` | Ngã | ToneMark |
+| `5` | Nặng | ToneMark |
+| `0` | Remove | RemoveDiacritic |
+| `6` | â/ê/ô (circumflex) | VowelModifier |
+| `7` | ơ/ư (horn) | VowelModifier |
+| `8` | ă (breve) | VowelModifier |
+| `9` | đ | StrokeModifier |
+
+---
+
+## Dependency Injection
+
+Adapters are wired by the IoC container — `ProcessorService` never imports concrete adapters directly.
+
+**Path:** `core/src/presentation/di/container.rs`
+
+```rust
+// Container creates adapters and injects via Box<dyn InputMethod>
+let input_method: Box<dyn InputMethod> = match config.input_method {
+    InputMethodId::Telex => Box::new(TelexAdapter::new()),
+    InputMethodId::Vni   => Box::new(VniAdapter::new()),
+    InputMethodId::Plain => Box::new(PlainAdapter::new()),
+};
+
+// ProcessorService receives the trait object — OCP: add new method without changing service
+let service = ProcessorService::new(input_method, mark_transformer, tone_transformer, validator, detector);
+```
+
+---
+
+## Transformation Adapters
+
+### VietnameseMarkAdapter
+**Path:** `core/src/infrastructure/adapters/transformation/vietnamese_mark_adapter.rs`  
+Implements `MarkTransformer`. Applies diacritic marks (circumflex `^`, horn `ʼ`, breve `˘`) to the vowel cluster.
+
+### VietnameseToneAdapter
+**Path:** `core/src/infrastructure/adapters/transformation/vietnamese_tone_adapter.rs`  
+Implements `ToneTransformer`. Applies tone marks and repositions them when the vowel cluster changes.
+
+**Tone placement rules** (New Style):
+- Vowel with diacritic (â, ê, ô, ơ, ư) → tone on that vowel
+- No diacritic → tone on second vowel in compound
+- With final consonant → tone on the nucleus vowel
+
+---
+
+## Running Tests
 
 ```bash
-cargo test --lib processors::
+# All adapter tests
+cd core && cargo test adapters
+
+# Single adapter
+cd core && cargo test telex_adapter
+
+# Integration: Telex typing simulation
+cd core && cargo test --test trans_test
+
+# Validation tests
+cd core && cargo test --test validator_integration_test
 ```
 
-## Migration từ Legacy
+---
 
-### Legacy (engine/mod.rs)
+## Adding a New Input Method
 
-```rust
-use goxviet_core::engine::Engine;
-
-let mut engine = Engine::new();
-engine.set_method(0); // Telex
-let result = engine.on_key(key, caps, ctrl);
-```
-
-### SOLID mới
-
-```rust
-use goxviet_core::processors::TelexProcessor;
-use goxviet_core::state::buffer::CharBuffer;
-use goxviet_core::traits::processor::{InputProcessor, KeyEvent};
-
-let processor = TelexProcessor::new();
-let mut buffer = CharBuffer::new();
-let key_event = KeyEvent::new(key, caps, shift, ctrl);
-let result = processor.process_key(&key_event, &mut buffer);
-```
-
-## Future Work
-
-- [ ] Tích hợp với validators để kiểm tra chính tả
-- [ ] Tích hợp với transformers cho logic phức tạp hơn
-- [ ] Thêm processors cho các input method khác (VIQR, etc.)
+1. Create `core/src/infrastructure/adapters/input/my_method_adapter.rs`
+2. Implement `trait InputMethod` from `domain::ports::input`
+3. Add variant to `InputMethodId` enum in domain
+4. Register in `presentation/di/container.rs`
+5. No changes needed to use cases or services (OCP)

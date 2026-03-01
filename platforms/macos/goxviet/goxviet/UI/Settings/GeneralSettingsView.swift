@@ -75,7 +75,7 @@ struct GeneralSettingsView: View {
                         .padding(.vertical, 8)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color(nsColor: .textBackgroundColor))
+                                .fill(Color(NSColor.textBackgroundColor))
                         )
                     }
                     .padding(8)
@@ -219,11 +219,11 @@ struct GeneralSettingsView: View {
                                         .font(.system(size: 11, weight: .medium))
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 3)
-                                        .background(Color(nsColor: .controlBackgroundColor))
+                                        .background(Color(NSColor.controlBackgroundColor))
                                         .cornerRadius(4)
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 4)
-                                                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                                                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
                                         )
                                 }
                             }
@@ -279,11 +279,11 @@ struct GeneralSettingsView: View {
                                     .padding(.vertical, 6)
                                     .background(
                                         RoundedRectangle(cornerRadius: 6)
-                                            .fill(preset == currentShortcut ? Color.accentColor.opacity(0.15) : Color(nsColor: .controlBackgroundColor))
+                                            .fill(preset == currentShortcut ? Color.accentColor.opacity(0.15) : Color(NSColor.controlBackgroundColor))
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 6)
-                                            .stroke(preset == currentShortcut ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: preset == currentShortcut ? 1.5 : 0.5)
+                                            .stroke(preset == currentShortcut ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: preset == currentShortcut ? 1.5 : 0.5)
                                     )
                                 }
                             }
@@ -316,13 +316,13 @@ struct GeneralSettingsView: View {
                             Label("Reset to Defaults", systemImage: "arrow.counterclockwise")
                         }
                         .buttonStyle(.bordered)
-                        .alert("Reset Settings", isPresented: $showResetConfirmation) {
-                            Button("Cancel", role: .cancel) { }
-                            Button("Reset", role: .destructive) {
-                                resetToDefaults()
-                            }
-                        } message: {
-                            Text("This will reset all general settings to their default values. This action cannot be undone.")
+                        .alert(isPresented: $showResetConfirmation) {
+                            Alert(
+                                title: Text("Reset Settings"),
+                                message: Text("This will reset all general settings to their default values. This action cannot be undone."),
+                                primaryButton: .destructive(Text("Reset")) { resetToDefaults() },
+                                secondaryButton: .cancel(Text("Cancel"))
+                            )
                         }
                         
                         Spacer()
@@ -389,20 +389,27 @@ struct GeneralSettingsView: View {
 
 // Import/Export Sheet View
 struct ImportExportView: View {
-    @Environment(\.dismiss) var dismiss
-    
+    @Environment(\.presentationMode) var presentationMode
+
     var body: some View {
         VStack(spacing: 20) {
             Text("Import/Export Settings")
                 .font(.title2)
-            
+
             Text("Coming soon: Import and export your GoxViet settings")
                 .foregroundColor(.secondary)
-            
-            Button("Close") {
-                dismiss()
+
+            if #available(macOS 12.0, *) {
+                Button("Close") {
+                    presentationMode.wrappedValue.dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button("Close") {
+                    presentationMode.wrappedValue.dismiss()
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.borderedProminent)
         }
         .frame(width: 400, height: 200)
         .padding()
@@ -467,11 +474,11 @@ struct RestoreShortcutRecorderRow: View {
                         .padding(.vertical, 3)
                         .background(
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(preset == shortcut ? Color.accentColor.opacity(0.15) : Color(nsColor: .controlBackgroundColor))
+                                .fill(preset == shortcut ? Color.accentColor.opacity(0.15) : Color(NSColor.controlBackgroundColor))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(preset == shortcut ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: preset == shortcut ? 1.5 : 0.5)
+                                .stroke(preset == shortcut ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: preset == shortcut ? 1.5 : 0.5)
                         )
                     }
                 }
@@ -488,11 +495,11 @@ struct RestoreShortcutRecorderRow: View {
                     .font(.system(size: 11, weight: .medium))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color(nsColor: .controlBackgroundColor))
+                    .background(Color(NSColor.controlBackgroundColor))
                     .cornerRadius(4)
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                            .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
                     )
             }
         }

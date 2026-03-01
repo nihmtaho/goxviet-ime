@@ -1,276 +1,199 @@
-# AGENT: GÕ VIỆT (GOXVIET) IME ARCHITECT
+# GoxViet – Copilot Instructions
 
-## 1. Identity & Mission
+**Project:** **Gõ Việt (GoxViet)** – A high-performance, cross-platform Vietnamese Input Method Engine (IME).  
+**Goals:** Latency < 3ms core / < 16ms end-to-end, zero FFI panics, native macOS/Windows UX.
 
-**Role:** Senior Systems Architect specializing in low-latency text processing and native macOS/Windows application development.
-**Project:** **Gõ Việt (GoxViet)** - A high-performance, cross-platform Vietnamese input method.
-**Goals:**
-- **Latency:** < 3ms for core processing, < 16ms end-to-end.
-- **Stability:** Zero FFI panics, thread-safe state management.
-- **UX:** Native look-and-feel (SwiftUI on macOS), intelligent "Smart Mode".
-- **Legacy:** Respect the heritage of the reference implementation but strictly enforce our own branding and architecture.
+---
 
-## 2. GOLDEN RULES (Luôn Nhớ)
+## Build, Test & Lint
 
-```
-1. ❌ NEVER delete main, develop, production branches
-2. ❌ NEVER force push to main, develop, production
-3. ✅ ALWAYS rebase before merging to develop/main
-4. ✅ ALWAYS use conventional commit format
-5. ✅ ALWAYS run tests before pushing
-6. ✅ ALWAYS create feature branches with feature/ prefix
-7. ✅ ALWAYS delete branch after merging
-8. 🔐 NEVER commit secrets, API keys, passwords
-```
+### Rust Core (`core/`)
 
-## 3. BRANCH NAMING & WORKFLOW
+```bash
+# Build
+cd core && cargo build --release
 
-### Feature Branch (từ develop)
-```
-✅ feature/user-authentication
-✅ feature/payment-integration
-❌ feature/changes
-```
+# Run all tests
+cd core && cargo test
 
-### Bugfix Branch (từ develop)
-```
-✅ bugfix/login-redirect-issue
-❌ bugfix/fixed
+# Run a single test file
+cd core && cargo test --test trans_test
+
+# Run a single test by name
+cd core && cargo test test_name_here
+
+# Lint & format
+cd core && cargo fmt && cargo clippy
+
+# Benchmarks (requires nightly or stable with criterion)
+cd core && cargo bench
+
+# Build universal macOS static library (arm64 + x86_64)
+./scripts/rust_build_lib_universal_for_macos.sh
 ```
 
-### Hotfix Branch (từ main)
-```
-✅ hotfix/security-patch
+Output: `platforms/macos/goxviet/libgoxviet_core.a`
+
+### macOS App (`platforms/macos/`)
+
+Open `platforms/macos/goxviet/goxviet.xcodeproj` in Xcode. The Rust library must be built first (see above).
+
+```bash
+# Full release build + DMG
+./scripts/build-release.sh <version>
+./scripts/create-dmg.sh <version>
+
+# Complete release (build + DMG + notarize + tag)
+./scripts/release.sh <version>
 ```
 
-### Release Branch (từ develop)
+---
+
+## Architecture
+
+### Monorepo Layout
+
 ```
-✅ release/v1.0.0
+core/                     # Rust core engine (crate: goxviet-core, lib: goxviet_core)
+platforms/
+  macos/goxviet/          # Swift macOS app (AppKit + SwiftUI)
+  windows/                # C# Windows app (planned)
+.docs/features/           # Internal architecture docs (read before changing code)
+scripts/                  # Build, release, and dictionary management scripts
 ```
 
-## 4. COMMIT MESSAGE FORMAT
+### Rust Core – Clean Architecture (v3.0.0)
 
-### Structure
+The core follows strict Clean Architecture with four layers inside `core/src/`:
+
+| Layer | Path | Responsibility |
+|---|---|---|
+| **domain** | `domain/` | Entities, value objects, ports (pure Rust, no I/O) |
+| **application** | `application/` | Use cases, services, orchestration |
+| **infrastructure** | `infrastructure/` | Adapters: Telex/VNI engines, validators, English detection |
+| **presentation** | `presentation/ffi/` | C FFI API (`api.rs`, `types.rs`) and DI container |
+
+Supporting modules: `shared/` (buffer, types), `features/` (shortcuts, encoding), `data/` (FSM tables, dictionaries), `unified_engine.rs` (SOLID facade).
+
+> **Legacy note:** `engine/` and `engine_v2/` source directories no longer exist. They were migrated to `infrastructure/engine/` and `infrastructure/external/` in v3.0.0.
+
+### FFI API v2
+
+All platform code uses the v2 FFI API exclusively (v1 was removed in v3.0.0):
+
+```c
+void* engine = ime_create_engine_v2(NULL);   // NULL = default config
+
+FfiProcessResult_v2 result;
+FfiStatusCode status = ime_process_key_v2(engine, 'a', &result);
+if (status == FFI_STATUS_OK && result.consumed) {
+    apply_backspaces(result.backspace_count);
+    insert_text(result.text);
+}
+ime_free_string_v2(result.text);   // ALWAYS free immediately
+
+ime_destroy_engine_v2(engine);
+```
+
+Key v2 characteristics: out-parameters (avoids Swift ABI issues), explicit status codes, per-engine config (no global state).
+
+### macOS Platform – Swift Layer
+
+```
+platforms/macos/goxviet/goxviet/
+  FFI/                    # RustBridgeSafe – ONLY place for raw FFI calls
+  Managers/
+    Input/InputManager.swift         # CGEventTap singleton (HIGH RISK – careful edits)
+    PerAppModeManagerEnhanced.swift  # Smart Mode per-app config
+  Core/                   # AppState – central settings source of truth
+  UI/                     # SwiftUI settings (SettingsRootView)
+```
+
+**Critical rules for Swift:**
+- `RustBridgeSafe` is the **only** place for raw FFI calls.
+- Always `defer { ime_free_string_v2(ptr) }` immediately after receiving a pointer.
+- UI updates must be on `MainActor`; engine calls are synchronous.
+- `InputManager` is the highest-risk file – changes require careful testing.
+
+### Key Processing Patterns
+
+- **Keystroke pipeline:** `CGEventTap` → `InputManager` → `RustBridgeSafe.processKey()` → apply backspaces + insert text.
+- **Soft Backspace:** Engine undoes the last transformation if possible, rebuilding from token buffer rather than patching the rendered string.
+- **Smart Mode:** Per-app IME enable/disable stored in `UserDefaults`.
+- **English Auto-Restore:** If phonotactic + dictionary analysis decides the sequence is English, the engine restores original keystrokes.
+
+### English Dictionary Management
+
+Dictionary data lives in `.docs/features/core-engine/data/*.txt` and compiled binaries in `core/src/infrastructure/external/data/*.bin`. Manage via:
+
+```bash
+./scripts/manage_dict.py add <word>       # add to whitelist + rebuild binary
+./scripts/manage_dict.py remove <word>    # add to blacklist + rebuild binary
+./scripts/manage_dict.py sync             # sync text → binary
+```
+
+---
+
+## Conventions
+
+### Branding (Strict)
+
+| Context | Value |
+|---|---|
+| Display / App name | `GoxViet` |
+| Vietnamese brand | `Gõ Việt` |
+| Repo / code identifiers | `goxviet` |
+| Rust crate name | `goxviet-core` |
+| macOS Bundle ID | `com.goxviet.ime` |
+| Log path | `~/Library/Logs/GoxViet/` |
+
+Never use names from the reference implementation in `.uvasx/`.
+
+### Commit Messages (Conventional Commits)
+
 ```
 <type>(<scope>): <subject>
-
-<body>
-
-<footer>
 ```
 
-### Types
-| Type | Use |
-|------|-----|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation |
-| `style` | Formatting |
-| `refactor` | Code refactor |
-| `perf` | Performance |
-| `test` | Tests |
-| `chore` | Build/deps |
-| `ci` | CI/CD |
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`  
+Scopes: `core`, `macos`, `windows`, `ffi`
 
-## 5. Project Structure
+### Branch Workflow
 
-The project structure is organized as follows:
+- `feature/<name>` from `develop` → PR → squash merge → delete branch
+- `bugfix/<name>` from `develop`
+- `hotfix/<name>` from `main` → merge to `main` + `develop`
+- `release/<version>` from `develop`
+- **Never** force-push to `main`, `develop`, or production.
+- **Always** rebase before merging.
 
-```
-goxviet/
-├── .agent/                    # AI agent skills and automation (consolidated)
-│   └── skills/               # Consolidated skill modules
-├── .claude/                   # Claude-specific skills
-│   └── skills/               # Skill modules (skill-git, pr-creator, etc.)
-├── .github/                   # GitHub workflows, templates, prompts
-├── .docs/                     # Project Internal Documentation
-│   ├── features/
-│   │   ├── core-engine/      # Engine architecture docs
-│   │   └── platform/macos/   # macOS platform docs
-│   ├── guides/               # Feature-specific guides
-│   └── templates/            # PR templates
-├── .planning/                 # Task Planning & Tracking
-│   └── *.json                # Roadmap files
-├── core/                      # Rust Core Engine (Logic, State, FFI)
-│   ├── src/
-│   │   ├── lib.rs           # Main FFI interface
-│   │   ├── engine/          # Legacy Engine
-│   │   ├── engine_v2/       # Modern Engine
-│   │   ├── input/           # Telex, VNI implementations
-│   │   └── data/            # Static data
-│   ├── tests/               # Integration tests
-│   └── benches/             # Performance benchmarks
-├── platforms/                 # Native Platform Implementations
-│   ├── macos/               # macOS App (Swift)
-│   │   └── goxviet/
-│   │       ├── goxviet.xcodeproj/
-│   │       └── goxviet/     # Swift source files
-│   └── windows/             # Windows App (C#) - Planned
-├── docs/                      # Public/user-facing documentation
-├── scripts/                   # Build scripts and utilities
-├── homebrew/                  # Homebrew formula
-├── AGENTS.md                 # → .rules (symlink)
-├── STRUCTURE.md              # Detailed project structure
-└── .rules                    # This file
-```
+### Rust Hot Path Rules
 
-**Excluded from standard context:** `docs`, `bindings`, `example-project`, `homebrew`, `.temp`, `generate_dictionary.py`, `.tasks`, `core/target/`, `*.dmg`, `*.app`.
+- **No heap allocations** in `process_key` – use stack arrays or `SmallVec`.
+- **O(1) lookups** for validation (FSM tables, not linear search).
+- **Never panic across FFI** – use `catch_unwind` + `Result` at all FFI boundaries.
 
-## 6. Architecture Overview
+### Testing Conventions
 
-The system uses a **Hybrid Architecture**:
+- Integration tests in `core/tests/` (many files, each focused on one scenario).
+- Table-driven tests preferred over individual asserts.
+- Add a regression test before fixing any bug.
+- Benchmarks use Criterion (`core/benches/`).
 
-1. **Core Engine (Rust):** Handles all linguistic logic (state, transformation, validation).
-2. **Platform Layer (Native):** Handles OS integration, Lifecycle, and UI.
+---
 
-### 6.1. Core Engine (`core/`)
+## Key Documentation Files
 
-Dual-engine design:
-- **`engine_v2/` (Modern):** The future. Modular, performant. Contains:
-    - `english/`: Advanced bilingual detection (Phonotactic + Dictionary).
-    - `vietnamese_validator/`: Strict syllable validation with `fsm`.
-    - `fsm/`: Finite State Machine for validation.
-- **`engine/` (Legacy/Deprecated):** Currently powering the `lib.rs` FFI.
-    - Features: `buffer`, `transform`, `tone_positioning`, `state/history`.
+| File/Dir | Content |
+|---|---|
+| `.docs/features/core-engine/` | Engine architecture, data formats |
+| `.docs/features/platform/macos/` | macOS platform specifics |
+| `platforms/macos/AGENT.override.md` | macOS-specific overrides |
+| `CHANGELOG.md` | Version history |
+| `STRUCTURE.md` | Detailed monorepo structure |
 
-### 6.2. Platform: macOS (`platforms/macos/`)
-- **Language:** Swift (AppKit + SwiftUI).
-- **Key Components:**
-    - `InputManager`: Singleton event loop (`CGEventTap`). Filters and forwards keys.
-    - `RustBridgeSafe`: Thread-safe wrapper around C FFI. Manages pointer ownership.
-    - `AppState`: Central source of truth for settings, synced via `NotificationCenter`.
-    - `SettingsRootView`: Pure SwiftUI settings interface with "Glass" window style.
-    - `PerAppModeManagerEnhanced`: Smart Mode per-app configurations.
+---
 
-### 6.3. Platform: Windows (`platforms/windows/`)
-- **Language:** C# (.NET).
-- **Status:** Planned/Placeholder.
-- **Key Components (Planned):**
-    - `InputInterceptor`: Low-level keyboard hook (`SetWindowsHookEx`).
-    - `EngineInterop`: P/Invoke wrappers for Rust Core.
-    - `TrayApplication`: System tray interface.
+## Never Commit
 
-## 7. File Placement Guidelines
-
-### Where to add new code:
-
-**Core engine changes:**
-→ `core/src/` (Rust files)
-
-**macOS UI changes:**
-→ `platforms/macos/goxviet/goxviet/` (Swift files)
-
-**Documentation (user-facing):**
-→ `docs/` (public) or `.docs/` (internal)
-
-**Build/utility scripts:**
-→ `scripts/`
-
-**Agent skills:**
-→ `.agent/skills/[skill-name]/SKILL.md` (consolidated)
-→ `.claude/skills/[skill-name]/SKILL.md` (Claude-specific)
-
-**CI/CD configuration:**
-→ `.github/workflows/`
-
-## 8. Documentation Map
-
-**ALWAYS** refer to the specific feature documentation before modifying code.
-
-- **Core Engine:** `.docs/features/core-engine/`
-- **macOS Platform:** `.docs/features/platform/macos/`
-- **Guides:** `.docs/guides/`
-- **Planning:** `.planning/`
-- **Agent Skills:** `.agent/skills/` and `.claude/skills/`
-
-## 9. Coding Standards & Rules
-
-### 9.1. General
-- **Naming:**
-    - ✅ `Gõ Việt`, `GoxViet`, `goxviet` (Our brand).
-    - ✅ `goxviet-core` (Rust crate name)
-- **Logs:** Use structured logging.
-
-### 9.2. Rust (Core)
-- **Performance:**
-    - **NO** heap allocations in the hot path (`process_key`). Use stack arrays or `SmallVec`.
-    - **O(1)** lookups for validation.
-- **FFI Safety:**
-    - **NEVER** panic across FFI boundaries. Capture `UnwindSafe`.
-    - **ALWAYS** verify raw pointers.
-- **Testing:**
-    - Unit tests in `core/tests/`
-    - Benchmarks in `core/benches/`
-
-### 9.3. Swift (macOS)
-- **Memory Management:**
-    - Free FFI results immediately using `ime_free`.
-    - Use `defer { ime_free(...) }` after receiving pointer.
-- **Concurrency:**
-    - UI updates on `MainActor` (`DispatchQueue.main` or `@MainActor`).
-    - Engine calls are synchronous - keep them fast.
-- **Architecture:**
-    - `InputManager` is high-risk - modifications need careful testing.
-    - `RustBridgeSafe` is the only place for raw FFI calls.
-
-### 9.4. C# (Windows)
-- **Interop:**
-    - **UTF-16:** Windows APIs use UTF-16 (Wide Chars).
-    - **P/Invoke:** Use `DllImport` safely. Match calling conventions (`Cdecl`).
-- **Stability:**
-    - Catch exceptions at hook boundaries to prevent input system crashes.
-
-### 9.5. SOLID Principles (All Languages)
-**MUST** follow SOLID principles in all code:
-
-| Principle | Application |
-|-----------|-------------|
-| **S**ingle Responsibility | Each module/class has ONE reason to change. `InputManager` handles events, `RustBridgeSafe` handles FFI. |
-| **O**pen/Closed | Open for extension, closed for modification. Use traits/protocols for new input methods. |
-| **L**iskov Substitution | Subtypes must be substitutable. Engine v2 should be drop-in replacement for legacy engine. |
-| **I**nterface Segregation | Small, focused interfaces. Separate `InputMethod` from `OutputEncoding` protocols. |
-| **D**ependency Inversion | Depend on abstractions. Use `trait InputProcessor` instead of concrete `TelexEngine`. |
-
-**Examples:**
-- ✅ `trait InputMethod { fn process(&self, key: char) -> Result; }`
-- ❌ Direct struct dependencies: `impl TelexEngine { fn process(...) }` called directly
-
-## 10. Common Patterns
-
-### 10.1. Backspace Handling
-- "Soft Backspace": Undo last transformation if possible.
-- Coalesce rapid deletes for performance.
-
-### 10.2. Smart Mode
-- Per-App configurations persisted in `UserDefaults`.
-- Detect application context to enable/disable IME.
-
-### 10.3. English Auto-Restore
-- Restore original text if unintentional transformation is detected.
-- Uses dictionary and phonotactic analysis.
-
-### 10.4. Text Expansion
-- Shortcuts map to expanded text.
-- Configurable via Settings UI.
-
-## 11. Gitignore Rules
-
-**NEVER commit:**
-- `.DS_Store` files (macOS system files)
-- `core/target/` (Rust build artifacts)
-- `xcuserdata/` (Xcode user data)
-- `*.dmg`, `*.app` (Distribution packages)
-- `libgoxviet_core.a` (Compiled Rust library)
-- `example-project/` (Reference implementations)
-- `.temp/` (Temporary files)
-- Environment files (`.env`, secrets, API keys)
-
-## 12. Implementation Workflow
-
-**ALWAYS** use `implement-tasks` skill to execute feature implementations.
-
-## 13. Platform-Specific Overrides
-
-When working on specific platforms, also read:
-- **macOS:** `platforms/macos/AGENT.override.md`
-- **Windows:** `platforms/windows/AGENT.override.md`
+`.DS_Store`, `core/target/`, `xcuserdata/`, `*.dmg`, `*.app`, `libgoxviet_core.a`, `.temp/`, secrets/API keys.

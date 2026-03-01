@@ -15,7 +15,7 @@ final class SettingsManager: ObservableObject {
     
     // MARK: - Singleton
     
-    static let shared = SettingsManager()
+    nonisolated(unsafe) static let shared = SettingsManager()
     
     // MARK: - Published Settings
     
@@ -161,7 +161,10 @@ final class SettingsManager: ObservableObject {
     
     // MARK: - Initialization
     
-    private init() {
+    nonisolated private init() {}
+
+    /// Must be called once from @MainActor context (AppDelegate) before any settings access.
+    func initialize() {
         loadFromDefaults()
         setupObservers()
         Log.info("SettingsManager initialized")

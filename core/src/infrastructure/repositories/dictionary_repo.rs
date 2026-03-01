@@ -1,78 +1,34 @@
 //! Dictionary Repository
 //!
-//! Wrapper around the engine's dictionary for domain layer access.
+//! The English word dictionary was removed in Sprint C (Vietnamese-first refactor).
+//! Vietnamese syllable lookups are now provided by `data::viet_syllables`.
+//!
+//! This stub is kept to avoid breaking the public module tree; callers should
+//! migrate to `is_valid_vietnamese_syllable` from `goxviet_core::data::viet_syllables`.
 
-use crate::data::chars::parse_char;
 use crate::domain::value_objects::char_sequence::CharSequence;
-use crate::infrastructure::external::english::dictionary::Dictionary;
 
-/// Repository for English dictionary lookups
+/// Repository stub — English dictionary removed in Sprint C.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DictionaryRepo;
 
 impl DictionaryRepo {
-    /// Create a new dictionary repository
     pub fn new() -> Self {
         Self
     }
 
-    /// Check if a sequence of keys forms an English word
-    pub fn is_english_keys(&self, keys: &[u16]) -> bool {
-        Dictionary::is_english(keys)
+    /// Always returns false — English dictionary removed.
+    pub fn is_english_keys(&self, _keys: &[u16]) -> bool {
+        false
     }
 
-    /// Check if raw keystroke sequence is a common English word
-    pub fn is_common_english_word(&self, raw_keys: &[(u16, bool)]) -> bool {
-        Dictionary::is_common_english_word(raw_keys)
+    /// Always returns false — English dictionary removed.
+    pub fn is_common_english_word(&self, _raw_keys: &[(u16, bool)]) -> bool {
+        false
     }
 
-    /// Check if text is English by parsing each character
-    ///
-    /// Returns false if:
-    /// - Any character cannot be parsed
-    /// - The resulting key sequence is empty
-    /// - The keys don't form an English word
-    pub fn is_english_text(&self, text: &CharSequence) -> bool {
-        let mut keys = Vec::new();
-        
-        for ch in text.chars() {
-            match parse_char(ch) {
-                Some(parsed) => keys.push(parsed.key),
-                None => return false,
-            }
-        }
-        
-        if keys.is_empty() {
-            return false;
-        }
-        
-        self.is_english_keys(&keys)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::data::keys;
-
-    #[test]
-    fn test_is_english_keys_returns_true_for_of() {
-        let repo = DictionaryRepo::new();
-        let keys = vec![keys::O, keys::F];
-        assert!(repo.is_english_keys(&keys));
-    }
-
-    #[test]
-    fn test_is_english_text_returns_true_for_of() {
-        let repo = DictionaryRepo::new();
-        let text = CharSequence::from("of");
-        assert!(repo.is_english_text(&text));
-    }
-
-    #[test]
-    fn test_returns_false_for_a() {
-        let repo = DictionaryRepo::new();
-        let text = CharSequence::from("a");
-        assert!(!repo.is_english_text(&text));
+    /// Always returns false — English dictionary removed.
+    pub fn is_english_text(&self, _text: &CharSequence) -> bool {
+        false
     }
 }
