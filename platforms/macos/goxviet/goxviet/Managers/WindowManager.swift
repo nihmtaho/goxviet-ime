@@ -11,7 +11,7 @@ import SwiftUI
 import Foundation
 
 class WindowManager: NSObject, NSWindowDelegate {
-    static let shared = WindowManager()
+    nonisolated(unsafe) static let shared = WindowManager()
     
     // Check if settings window is open
     var isSettingsWindowOpen: Bool { return settingsWindow != nil }
@@ -22,14 +22,11 @@ class WindowManager: NSObject, NSWindowDelegate {
     // Keep reference to hosting view for explicit cleanup
     private weak var settingsHostingView: NSHostingView<SettingsRootView>?
     
-    private override init() {
+    nonisolated private override init() {
         super.init()
     }
     
-    deinit {
-        cleanup()
-        Log.info("WindowManager deinitialized")
-    }
+    deinit {}
     
     
     // MARK: - Settings Window

@@ -1,115 +1,159 @@
-# Library API (`lib.rs`)
+# FFI API v2 (`presentation/ffi/`)
 
-`lib.rs` defines the public interface of the core engine, primarily focusing on the C-compatible FFI (Foreign Function Interface) which allows the Rust engine to be used by other languages (like Swift/Objective-C for macOS).
+`lib.rs` re-exports the public C-compatible API from `presentation/ffi/api.rs`. All functions use `catch_unwind` and return explicit status codes — **no panics cross the FFI boundary**.
 
-## Global State
+> **v1 API removed in v3.0.0.** All `ime_init`, `ime_key`, `ime_key_ext`, `ime_free`, `ime_method`, `ime_clear`, etc. have been removed. See the migration note at the bottom.
 
-The engine instance is held in a global static `Mutex`.
+---
 
-- `ENGINE`: `static ENGINE: Mutex<Option<Engine>>`
-  - Thread-safe global singleton for the engine.
+## C Usage Pattern
 
-## FFI Functions
+```c
+// 1. Create engine (NULL = default config)
+void *engine = ime_create_engine_v2(NULL);
 
-These functions are exported with `#[no_mangle]` and `extern "C"` to be callable from C/C++.
+// 2. Process keystrokes
+FfiProcessResult_v2 result = {0};
+int status = ime_process_key_v2(engine, 'a', &result);
 
-### Lifecycle
+if (status == 0 /* FFI_STATUS_OK */ && result.consumed) {
+    apply_backspaces(result.backspace_count);
+    insert_text(result.text);        // UTF-8, null-terminated
+}
+ime_free_string_v2(result.text);     // ALWAYS free, even if NULL
 
-- **`ime_init()`**
-    - Initializes the global engine instance.
-    - **Must** be called exactly once before any other function.
-    - Panics if the internal mutex is poisoned.
+// 3. Destroy
+ime_destroy_engine_v2(engine);
+```
 
-### Key Processing
+---
 
-- **`ime_key(key: u16, caps: bool, ctrl: bool) -> *mut Result`**
-    - Process a standard key event.
-    - **Arguments**:
-        - `key`: macOS virtual keycode.
-        - `caps`: Whether Caps Lock is on.
-        - `ctrl`: Whether a control key (Cmd/Ctrl/Alt) is pressed.
-    - **Returns**: A pointer to a `Result` struct (must be freed with `ime_free`).
+## Lifecycle Functions
 
-- **`ime_key_ext(key: u16, caps: bool, ctrl: bool, shift: bool) -> *mut Result`**
-    - Extended version of `ime_key` including the Shift key state.
-    - Useful for VNI input where Shift+Number produces symbols (@, #, $) instead of tone marks.
+### `ime_create_engine_v2`
+```c
+void *ime_create_engine_v2(const FfiConfig_v2 *config);
+```
+- Creates and returns an opaque engine pointer.
+- `config = NULL` uses `FfiConfig_v2` defaults (Telex, Modern tone, Smart Mode on).
+- **Caller must destroy** with `ime_destroy_engine_v2`.
 
-- **`ime_free(r: *mut Result)`**
-    - Frees the memory allocated for the `Result` struct returned by `ime_key`.
-    - **Safety**: `r` must be a valid pointer from `ime_key` or `null`. Must be called exactly once per result.
+### `ime_destroy_engine_v2`
+```c
+void ime_destroy_engine_v2(void *engine_ptr);
+```
+- Frees engine memory. Safe to call with NULL.
 
-### Configuration
+---
 
-- **`ime_method(method: u8)`**
-    - Sets the input method.
-    - `0`: Telex
-    - `1`: VNI
+## Key Processing
 
-- **`ime_enabled(enabled: bool)`**
-    - Enables or disables the engine. When disabled, keys pass through processed.
+### `ime_process_key_v2`
+```c
+int ime_process_key_v2(void *engine_ptr, char key, FfiProcessResult_v2 *out);
+```
+- Processes a single ASCII character keystroke.
+- Writes result via **out parameter** (avoids Swift ABI struct-return issues).
+- Returns `FfiStatusCode` as `int`.
 
-- **`ime_skip_w_shortcut(skip: bool)`**
-    - Configures `w` behavior in Telex.
-    - `true`: `w` at word start remains `w`.
-    - `false`: `w` at word start becomes `ư`.
+**`FfiProcessResult_v2` fields:**
 
-- **`ime_esc_restore(enabled: bool)`**
-    - `true`: pressing ESC restores the raw ASCII chars of the current word.
-    - `false`: ESC passes through.
+| Field | Type | Description |
+|---|---|---|
+| `text` | `char *` | UTF-8 replacement text (may be NULL if no output). **Caller must free** with `ime_free_string_v2`. |
+| `backspace_count` | `uint8_t` | How many chars to delete before inserting `text`. |
+| `consumed` | `bool` | `true` = IME handled the key; `false` = pass through to OS. |
 
-- **`ime_free_tone(enabled: bool)`**
-    - `true`: Allows placing tones anywhere (skips strict spelling validation).
-    - `false`: Enforces Vietnamese spelling rules.
+---
 
-- **`ime_modern(modern: bool)`**
-    - `true`: Modern tone placement (e.g., "hoà").
-    - `false`: Traditional tone placement (e.g., "hòa").
+## Configuration
 
-- **`ime_instant_restore(enabled: bool)`**
-    - `true`: Automatically restores English words as soon as they are detected.
+### `ime_get_config_v2`
+```c
+int ime_get_config_v2(void *engine_ptr, FfiConfig_v2 *out);
+```
 
-### State Management
+### `ime_set_config_v2`
+```c
+int ime_set_config_v2(void *engine_ptr, const FfiConfig_v2 *config);
+```
 
-- **`ime_clear()`**
-    - Clears the current input buffer.
-    - Should be called on word boundaries (space, punctuation, mouse clicks).
+**`FfiConfig_v2` fields:**
 
-- **`ime_clear_all()`**
-    - Clears all state, including word history.
-    - Should be called when the cursor moves to a new location to prevent restoring context from a different location.
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `input_method` | `FfiInputMethod` | `Telex (0)` | `Telex=0`, `Vni=1` |
+| `tone_style` | `FfiToneStyle` | `New (1)` | `Old=0` (hòa), `New=1` (hoà) |
+| `smart_mode` | `bool` | `true` | Enable per-app Smart Mode |
+| `instant_restore_enabled` | `bool` | `true` | Auto-restore English words |
+| `esc_restore_enabled` | `bool` | `false` | ESC restores raw ASCII |
+| `enable_shortcuts` | `bool` | `true` | Text expansion shortcuts |
 
-- **`ime_get_buffer() -> *const c_char`**
-    - Returns a pointer to the current buffer content as a C string.
-    - **Safety**: Returns a pointer to a static buffer; do not free.
+---
 
-### Shortcuts
+## Shortcut Management
 
-- **`ime_add_shortcut(trigger: *const c_char, replacement: *const c_char) -> bool`**
-    - Adds a user-defined shortcut.
-    - Returns `true` if successful.
+```c
+int ime_add_shortcut_v2(void *engine, const char *trigger, const char *replacement);
+int ime_remove_shortcut_v2(void *engine, const char *trigger);
+int ime_clear_shortcuts_v2(void *engine);
+int ime_shortcuts_count_v2(void *engine);
+int ime_set_shortcuts_enabled_v2(void *engine, bool enabled);
+```
 
-- **`ime_remove_shortcut(trigger: *const c_char)`**
-    - Removes a specific shortcut.
+---
 
-- **`ime_clear_shortcuts()`**
-    - Removes all shortcuts.
+## Memory Management
 
-- **`ime_shortcuts_count() -> usize`**
-    - Returns the number of active shortcuts.
+### `ime_free_string_v2`
+```c
+void ime_free_string_v2(char *s);
+```
+- Frees any `char *` returned inside `FfiProcessResult_v2.text`.
+- **Must be called after every `ime_process_key_v2` call**, even if `text` is NULL (the function is NULL-safe).
 
-- **`ime_shortcuts_capacity() -> usize`**
-    - Returns the maximum number of shortcuts allowed.
+---
 
-- **`ime_shortcuts_is_at_capacity() -> bool`**
-    - Checks if the shortcut table is full.
+## Status Codes (`FfiStatusCode`)
 
-### Word Restoration
+| Code | Value | Meaning |
+|---|---|---|
+| `Success` | 0 | OK |
+| `ErrorNullEngine` | -1 | Engine pointer is NULL |
+| `ErrorNullOutput` | -2 | Out-parameter pointer is NULL |
+| `ErrorNullConfig` | -3 | Config pointer is NULL |
+| `ErrorInvalidKey` | -4 | Invalid key character |
+| `ErrorProcessingFailed` | -10 | Internal processing error |
+| `ErrorAlreadyExists` | -30 | Shortcut already exists |
+| `ErrorNotFound` | -31 | Shortcut not found |
+| `ErrorPanic` | -99 | Rust panic caught at FFI boundary |
 
-- **`ime_restore_word(word: *const c_char)`**
-    - Restores the engine state from a given Vietnamese string.
-    - Used when the user navigates back into a word to edit it.
+---
 
-## Internal Utilities
+## Version Info
 
-- **`lock_engine() -> MutexGuard`**
-    - Helper to acquire the engine lock safely, handling poisoned mutexes if necessary.
+```c
+int ime_get_version_v2(void *engine_ptr, FfiVersionInfo *out);
+// out: { major, minor, patch, api_version=2 }
+```
+
+---
+
+## v1 → v2 Migration Reference
+
+| v1 (removed) | v2 equivalent |
+|---|---|
+| `ime_init()` | `ime_create_engine_v2(NULL)` |
+| `ime_key(key, caps, ctrl)` | `ime_process_key_v2(engine, key, &result)` |
+| `ime_key_ext(key, caps, ctrl, shift)` | `ime_process_key_v2(engine, key, &result)` |
+| `ime_free(result)` | `ime_free_string_v2(result.text)` |
+| `ime_method(0/1)` | `ime_set_config_v2(engine, &config)` |
+| `ime_modern(bool)` | `config.tone_style = FfiToneStyle::New/Old` |
+| `ime_instant_restore(bool)` | `config.instant_restore_enabled` |
+| `ime_clear()` / `ime_clear_all()` | No explicit clear needed (per-engine state) |
+| `ime_add_shortcut(t, r)` | `ime_add_shortcut_v2(engine, t, r)` |
+
+**Key differences in v2:**
+- Out-parameter result (no struct-return ABI issues with Swift).
+- Per-engine config — no global state.
+- Explicit status code returns instead of panics.

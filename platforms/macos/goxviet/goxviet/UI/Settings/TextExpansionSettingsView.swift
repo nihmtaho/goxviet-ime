@@ -92,30 +92,34 @@ struct TextExpansionSettingsView: View {
                 }
             )
         }
-        .alert("Xóa gõ tắt?", isPresented: $showingDeleteConfirmation) {
-            Button("Hủy", role: .cancel) {
-                shortcutToDelete = nil
-            }
-            Button("Xóa", role: .destructive) {
-                if let shortcut = shortcutToDelete {
-                    settingsManager.removeShortcut(trigger: shortcut.trigger)
+        .alert(isPresented: $showingDeleteConfirmation) {
+            Alert(
+                title: Text("Xóa gõ tắt?"),
+                message: Text("Bạn có chắc muốn xóa gõ tắt '\(shortcutToDelete?.trigger ?? "")'?"),
+                primaryButton: .destructive(Text("Xóa")) {
+                    if let shortcut = shortcutToDelete {
+                        settingsManager.removeShortcut(trigger: shortcut.trigger)
+                    }
+                    shortcutToDelete = nil
+                },
+                secondaryButton: .cancel(Text("Hủy")) {
+                    shortcutToDelete = nil
                 }
-                shortcutToDelete = nil
-            }
-        } message: {
-            if let shortcut = shortcutToDelete {
-                Text("Bạn có chắc muốn xóa gõ tắt '\(shortcut.trigger)'?")
-            }
+            )
         }
-        .alert("Lỗi nhập dữ liệu", isPresented: $showingImportError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(importErrorMessage)
+        .alert(isPresented: $showingImportError) {
+            Alert(
+                title: Text("Lỗi nhập dữ liệu"),
+                message: Text(importErrorMessage),
+                dismissButton: .default(Text("OK"))
+            )
         }
-        .alert("Xuất thành công", isPresented: $showingExportSuccess) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Đã xuất \(shortcutCount) gõ tắt ra file")
+        .alert(isPresented: $showingExportSuccess) {
+            Alert(
+                title: Text("Xuất thành công"),
+                message: Text("Đã xuất \(shortcutCount) gõ tắt ra file"),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
     
@@ -244,12 +248,21 @@ struct TextExpansionSettingsView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
             
-            Button {
-                showingAddSheet = true
-            } label: {
-                Label("Thêm gõ tắt đầu tiên", systemImage: "plus.circle.fill")
+            if #available(macOS 12.0, *) {
+                Button {
+                    showingAddSheet = true
+                } label: {
+                    Label("Thêm gõ tắt đầu tiên", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button {
+                    showingAddSheet = true
+                } label: {
+                    Label("Thêm gõ tắt đầu tiên", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity)
         .padding(40)

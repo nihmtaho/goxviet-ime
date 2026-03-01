@@ -6,6 +6,7 @@
 use crate::application::dto::EngineConfig;
 use crate::application::services::{ConfigService, ProcessorService};
 use crate::application::use_cases::manage_shortcuts::ManageShortcutsUseCase;
+use crate::domain::entities::input_method_config::InputMethodConfig;
 use crate::domain::ports::input::{InputMethod, InputMethodId};
 use crate::domain::ports::state::{BufferManager, HistoryTracker};
 use crate::domain::ports::transformation::{MarkTransformer, ToneTransformer};
@@ -16,7 +17,7 @@ use crate::infrastructure::adapters::transformation::{
     VietnameseMarkAdapter, VietnameseToneAdapter,
 };
 use crate::infrastructure::adapters::validation::{
-    FsmValidatorAdapter, LanguageDetectorAdapter,
+    LanguageDetectorAdapter, SyllableStructureValidator,
 };
 use std::sync::{Arc, Mutex};
 
@@ -31,6 +32,8 @@ pub struct Container {
     config_service: Arc<ConfigService>,
     processor_service: Arc<Mutex<ProcessorService>>,
     shortcut_manager: Arc<Mutex<ManageShortcutsUseCase>>,
+    /// Cached data-driven InputMethodConfig loaded via ime_load_input_config_v2 (T6.2)
+    input_method_config: Mutex<Option<InputMethodConfig>>,
 }
 
 impl Container {
@@ -55,6 +58,7 @@ impl Container {
             config_service,
             processor_service: Arc::new(Mutex::new(processor_service)),
             shortcut_manager,
+            input_method_config: Mutex::new(None),
         }
     }
 
@@ -74,7 +78,7 @@ impl Container {
         // ProcessorService takes domain ports directly (not use cases)
         ProcessorService::new(
             input_method_box,
-            Box::new(FsmValidatorAdapter::new()),
+            Box::new(SyllableStructureValidator::new()),
             Box::new(VietnameseToneAdapter::new(
                 crate::domain::ports::transformation::ToneStrategy::default(),
             )),
@@ -95,9 +99,9 @@ impl Container {
         }
     }
 
-    /// Create syllable validator (FSM-based)
+    /// Create syllable validator (PAD/NA/PAC structure-based)
     fn create_syllable_validator() -> Arc<dyn SyllableValidator> {
-        Arc::new(FsmValidatorAdapter::new())
+        Arc::new(SyllableStructureValidator::new())
     }
 
     /// Create language detector
@@ -153,6 +157,31 @@ impl Container {
     /// Get current configuration
     pub fn get_config(&self) -> EngineConfig {
         self.config.lock().unwrap().clone()
+    }
+
+    /// Load data-driven InputMethodConfig (T6.2)
+    ///
+    /// Updates the engine's input method selection from the config's `name` field
+    /// ("telex" → Telex, "vni" → Vni) and caches the full config for future use.
+    ///
+    /// Based on KieuGo.ini pattern.
+    pub fn load_input_config(&mut self, config: InputMethodConfig) {
+        // Derive method_id from config name and update EngineConfig
+        let method_id = match config.method_id() {
+            1 => InputMethodId::Vni,
+            _ => InputMethodId::Telex,
+        };
+        let mut engine_config = self.get_config();
+        engine_config.input_method = method_id;
+        self.update_config(engine_config);
+
+        // Cache the full config
+        *self.input_method_config.lock().unwrap() = Some(config);
+    }
+
+    /// Get the last loaded InputMethodConfig (T6.2)
+    pub fn get_input_method_config(&self) -> Option<InputMethodConfig> {
+        self.input_method_config.lock().unwrap().clone()
     }
 }
 

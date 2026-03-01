@@ -116,6 +116,72 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
     None
 }
 
+/// Normalize ie/ye/uye → iê/yê/uyê compound before tone mark application.
+///
+/// In Vietnamese, "ie"/"ye"/"uye" before a final consonant ALWAYS requires
+/// circumflex on 'e' (iê/yê/uyê). There is no valid Vietnamese syllable with
+/// bare 'ie'/'ye'/'uye' before a coda. Call this from try_mark() so typing
+/// "mienx" produces "miễn" instead of "miẽn".
+///
+/// Returns Some(position) of the 'e' that was modified, None if no change.
+pub fn normalize_ie_compound(buf: &mut Buffer) -> Option<usize> {
+    let len = buf.len();
+    if len < 3 {
+        return None; // Need at least [i/y, e, consonant]
+    }
+
+    for i in 0..len {
+        let (key_e, tone_e) = match buf.get(i) {
+            Some(c) if c.key == keys::E && c.tone == tone::NONE => (c.key, c.tone),
+            _ => continue,
+        };
+        let _ = (key_e, tone_e); // suppress unused warnings
+
+        // Check if preceded by 'i' or 'y'
+        let has_ie_pattern = i > 0
+            && buf
+                .get(i - 1)
+                .map_or(false, |p| p.key == keys::I || p.key == keys::Y);
+
+        // Skip 'gi' onset: when 'i' at (i-1) is part of the 'gi' onset consonant (g + i),
+        // the 'e' is the vowel nucleus and must NOT get a circumflex.
+        // Example: "giem" → onset=gi, vowel=e, coda=m → "giem" (plain e, not ê).
+        let is_gi_onset = i >= 2
+            && buf.get(i - 2).map_or(false, |p| p.key == keys::G)
+            && buf.get(i - 1).map_or(false, |p| p.key == keys::I);
+        if is_gi_onset {
+            continue;
+        }
+
+        // Also check uye pattern (u + y + e)
+        let has_uye_pattern = i >= 2
+            && buf
+                .get(i - 2)
+                .map_or(false, |p| p.key == keys::U)
+            && buf
+                .get(i - 1)
+                .map_or(false, |p| p.key == keys::Y);
+
+        if !(has_ie_pattern || has_uye_pattern) {
+            continue;
+        }
+
+        // 'e' must be followed by at least one consonant (final coda)
+        let has_coda = (i + 1..len).any(|j| {
+            buf.get(j)
+                .map_or(false, |c| !keys::is_vowel(c.key) && c.key != keys::W)
+        });
+
+        if has_coda {
+            if let Some(e_char) = buf.get_mut(i) {
+                e_char.tone = tone::CIRCUMFLEX;
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,6 +5,7 @@
 pub mod fsm_validator_adapter;
 pub mod language_detector_adapter;
 pub mod phonotactic_adapter;
+pub mod syllable_structure_validator;
 
 // Validation modules (moved from infrastructure/external/)
 pub mod english;
@@ -16,3 +17,4 @@ pub mod diacritical_validator;
 pub use fsm_validator_adapter::FsmValidatorAdapter;
 pub use language_detector_adapter::LanguageDetectorAdapter;
 pub use phonotactic_adapter::PhonotacticAdapter;
+pub use syllable_structure_validator::SyllableStructureValidator;

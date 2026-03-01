@@ -184,18 +184,24 @@ impl PhonotacticEngine {
             &[keys::V, keys::R], // vr
             &[keys::W, keys::H], // wh
             &[keys::W, keys::R], // wr
+            &[keys::S, keys::H], // sh (English-only digraph; not a valid Vietnamese initial or final)
+            &[keys::B, keys::H], // bh- (unusual English/foreign onset cluster)
         ];
 
         if keys.len() < 2 {
             return 0;
         }
 
-        let first = keys[0].0;
-        let second = keys[1].0;
-
-        for cluster in CLUSTERS {
-            if first == cluster[0] && second == cluster[1] {
-                return 98; // Extremely likely English
+        // Check clusters at ANY adjacent position (not just word-initial 0-1).
+        // This catches interior patterns like "acr" (cr at 1-2), "absolute" (bs at 1-2), etc.
+        // Vietnamese single syllables never contain these consonant clusters anywhere.
+        for i in 0..keys.len().saturating_sub(1) {
+            let k1 = keys[i].0;
+            let k2 = keys[i + 1].0;
+            for cluster in CLUSTERS {
+                if k1 == cluster[0] && k2 == cluster[1] {
+                    return 98; // Extremely likely English
+                }
             }
         }
 
@@ -229,18 +235,23 @@ impl PhonotacticEngine {
     fn check_suffixes(keys: &[(u16, bool)]) -> u8 {
         // Suffix patterns (last 3-4-5 keys)
         const SUFFIXES_3: &[&[u16; 3]] = &[
-            &[keys::I, keys::N, keys::G],     // -ing
-            &[keys::E, keys::D, keys::SPACE], // -ed (placeholder)
-            &[keys::L, keys::Y, keys::SPACE], // -ly
-            &[keys::E, keys::R, keys::SPACE], // -er
-            &[keys::O, keys::R, keys::E],     // -ore
+            &[keys::I, keys::N, keys::G], // -ing
+            &[keys::O, keys::R, keys::E], // -ore
             &[keys::I, keys::V, keys::E],     // -ive (active, native, massive)
             &[keys::O, keys::U, keys::S],     // -ous (various, serious, obvious)
             &[keys::A, keys::T, keys::E],     // -ate (private, create, state)
             &[keys::I, keys::T, keys::Y],     // -ity (quality, city, ability)
             &[keys::A, keys::L, keys::L],     // -all (overall, install)
             &[keys::F, keys::U, keys::L],     // -ful (beautiful, careful)
+            &[keys::I, keys::C, keys::K],     // -ick (thick, click, trick)
+            &[keys::I, keys::T, keys::H],     // -ith (with, zenith, filth)
+            &[keys::I, keys::A, keys::N],     // -ian (ician, guardian, median)
+            &[keys::O, keys::T, keys::H],     // -oth (cloth, month, growth)
+            &[keys::R, keys::T, keys::H],     // -rth (birth, north, earth)
+            &[keys::T, keys::I, keys::C],     // -tic (static, mystic, plastic)
         ];
+
+        const SUFFIXES_4_CORE: &[u16; 4] = &[keys::C, keys::O, keys::R, keys::E]; // -core (hardcore, multicore)
 
         const SUFFIXES_4: &[&[u16; 4]] = &[
             &[keys::T, keys::I, keys::O, keys::N], // -tion
@@ -252,11 +263,50 @@ impl PhonotacticEngine {
             &[keys::A, keys::N, keys::C, keys::E], // -ance (performance, instance)
             &[keys::E, keys::N, keys::C, keys::E], // -ence (difference, reference)
             &[keys::I, keys::T, keys::E, keys::D], // -ited (limited, visited)
+            &[keys::I, keys::N, keys::G, keys::S], // -ings (buildings, feelings)
+            &[keys::T, keys::E, keys::D, keys::S], // -teds
+            &[keys::L, keys::I, keys::N, keys::G], // -ling (spelling, traveling)
+            &[keys::T, keys::I, keys::N, keys::G], // -ting (getting, starting)
+            &[keys::R, keys::I, keys::N, keys::G], // -ring (monitoring, recurring)
+            &[keys::D, keys::I, keys::N, keys::G], // -ding (adding, doing)
+            &[keys::A, keys::S, keys::P, keys::H], // -asph (blasphemy, blasphemous)
+            &[keys::Y, keys::C, keys::A, keys::T], // -ycat (Telex-filtered -ycast: raycast)
         ];
 
         const SUFFIXES_5: &[&[u16; 5]] = &[
             &[keys::A, keys::T, keys::I, keys::O, keys::N], // -ation
+            &[keys::I, keys::T, keys::I, keys::O, keys::N], // -ition (position, condition)
+            &[keys::A, keys::T, keys::I, keys::N, keys::G], // -ating (creating, operating)
+            &[keys::I, keys::Z, keys::I, keys::N, keys::G], // -izing (realizing, organizing)
+            &[keys::S, keys::T, keys::O, keys::R, keys::E], // -store (restore, store, offshore)
+            &[keys::Y, keys::C, keys::A, keys::S, keys::T], // -ycast (raycast, skycast)
         ];
+
+        // Check 2-char suffix: -ed (without requiring trailing SPACE)
+        // This catches words like "added", "fixed", "played" during typing
+        if keys.len() >= 2 {
+            let last = keys[keys.len() - 1].0;
+            let prev = keys[keys.len() - 2].0;
+            if prev == keys::E && last == keys::D {
+                // Only count as English suffix if there's content before -ed (not just "ed")
+                if keys.len() >= 4 {
+                    return 90;
+                }
+            }
+            // -ly: 'l' is not a valid Vietnamese final consonant, so raw_keys can never end
+            // in [L,Y] for a valid Vietnamese single-syllable word.
+            if prev == keys::L && last == keys::Y && keys.len() >= 4 {
+                return 90;
+            }
+            // -al: same reason — 'l' is not a valid Vietnamese final consonant.
+            if prev == keys::A && last == keys::L && keys.len() >= 4 {
+                return 90;
+            }
+            // -yc: unusual Vietnamese final (psych, sync, etc.)
+            if prev == keys::Y && last == keys::C && keys.len() >= 4 {
+                return 90;
+            }
+        }
 
         if keys.len() >= 3 {
             for suffix in SUFFIXES_3 {
@@ -283,6 +333,16 @@ impl PhonotacticEngine {
                 {
                     return 90;
                 }
+            }
+            // Check -core suffix (hardcore, multicore)
+            let start = keys.len() - 4;
+            if &keys[start..start + 4]
+                .iter()
+                .map(|k| k.0)
+                .collect::<Vec<_>>()[..]
+                == &SUFFIXES_4_CORE[..]
+            {
+                return 90;
             }
         }
 
@@ -375,13 +435,19 @@ impl PhonotacticEngine {
             &[keys::E, keys::X, keys::P], // exp- (express, export, explain)
             &[keys::C, keys::O, keys::N], // con- (control, consider, content)
             &[keys::S, keys::U, keys::B], // sub- (subject, submit)
+            &[keys::A, keys::R, keys::C], // arc- (arch, arctic, archive)
+            &[keys::A, keys::L, keys::N], // aln- (alignment, alnylam)
+            &[keys::B, keys::I, keys::I], // bii- (double-i onset pattern)
         ];
 
         const PREFIXES_4: &[&[u16; 4]] = &[
             &[keys::R, keys::E, keys::S, keys::T], // rest- (restore, restrict)
             &[keys::O, keys::V, keys::E, keys::R], // over- (overall, overcome)
             &[keys::U, keys::N, keys::D, keys::E], // unde- (under, understand)
+            &[keys::A, keys::C, keys::H, keys::R], // achr- (achromatic, achromic)
         ];
+
+        const PREFIXES_4_CORE: &[u16; 4] = &[keys::C, keys::O, keys::R, keys::E]; // core- (core-dump, core-based)
 
         if keys.len() >= 3 {
             for prefix in PREFIXES_3 {
@@ -401,12 +467,20 @@ impl PhonotacticEngine {
                     return 95; // Very high confidence for 4-char prefixes (rest-)
                 }
             }
+            // Check core- prefix (core-dump, core-based)
+            if keys[0].0 == PREFIXES_4_CORE[0]
+                && keys[1].0 == PREFIXES_4_CORE[1]
+                && keys[2].0 == PREFIXES_4_CORE[2]
+                && keys[3].0 == PREFIXES_4_CORE[3]
+            {
+                return 95;
+            }
         }
 
         0
     }
 
-    /// L7: Check for English vowel patterns (ea, ou, oo, ai, oi, etc.)
+    /// L7: Check for English vowel patterns (ea, ou, V+r rhotic, double vowels, etc.)
     fn check_vowel_patterns(keys: &[(u16, bool)]) -> u8 {
         const VOWEL_PATTERNS: &[&[u16; 2]] = &[
             &[keys::E, keys::A], // ea
@@ -423,6 +497,22 @@ impl PhonotacticEngine {
                     return 85;
                 }
             }
+
+            // V+R rhotic pattern: vowel immediately followed by 'r'
+            // Vietnamese 'r' is ONLY an initial consonant, never follows a vowel in same syllable.
+            // English words like "are", "bar", "firm", "core", "burn" all have this pattern.
+            if next == keys::R
+                && matches!(curr, keys::A | keys::E | keys::I | keys::O | keys::U)
+            {
+                return 85;
+            }
+
+            // NOTE: Double-vowel (ee, oo, aa) detection removed from this mid-word check.
+            // In Telex, pressing 'ee' mid-word transforms 'e'→'ê', making buf_keys=[…,E,E,…]
+            // which fails the Vietnamese 3-vowel combo check (IEE invalid), then the
+            // double-vowel rule would fire at threshold=60, causing false restores on
+            // valid Vietnamese words like "bieen"→"biên". Word-boundary (SPACE-time)
+            // detection handles double-vowel English words via dictionary + other layers.
         }
 
         0
@@ -582,3 +672,5 @@ mod tests {
         );
     }
 }
+
+

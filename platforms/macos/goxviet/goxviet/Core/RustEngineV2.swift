@@ -14,7 +14,7 @@ final class RustEngineV2 {
     
     // MARK: - Singleton
     
-    static let shared = RustEngineV2()
+    nonisolated(unsafe) static let shared = RustEngineV2()
     
     // MARK: - Private Properties
     
@@ -31,7 +31,7 @@ final class RustEngineV2 {
     
     // MARK: - Initialization
     
-    private init() {
+    nonisolated private init() {
         // Default config
         self.currentConfig = FfiConfig_v2(
             input_method: .telex,

@@ -24,8 +24,6 @@ struct ShortcutEditorSheet: View {
     @State private var triggerError: String?
     @State private var replacementError: String?
     
-    @FocusState private var focusedField: Field?
-    
     // MARK: - Computed Properties
     
     private var isEditing: Bool {
@@ -97,7 +95,6 @@ struct ShortcutEditorSheet: View {
         }
         .frame(width: 500, height: 550)
         .onAppear {
-            focusedField = .trigger
             validateTrigger()
             validateReplacement()
         }
@@ -136,13 +133,7 @@ struct ShortcutEditorSheet: View {
             TextField("Ví dụ: brb, omw, ty...", text: $trigger)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
-                .focused($focusedField, equals: .trigger)
-                .onChange(of: trigger) { _, _ in
-                    validateTrigger()
-                }
-                .onSubmit {
-                    focusedField = .replacement
-                }
+                .onChange(of: trigger, perform: { _ in validateTrigger() })
             
             if let error = triggerError {
                 HStack(spacing: 4) {
@@ -169,17 +160,25 @@ struct ShortcutEditorSheet: View {
                 Image(systemName: "text.alignleft")
             }
             
-            TextEditor(text: $replacement)
-                .font(.body)
-                .frame(minHeight: 100, maxHeight: 150)
-                .lineLimit(5...10)
-                .scrollContentBackground(.hidden)
-                .background(Color(nsColor: .textBackgroundColor))
-                .border(Color.secondary.opacity(0.3), width: 1)
-                .focused($focusedField, equals: .replacement)
-                .onChange(of: replacement) { _, _ in
-                    validateReplacement()
+            Group {
+                if #available(macOS 13.0, *) {
+                    TextEditor(text: $replacement)
+                        .font(.body)
+                        .frame(minHeight: 100, maxHeight: 150)
+                        .lineLimit(10)
+                        .scrollContentBackground(.hidden)
+                        .background(Color(NSColor.textBackgroundColor))
+                        .border(Color.secondary.opacity(0.3), width: 1)
+                        .onChange(of: replacement, perform: { _ in validateReplacement() })
+                } else {
+                    TextEditor(text: $replacement)
+                        .font(.body)
+                        .frame(minHeight: 100, maxHeight: 150)
+                        .lineLimit(10)
+                        .border(Color.secondary.opacity(0.3), width: 1)
+                        .onChange(of: replacement, perform: { _ in validateReplacement() })
                 }
+            }
             
             if let error = replacementError {
                 HStack(spacing: 4) {
@@ -392,12 +391,6 @@ struct ShortcutEditorSheet: View {
         isPresented = false
     }
     
-    // MARK: - Supporting Types
-    
-    private enum Field: Hashable {
-        case trigger
-        case replacement
-    }
 }
 
 // MARK: - Preview
