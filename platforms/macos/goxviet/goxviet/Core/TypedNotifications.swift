@@ -374,6 +374,9 @@ extension Notification.Name {
     static let textExpansionEnabledChanged = Notification.Name("com.goxviet.ime.textExpansionEnabledChanged")
 
     
+    // Accessibility
+    static let accessibilityPermissionRevoked = Notification.Name("com.goxviet.accessibilityPermissionRevoked")
+
     // Debugging
     static let didSaveShortcuts = Notification.Name("com.goxviet.ime.didSaveShortcuts")
 }
