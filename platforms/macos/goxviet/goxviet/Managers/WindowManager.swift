@@ -11,7 +11,7 @@ import SwiftUI
 import Foundation
 
 class WindowManager: NSObject, NSWindowDelegate {
-    nonisolated(unsafe) static let shared = WindowManager()
+    static let shared = WindowManager()
     
     // Check if settings window is open
     var isSettingsWindowOpen: Bool { return settingsWindow != nil }

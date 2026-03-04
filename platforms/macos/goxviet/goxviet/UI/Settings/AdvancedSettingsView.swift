@@ -79,12 +79,12 @@ struct AdvancedSettingsView: View {
                             .pickerStyle(.menu)
                             .frame(width: 200)
                         }
-                        .onChange(of: settingsManager.outputEncoding, perform: { newValue in
+                        .onChange(of: settingsManager.outputEncoding) { _, newValue in
                             if newValue.isLegacy {
                                 pendingEncoding = newValue
                                 showLegacyEncodingWarning = true
                             }
-                        })
+                        }
                         
                         // Description for selected encoding
                         HStack(spacing: 8) {
@@ -140,13 +140,13 @@ struct AdvancedSettingsView: View {
                             
                             Toggle("", isOn: $loggingEnabled)
                                 .toggleStyle(.switch)
-                                .onChange(of: loggingEnabled, perform: { newValue in
+                                .onChange(of: loggingEnabled) { _, newValue in
                                     if newValue {
                                         Log.enableLogging(reason: "User enabled in Advanced Settings")
                                     } else {
                                         Log.disableLogging(reason: "User disabled in Advanced Settings")
                                     }
-                                })
+                                }
                         }
                         
                         Divider()

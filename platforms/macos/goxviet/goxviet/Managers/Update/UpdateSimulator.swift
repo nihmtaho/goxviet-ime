@@ -56,20 +56,22 @@ final class UpdateSimulator {
         // Animate progress over 5 seconds
         progressTimer?.invalidate()
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
-            guard let self = self else {
+            guard self != nil else {
                 timer.invalidate()
                 return
             }
-            
-            self.currentProgress += 0.02 // Increment by 2% each 0.1s (5 seconds total)
-            
-            if self.currentProgress >= 1.0 {
-                self.currentProgress = 1.0
-                timer.invalidate()
-                self.finishDownload()
-            }
-            
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+
+                self.currentProgress += 0.02 // Increment by 2% each 0.1s (5 seconds total)
+
+                if self.currentProgress >= 1.0 {
+                    self.currentProgress = 1.0
+                    self.progressTimer?.invalidate()
+                    self.progressTimer = nil
+                    self.finishDownload()
+                }
+
                 self.setManagerState(.downloading(progress: self.currentProgress))
             }
         }

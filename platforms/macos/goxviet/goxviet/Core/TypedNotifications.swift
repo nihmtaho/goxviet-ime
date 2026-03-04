@@ -130,36 +130,40 @@ final class TypedNotificationCenter {
     // MARK: - Post Methods
     
     func post(_ notification: InputMethodChangedNotification) {
+        let name = Notification.Name.inputMethodChanged
         queue.async {
             self.center.post(
-                name: .inputMethodChanged,
+                name: name,
                 object: notification,
                 userInfo: ["method": notification.method, "timestamp": notification.timestamp]
             )
         }
     }
-    
+
     func post(_ notification: ToneStyleChangedNotification) {
+        let name = Notification.Name.toneStyleChanged
         queue.async {
             self.center.post(
-                name: .toneStyleChanged,
+                name: name,
                 object: notification,
                 userInfo: ["isModern": notification.isModern, "timestamp": notification.timestamp]
             )
         }
     }
-    
+
     func post(_ notification: SmartModeChangedNotification) {
+        let name = Notification.Name.smartModeChanged
         queue.async {
             self.center.post(
-                name: .smartModeChanged,
+                name: name,
                 object: notification,
                 userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
             )
         }
     }
-    
+
     func post(_ notification: PerAppModesChangedNotification) {
+        let name = Notification.Name.perAppModesChanged
         queue.async {
             var userInfo: [String: Any] = ["timestamp": notification.timestamp]
             if let bundleId = notification.bundleId {
@@ -168,49 +172,53 @@ final class TypedNotificationCenter {
             if let enabled = notification.enabled {
                 userInfo["enabled"] = enabled
             }
-            
+
             self.center.post(
-                name: .perAppModesChanged,
+                name: name,
                 object: notification,
                 userInfo: userInfo
             )
         }
     }
-    
+
     func post(_ notification: EscRestoreChangedNotification) {
+        let name = Notification.Name.restoreShortcutChanged
         queue.async {
             self.center.post(
-                name: .restoreShortcutChanged,
+                name: name,
                 object: notification,
                 userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
             )
         }
     }
-    
+
     func post(_ notification: FreeToneChangedNotification) {
+        let name = Notification.Name.freeToneChanged
         queue.async {
             self.center.post(
-                name: .freeToneChanged,
+                name: name,
                 object: notification,
                 userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
             )
         }
     }
-    
+
     func post(_ notification: InstantRestoreChangedNotification) {
+        let name = Notification.Name.instantRestoreChanged
         queue.async {
             self.center.post(
-                name: .instantRestoreChanged,
+                name: name,
                 object: notification,
                 userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
             )
         }
     }
-    
+
     func post(_ notification: TextExpansionEnabledChangedNotification) {
+        let name = Notification.Name.textExpansionEnabledChanged
         queue.async {
             self.center.post(
-                name: .textExpansionEnabledChanged,
+                name: name,
                 object: notification,
                 userInfo: ["enabled": notification.enabled, "timestamp": notification.timestamp]
             )
@@ -221,7 +229,7 @@ final class TypedNotificationCenter {
     
     func subscribe(
         to: InputMethodChangedNotification.Type,
-        handler: @escaping (InputMethodChangedNotification) -> Void
+        handler: @escaping @Sendable (InputMethodChangedNotification) -> Void
     ) -> NSObjectProtocol {
         return center.addObserver(
             forName: .inputMethodChanged,
@@ -236,7 +244,7 @@ final class TypedNotificationCenter {
     
     func subscribe(
         to: ToneStyleChangedNotification.Type,
-        handler: @escaping (ToneStyleChangedNotification) -> Void
+        handler: @escaping @Sendable (ToneStyleChangedNotification) -> Void
     ) -> NSObjectProtocol {
         return center.addObserver(
             forName: .toneStyleChanged,
@@ -251,7 +259,7 @@ final class TypedNotificationCenter {
     
     func subscribe(
         to: SmartModeChangedNotification.Type,
-        handler: @escaping (SmartModeChangedNotification) -> Void
+        handler: @escaping @Sendable (SmartModeChangedNotification) -> Void
     ) -> NSObjectProtocol {
         return center.addObserver(
             forName: .smartModeChanged,
@@ -266,7 +274,7 @@ final class TypedNotificationCenter {
     
     func subscribe(
         to: PerAppModesChangedNotification.Type,
-        handler: @escaping (PerAppModesChangedNotification) -> Void
+        handler: @escaping @Sendable (PerAppModesChangedNotification) -> Void
     ) -> NSObjectProtocol {
         return center.addObserver(
             forName: .perAppModesChanged,

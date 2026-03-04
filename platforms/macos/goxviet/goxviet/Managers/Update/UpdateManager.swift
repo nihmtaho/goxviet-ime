@@ -23,7 +23,7 @@ enum UpdateState: Equatable {
 }
 
 final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchecked Sendable {
-    nonisolated(unsafe) static let shared = UpdateManager()
+    static let shared = UpdateManager()
 
     @Published private(set) var state: UpdateState = .idle {
         didSet {
@@ -64,13 +64,13 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
     @Published private(set) var lastChecked: Date?
     
-    nonisolated(unsafe) private var downloadSession: URLSession?
-    nonisolated(unsafe) private var downloadTask: URLSessionDownloadTask?
-    nonisolated(unsafe) private var downloadingVersion: String?
+    private var downloadSession: URLSession?
+    private var downloadTask: URLSessionDownloadTask?
+    private var downloadingVersion: String?
     private var timer: Timer?
     private(set) var isRunning: Bool = false
-    nonisolated(unsafe) private let defaults = UserDefaults.standard
-    nonisolated(unsafe) private var isUserCancelledDownload: Bool = false
+    private let defaults = UserDefaults.standard
+    private var isUserCancelledDownload: Bool = false
     
     private let autoCheckInterval: TimeInterval = 6 * 60 * 60  // Every 6 hours
     private let autoCheckKey = "com.goxviet.ime.lastUpdateCheck"
@@ -104,7 +104,9 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
             // Create new timer
             let newTimer = Timer.scheduledTimer(withTimeInterval: self.autoCheckInterval, repeats: true) { [weak self] _ in
-                self?.checkForUpdatesSilently()
+                Task { @MainActor [weak self] in
+                    self?.checkForUpdatesSilently()
+                }
             }
             
             ResourceManager.shared.register(timer: newTimer, identifier: "UpdateManager.checkTimer")
@@ -277,7 +279,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
         }
     }
 
-    private func findAppBundle(in mountPoint: URL) -> URL? {
+    nonisolated private func findAppBundle(in mountPoint: URL) -> URL? {
         let enumerator = FileManager.default.enumerator(at: mountPoint, includingPropertiesForKeys: nil)
         while let item = enumerator?.nextObject() as? URL {
             if item.pathExtension.lowercased() == "app" { return item }
@@ -300,13 +302,11 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 #endif
     
     // Kept robust implementation
-    private func relaunchWithNewApp(tempApp: String) {
+    nonisolated private func relaunchWithNewApp(tempApp: String) {
         DispatchQueue.main.async {
             self.state = .installing
+            InputManager.shared.stop()
         }
-        
-        // Stop InputManager explicitly to release resources immediately
-        InputManager.shared.stop()
 
         let destApp = Bundle.main.bundlePath
         let logFile = "/tmp/goxviet_update.log"
@@ -364,7 +364,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
             try debugScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
         } catch {
-            Log.error("Failed to create update script: \(error)")
+            DispatchQueue.main.async { Log.error("Failed to create update script: \(error)") }
             return
         }
         
@@ -374,11 +374,11 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
         task.arguments = ["-c", command]
         try? task.run()
 
-        NSApp.terminate(nil)
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 
     @discardableResult
-    private func runShell(_ command: String) -> (output: String, ok: Bool) {
+    nonisolated private func runShell(_ command: String) -> (output: String, ok: Bool) {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
