@@ -18,8 +18,7 @@ goxviet/
 ├── .vscode/                   # VSCode settings
 ├── .temp/                     # Temporary working files (gitignored)
 ├── core/                      # Rust core engine
-├── docs/                      # Public/user-facing documentation
-├── .docs/                     # Internal/developer documentation
+├── .docs/                     # All documentation (internal + guides)
 ├── platforms/                 # Platform-specific implementations
 │   ├── macos/                 # macOS app (Swift/SwiftUI)
 │   └── windows/               # Windows app (placeholder)
@@ -85,26 +84,13 @@ Contains:
 
 ---
 
-### `docs/`
-**Purpose:** Public/user-facing documentation
-
-- `release-note/` - Version release notes (1.0.1 to 2.0.8)
-- `tasks/` - Completed task documentation
-- `implementation_plans/` - Feature implementation plans
-- `reviews/` - Code review and workflow documents
-- Root markdown files - Getting started guides, architecture docs
-
----
-
 ### `.docs/`
-**Purpose:** Internal/developer documentation
+**Purpose:** All documentation – architecture, guides, and release notes
 
 - `features/core-engine/` - Engine architecture documentation
 - `features/platform/macos/` - macOS platform guides
 - `guides/` - Feature-specific guides (output encoding, text expansion)
 - `templates/` - Pull request templates
-
-**Note:** Hidden directory (dot-prefixed) for internal docs distinct from public `docs/`.
 
 ---
 
@@ -168,8 +154,8 @@ Contains:
 **macOS UI changes:**
 → `platforms/macos/goxviet/goxviet/` (Swift files)
 
-**Documentation (user-facing):**
-→ `docs/` (public) or `.docs/` (internal)
+**Documentation:**
+→ `.docs/` (all docs)
 
 **Build/utility scripts:**
 → `scripts/`

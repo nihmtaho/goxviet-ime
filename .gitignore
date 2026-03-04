@@ -7,11 +7,8 @@
 !.github/workflows/
 !.github/instructions/*.instructions.md
 
-# Documentation & Examples (không track)
-# .github/
-# docs/
-# !docs/release-note/
-example-project/
+docs/
+
 scripts/
 !scripts/calc_hash.py
 bindings/
@@ -134,6 +131,40 @@ logs/
 /.emacs.desktop.lock
 
 # ============================================
+# COMPILED BINARIES & LIBRARIES
+# ============================================
+
+# Static/shared libraries
+*.a
+*.dylib
+*.so
+
+# Object files & intermediate build artifacts
+*.o
+*.out
+a.out
+
+# Compiled test binaries (ad-hoc, not cargo tests)
+platforms/macos/test_*
+core/test_*
+!core/tests/
+
+# ============================================
+# PYTHON CACHE
+# ============================================
+__pycache__/
+*.pyc
+*.pyo
+
+# ============================================
+# DATABASES (runtime/generated)
+# ============================================
+.planning/todos.db
+docs/tasks.db
+core/tests/data/dictionary.db
+core/tests/data/__pycache__/
+
+# ============================================
 # TESTING & BENCHMARKS
 # ============================================
 
@@ -146,6 +177,9 @@ coverage/
 # Performance benchmarks output
 benchmark-results/
 perf-*.txt
+
+# Test failure logs (generated, not source)
+core/tests/failures/
 
 # ============================================
 # DEPENDENCIES & CACHES
