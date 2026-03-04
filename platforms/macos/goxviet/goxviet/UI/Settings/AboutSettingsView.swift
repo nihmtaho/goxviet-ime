@@ -280,29 +280,20 @@ struct AboutSettingsView: View {
                             Spacer()
                             
                             if case .available = updateManager.state {
-                                if #available(macOS 12.0, *) {
-                                    Button {
-                                        updateManager.downloadUpdate()
-                                    } label: {
-                                        Label("Update Now", systemImage: "arrow.down.circle.fill")
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                } else {
-                                    Button {
-                                        updateManager.downloadUpdate()
-                                    } label: {
-                                        Label("Update Now", systemImage: "arrow.down.circle.fill")
-                                    }
-                                    .buttonStyle(.bordered)
+                                Button {
+                                    updateManager.downloadUpdate()
+                                } label: {
+                                    Label("Update Now", systemImage: "arrow.down.circle.fill")
                                 }
+                                .adaptiveGlassProminentButton()
                             } else {
                                 Button {
                                     updateManager.checkForUpdatesManually()
                                 } label: {
-                                    Label(updateManager.isChecking ? "Checking..." : "Check for Updates", 
+                                    Label(updateManager.isChecking ? "Checking..." : "Check for Updates",
                                           systemImage: "arrow.clockwise")
                                 }
-                                .buttonStyle(.bordered)
+                                .adaptiveGlassButton()
                                 .disabled(updateManager.isChecking)
                             }
                         }

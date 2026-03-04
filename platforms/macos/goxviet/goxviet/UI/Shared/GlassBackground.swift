@@ -12,49 +12,60 @@ struct GlassBackground: View {
     var blur: CGFloat = 20
 
     var body: some View {
-        ZStack {
-            // Base color with slight gradient
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(NSColor.windowBackgroundColor).opacity(opacity),
-                    Color(NSColor.windowBackgroundColor).opacity(opacity * 0.9)
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            // Subtle texture overlay
-            Rectangle()
-                .fill(Color.white.opacity(0.02))
-                .blendMode(.overlay)
-        }
-        .modifier(GlassBackgroundMaterial())
-        .cornerRadius(12)
-    }
-}
-
-private struct GlassBackgroundMaterial: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 12.0, *) {
-            content.background(.ultraThinMaterial)
+        if #available(macOS 26, *) {
+            Color.clear.glassEffect(in: .rect(cornerRadius: 12))
         } else {
-            content.background(Color(NSColor.windowBackgroundColor).opacity(0.8))
+            ZStack {
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(NSColor.windowBackgroundColor).opacity(opacity),
+                        Color(NSColor.windowBackgroundColor).opacity(opacity * 0.9)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                Rectangle()
+                    .fill(Color.white.opacity(0.02))
+                    .blendMode(.overlay)
+            }
+            .background(.ultraThinMaterial)
+            .cornerRadius(12)
         }
     }
 }
 
 struct GlassCard: View {
     var body: some View {
-        ZStack {
-            if #available(macOS 12.0, *) {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(NSColor.windowBackgroundColor).opacity(0.8))
-                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
-            }
+        if #available(macOS 26, *) {
+            Color.clear
+                .glassEffect(in: .rect(cornerRadius: 12))
+                .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+        } else {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+        }
+    }
+}
+
+// MARK: - Adaptive Button Style Helpers
+
+extension View {
+    /// Applies `.glass` button style on macOS 26+, falls back to `.bordered`.
+    @ViewBuilder func adaptiveGlassButton() -> some View {
+        if #available(macOS 26, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(.bordered)
+        }
+    }
+
+    /// Applies `.glassProminent` button style on macOS 26+, falls back to `.borderedProminent`.
+    @ViewBuilder func adaptiveGlassProminentButton() -> some View {
+        if #available(macOS 26, *) {
+            self.buttonStyle(.glassProminent)
+        } else {
+            self.buttonStyle(.borderedProminent)
         }
     }
 }

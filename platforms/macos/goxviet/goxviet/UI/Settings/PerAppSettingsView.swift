@@ -70,17 +70,8 @@ struct PerAppSettingsView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // Smart Mode Toggle + info banner
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Per-App Settings")
-                        .font(.system(size: 20, weight: .semibold))
-                    Text("Configure IME behavior for individual applications")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                
-                // Smart Mode Toggle
                 ToggleRow(
                     title: "Smart Mode",
                     description: "Remember IME state per application",

@@ -48,7 +48,7 @@ struct SmartModeIndicator: View {
             // Actions
             actionsSection
         }
-        .frame(width: 280)
+        .frame(width: 260)
         .onAppear {
             loadCurrentApp()
             loadRecentApps()
@@ -199,18 +199,20 @@ struct SmartModeIndicator: View {
     }
     
     private var actionsSection: some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 8) {
             Button("Refresh") {
                 PerAppModeManagerEnhanced.shared.refresh()
                 loadCurrentApp()
                 loadRecentApps()
             }
-            .buttonStyle(.plain)
+            .adaptiveGlassButton()
             
-            Button("Open Settings...") {
+            Spacer()
+            
+            Button("Open Settings…") {
                 NotificationCenter.default.post(name: .openSettings, object: nil)
             }
-            .buttonStyle(.plain)
+            .adaptiveGlassProminentButton()
         }
         .padding()
     }

@@ -27,19 +27,14 @@ struct GeneralSettingsView: View {
     @ObservedObject private var settingsManager = SettingsManager.shared
     @State private var isRecordingRestoreShortcut = false
     
+    // Advanced (merged)
+    @State private var loggingEnabled: Bool = Log.isEnabled
+    @State private var showLegacyEncodingWarning = false
+    @State private var pendingEncoding: OutputEncoding?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Header
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("General Settings")
-                        .font(.system(size: 20, weight: .semibold))
-                    Text("Configure input method and typing behavior")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.bottom, 8)
-                
                 // Input Method Section
                 GroupBox {
                     VStack(spacing: 12) {
@@ -232,7 +227,7 @@ struct GeneralSettingsView: View {
                             Button(isRecordingShortcut ? "Recording..." : "Change") {
                                 isRecordingShortcut = true
                             }
-                            .buttonStyle(.bordered)
+                            .adaptiveGlassButton()
                             .disabled(isRecordingShortcut)
                         }
                         
@@ -307,6 +302,139 @@ struct GeneralSettingsView: View {
                     )
                 }
                 
+                // Output Encoding Section
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Encoding:")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                                .frame(width: 80, alignment: .trailing)
+                            
+                            Picker("", selection: $settingsManager.outputEncoding) {
+                                ForEach(OutputEncoding.allCases, id: \.self) { encoding in
+                                    HStack {
+                                        Text(encoding.displayName)
+                                        if encoding.isLegacy {
+                                            Text("(Legacy)")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        }
+                                    }
+                                    .tag(encoding)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 200)
+                            
+                            Text("(Beta)")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.orange.opacity(0.2)))
+                        }
+                        .onChange(of: settingsManager.outputEncoding) { newValue in
+                            if newValue.isLegacy {
+                                pendingEncoding = newValue
+                                showLegacyEncodingWarning = true
+                            }
+                        }
+                        
+                        if settingsManager.outputEncoding.isLegacy {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                    .font(.system(size: 12))
+                                Text("Legacy encoding selected — use Unicode for modern apps.")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(8)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Output Encoding", systemImage: "doc.plaintext")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                
+                // Logging Section
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Application Logs")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Enable logging for debugging")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $loggingEnabled)
+                                .toggleStyle(.switch)
+                                .onChange(of: loggingEnabled) { newValue in
+                                    if newValue {
+                                        Log.enableLogging(reason: "User enabled in Settings")
+                                    } else {
+                                        Log.disableLogging(reason: "User disabled in Settings")
+                                    }
+                                }
+                        }
+                        
+                        Divider()
+                        
+                        HStack {
+                            Button {
+                                if FileManager.default.fileExists(atPath: Log.logPath.path) {
+                                    NSWorkspace.shared.open(Log.logPath)
+                                }
+                            } label: {
+                                Label("Open Log File", systemImage: "doc.text.magnifyingglass")
+                            }
+                            .adaptiveGlassButton()
+                            
+                            Spacer()
+                            
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString("~/Library/Logs/GoxViet/", forType: .string)
+                            } label: {
+                                Label("Copy Path", systemImage: "doc.on.doc")
+                            }
+                            .adaptiveGlassButton()
+                            
+                            Button {
+                                Log.clearLogs()
+                            } label: {
+                                Label("Clear Logs", systemImage: "trash")
+                            }
+                            .adaptiveGlassButton()
+                            .foregroundColor(.red)
+                        }
+                        
+                        HStack {
+                            Image(systemName: loggingEnabled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(loggingEnabled ? .green : .secondary)
+                            Text(loggingEnabled ? "Logging enabled" : "Logging disabled")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if loggingEnabled {
+                                Text("May impact performance")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Logging", systemImage: "doc.text")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                
                 // Quick Actions
                 GroupBox {
                     HStack(spacing: 12) {
@@ -315,7 +443,7 @@ struct GeneralSettingsView: View {
                         } label: {
                             Label("Reset to Defaults", systemImage: "arrow.counterclockwise")
                         }
-                        .buttonStyle(.bordered)
+                        .adaptiveGlassButton()
                         .alert(isPresented: $showResetConfirmation) {
                             Alert(
                                 title: Text("Reset Settings"),
@@ -332,7 +460,7 @@ struct GeneralSettingsView: View {
                         } label: {
                             Label("Import/Export", systemImage: "square.and.arrow.up")
                         }
-                        .buttonStyle(.bordered)
+                        .adaptiveGlassButton()
                         .sheet(isPresented: $showImportExport) {
                             ImportExportView()
                         }
@@ -353,6 +481,12 @@ struct GeneralSettingsView: View {
             showResetConfirmation = false
             showImportExport = false
             isRecordingShortcut = false
+            showLegacyEncodingWarning = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("com.goxviet.loggingStateChanged"))) { notification in
+            if let enabled = notification.object as? Bool {
+                loggingEnabled = enabled
+            }
         }
     }
     

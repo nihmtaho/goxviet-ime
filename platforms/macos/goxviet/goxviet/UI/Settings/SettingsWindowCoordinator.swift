@@ -47,15 +47,6 @@ struct SettingsWindowCoordinator: View {
             }
             .tag(2)
             
-            // Advanced Tab - Lazy load
-            LazyView {
-                AdvancedSettingsTab()
-            }
-            .tabItem {
-                Label("Advanced", systemImage: "slider.horizontal.3")
-            }
-            .tag(3)
-            
             // About Tab - Lazy load
             LazyView {
                 AboutSettingsTab()
@@ -63,9 +54,9 @@ struct SettingsWindowCoordinator: View {
             .tabItem {
                 Label("About", systemImage: "info.circle")
             }
-            .tag(4)
+            .tag(3)
         }
-        .frame(minWidth: 900, minHeight: 540)
+        .frame(minWidth: 680, minHeight: 540)
         .onAppear {
             loadPerAppModes()
             syncSettingsToLegacy()
@@ -187,21 +178,7 @@ struct TextExpansionSettingsTab: View {
 
 struct AdvancedSettingsTab: View {
     var body: some View {
-        AdvancedSettingsView(
-            openLogAction: openLog
-        )
-        .environmentObject(SettingsManager.shared)
-        .tabItem {
-            Label("Advanced", systemImage: "slider.horizontal.3")
-        }
-    }
-    
-    private func openLog() {
-        if FileManager.default.fileExists(atPath: Log.logPath.path) {
-            NSWorkspace.shared.open(Log.logPath)
-        } else {
-            Log.error("Log file not found at: \(Log.logPath.path)")
-        }
+        EmptyView()
     }
 }
 

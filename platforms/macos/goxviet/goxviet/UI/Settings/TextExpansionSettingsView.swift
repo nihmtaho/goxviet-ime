@@ -50,7 +50,6 @@ struct TextExpansionSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                headerView
                 enableToggleSection
                 toolbarSection
                 shortcutsListSection
