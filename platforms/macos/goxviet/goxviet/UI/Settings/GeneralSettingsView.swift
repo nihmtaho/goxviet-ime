@@ -34,168 +34,10 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Input Method Section
+            VStack(alignment: .leading, spacing: 14) {
+                // Keyboard Shortcut Section (first — primary action)
                 GroupBox {
-                    VStack(spacing: 12) {
-                        PickerRow(
-                            title: "Input Method",
-                            description: "Choose between Telex or VNI typing method",
-                            systemImage: "keyboard",
-                            selection: $inputMethod,
-                            options: [(0, "Telex"), (1, "VNI")]
-                        )
-                        // SettingsManager handles notification and sync
-                        
-                        Divider()
-                        
-                        // Input Method Preview
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Preview")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                
-                                if inputMethod == 0 {
-                                    Text("viet = việt, hoa = hòa")
-                                        .font(.system(size: 13, design: .monospaced))
-                                } else {
-                                    Text("vie65t = việt, hoa2 = hòa")
-                                        .font(.system(size: 13, design: .monospaced))
-                                }
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color(NSColor.textBackgroundColor))
-                        )
-                    }
-                    .padding(8)
-                } label: {
-                    Label("Input Method", systemImage: "keyboard.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                
-                // Tone Settings Section
-                GroupBox {
-                    VStack(spacing: 12) {
-                        ToggleRow(
-                            title: "Modern Tone Placement",
-                            description: "Use modern tone placement rules (hoà vs hòa)",
-                            systemImage: "doc.text.magnifyingglass",
-                            isOn: $modernToneStyle
-                        )
-                        // SettingsManager handles notification and sync
-                        
-                        Divider()
-                        
-                        ToggleRow(
-                            title: "Free Tone Marking",
-                            description: "Allow tone marks on any character",
-                            systemImage: "textformat",
-                            isOn: $freeToneEnabled
-                        )
-                        // SettingsManager handles notification and sync
-                    }
-                    .padding(8)
-                } label: {
-                    Label("Tone Settings", systemImage: "textformat.alt")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                
-                // Restore Settings Section
-                GroupBox {
-                    VStack(spacing: 12) {
-                        ToggleRow(
-                            title: "Instant Auto-Restore",
-                            description: "Automatically restore English words",
-                            systemImage: "arrow.clockwise",
-                            isOn: $instantRestoreEnabled
-                        )
-                        
-                        Divider()
-                        
-                        ToggleRowCustomTitle(
-                            title: {
-                                HStack(spacing: 4) {
-                                    Text("Shift+Backspace Delete Word")
-                                    Text("(Beta)")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(.orange)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill(Color.orange.opacity(0.2)))
-                                }
-                            },
-                            description: "Quickly delete entire word with Shift+Backspace",
-                            systemImage: "delete.left.fill",
-                            isOn: $shiftBackspaceEnabled
-                        )
-                    }
-                    .padding(8)
-                } label: {
-                    Label("Auto-Restore", systemImage: "arrow.counterclockwise")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                
-                // Smart Features Section
-                GroupBox {
-                    VStack(spacing: 12) {
-                        ToggleRow(
-                            title: "Auto-Disable for Non-Latin Apps",
-                            description: "Automatically disable IME for apps using non-Latin scripts",
-                            systemImage: "globe",
-                            isOn: $autoDisableForNonLatin
-                        )
-                        
-                        Divider()
-                        
-                        // Restore Shortcut
-                        VStack(spacing: 8) {
-                            HStack {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "arrow.uturn.backward")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.accentColor)
-                                        .frame(width: 20)
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Restore to Raw Input")
-                                            .font(.system(size: 13, weight: .medium))
-                                        Text("Shortcut to restore Vietnamese text back to raw keystrokes")
-                                            .font(.system(size: 11))
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                Toggle("", isOn: $restoreShortcutEnabled)
-                                    .toggleStyle(.switch)
-                                    .labelsHidden()
-                            }
-                            
-                            if restoreShortcutEnabled {
-                                RestoreShortcutRecorderRow(
-                                    shortcut: $settingsManager.restoreShortcut,
-                                    isRecording: $isRecordingRestoreShortcut
-                                )
-                                .padding(.leading, 28)
-                            }
-                        }
-                    }
-                    .padding(8)
-                } label: {
-                    Label("Smart Features", systemImage: "sparkles")
-                        .font(.system(size: 14, weight: .semibold))
-                }
-                
-                // Keyboard Shortcut Section
-                GroupBox {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 6) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Toggle Vietnamese Input")
@@ -204,9 +46,9 @@ struct GeneralSettingsView: View {
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }
-                            
+
                             Spacer()
-                            
+
                             // Display current shortcut
                             HStack(spacing: 4) {
                                 ForEach(currentShortcut.displayParts, id: \.self) { part in
@@ -223,14 +65,14 @@ struct GeneralSettingsView: View {
                                 }
                             }
                             .padding(.trailing, 8)
-                            
+
                             Button(isRecordingShortcut ? "Recording..." : "Change") {
                                 isRecordingShortcut = true
                             }
                             .adaptiveGlassButton()
                             .disabled(isRecordingShortcut)
                         }
-                        
+
                         // Conflict warning (if any)
                         if let conflict = currentShortcut.conflictInfo {
                             HStack(alignment: .top, spacing: 8) {
@@ -252,15 +94,15 @@ struct GeneralSettingsView: View {
                             .background(Color.orange.opacity(0.1))
                             .cornerRadius(6)
                         }
-                        
+
                         Divider()
-                        
+
                         // Preset shortcuts
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Quick Presets")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.secondary)
-                            
+
                             HStack(spacing: 8) {
                                 ForEach(Array(KeyboardShortcut.presets.enumerated()), id: \.offset) { idx, preset in
                                     Button {
@@ -301,7 +143,163 @@ struct GeneralSettingsView: View {
                         }
                     )
                 }
-                
+
+                // Input Method Section
+                GroupBox {
+                    VStack(spacing: 6) {
+                        PickerRow(
+                            title: "Input Method",
+                            description: "Choose between Telex or VNI typing method",
+                            systemImage: "keyboard",
+                            selection: $inputMethod,
+                            options: [(0, "Telex"), (1, "VNI")]
+                        )
+
+                        Divider()
+
+                        // Input Method Preview
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Preview")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+
+                                if inputMethod == 0 {
+                                    Text("viet = việt, hoa = hòa")
+                                        .font(.system(size: 13, design: .monospaced))
+                                } else {
+                                    Text("vie65t = việt, hoa2 = hòa")
+                                        .font(.system(size: 13, design: .monospaced))
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color(NSColor.textBackgroundColor))
+                        )
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Input Method", systemImage: "keyboard.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                // Tone Settings Section
+                GroupBox {
+                    VStack(spacing: 6) {
+                        ToggleRow(
+                            title: "Modern Tone Placement",
+                            description: "Use modern tone placement rules (hoà vs hòa)",
+                            systemImage: "doc.text.magnifyingglass",
+                            isOn: $modernToneStyle
+                        )
+
+                        Divider()
+
+                        ToggleRow(
+                            title: "Free Tone Marking",
+                            description: "Allow tone marks on any character",
+                            systemImage: "textformat",
+                            isOn: $freeToneEnabled
+                        )
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Tone Settings", systemImage: "textformat.alt")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                // Smart Features Section (includes Instant Auto-Restore)
+                GroupBox {
+                    VStack(spacing: 6) {
+                        ToggleRow(
+                            title: "Instant Auto-Restore",
+                            description: "Automatically restore English words",
+                            systemImage: "arrow.clockwise",
+                            isOn: $instantRestoreEnabled
+                        )
+
+                        Divider()
+
+                        ToggleRow(
+                            title: "Auto-Disable for Non-Latin Apps",
+                            description: "Automatically disable IME for apps using non-Latin scripts",
+                            systemImage: "globe",
+                            isOn: $autoDisableForNonLatin
+                        )
+
+                        Divider()
+
+                        // Restore Shortcut
+                        VStack(spacing: 8) {
+                            HStack {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.uturn.backward")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.accentColor)
+                                        .frame(width: 20)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Restore to Raw Input")
+                                            .font(.system(size: 13, weight: .medium))
+                                        Text("Shortcut to restore Vietnamese text back to raw keystrokes")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Toggle("", isOn: $restoreShortcutEnabled)
+                                    .toggleStyle(.switch)
+                                    .labelsHidden()
+                                    .controlSize(.small)
+                            }
+
+                            if restoreShortcutEnabled {
+                                RestoreShortcutRecorderRow(
+                                    shortcut: $settingsManager.restoreShortcut,
+                                    isRecording: $isRecordingRestoreShortcut
+                                )
+                                .padding(.leading, 28)
+                            }
+                        }
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Smart Features", systemImage: "sparkles")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                // Editing Section (keyboard editing shortcuts)
+                GroupBox {
+                    VStack(spacing: 6) {
+                        ToggleRowCustomTitle(
+                            title: {
+                                HStack(spacing: 4) {
+                                    Text("Shift+Backspace Delete Word")
+                                    Text("(Beta)")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(Color.orange.opacity(0.2)))
+                                }
+                            },
+                            description: "Quickly delete entire word with Shift+Backspace",
+                            systemImage: "delete.left.fill",
+                            isOn: $shiftBackspaceEnabled
+                        )
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Editing", systemImage: "pencil.and.outline")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
                 // Output Encoding Section
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
@@ -310,7 +308,7 @@ struct GeneralSettingsView: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                                 .frame(width: 80, alignment: .trailing)
-                            
+
                             Picker("", selection: $settingsManager.outputEncoding) {
                                 ForEach(OutputEncoding.allCases, id: \.self) { encoding in
                                     HStack {
@@ -326,7 +324,7 @@ struct GeneralSettingsView: View {
                             }
                             .pickerStyle(.menu)
                             .frame(width: 200)
-                            
+
                             Text("(Beta)")
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundColor(.orange)
@@ -334,13 +332,13 @@ struct GeneralSettingsView: View {
                                 .padding(.vertical, 2)
                                 .background(Capsule().fill(Color.orange.opacity(0.2)))
                         }
-                        .onChange(of: settingsManager.outputEncoding) { newValue in
+                        .onChange(of: settingsManager.outputEncoding) { _, newValue in
                             if newValue.isLegacy {
                                 pendingEncoding = newValue
                                 showLegacyEncodingWarning = true
                             }
                         }
-                        
+
                         if settingsManager.outputEncoding.isLegacy {
                             HStack(spacing: 8) {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -360,10 +358,10 @@ struct GeneralSettingsView: View {
                     Label("Output Encoding", systemImage: "doc.plaintext")
                         .font(.system(size: 14, weight: .semibold))
                 }
-                
+
                 // Logging Section
                 GroupBox {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 6) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Application Logs")
@@ -375,7 +373,9 @@ struct GeneralSettingsView: View {
                             Spacer()
                             Toggle("", isOn: $loggingEnabled)
                                 .toggleStyle(.switch)
-                                .onChange(of: loggingEnabled) { newValue in
+                                .labelsHidden()
+                                .controlSize(.small)
+                                .onChange(of: loggingEnabled) { _, newValue in
                                     if newValue {
                                         Log.enableLogging(reason: "User enabled in Settings")
                                     } else {
@@ -383,9 +383,9 @@ struct GeneralSettingsView: View {
                                     }
                                 }
                         }
-                        
+
                         Divider()
-                        
+
                         HStack {
                             Button {
                                 if FileManager.default.fileExists(atPath: Log.logPath.path) {
@@ -395,9 +395,9 @@ struct GeneralSettingsView: View {
                                 Label("Open Log File", systemImage: "doc.text.magnifyingglass")
                             }
                             .adaptiveGlassButton()
-                            
+
                             Spacer()
-                            
+
                             Button {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString("~/Library/Logs/GoxViet/", forType: .string)
@@ -405,7 +405,7 @@ struct GeneralSettingsView: View {
                                 Label("Copy Path", systemImage: "doc.on.doc")
                             }
                             .adaptiveGlassButton()
-                            
+
                             Button {
                                 Log.clearLogs()
                             } label: {
@@ -414,7 +414,7 @@ struct GeneralSettingsView: View {
                             .adaptiveGlassButton()
                             .foregroundColor(.red)
                         }
-                        
+
                         HStack {
                             Image(systemName: loggingEnabled ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .foregroundColor(loggingEnabled ? .green : .secondary)
@@ -434,7 +434,7 @@ struct GeneralSettingsView: View {
                     Label("Logging", systemImage: "doc.text")
                         .font(.system(size: 14, weight: .semibold))
                 }
-                
+
                 // Quick Actions
                 GroupBox {
                     HStack(spacing: 12) {
@@ -452,9 +452,9 @@ struct GeneralSettingsView: View {
                                 secondaryButton: .cancel(Text("Cancel"))
                             )
                         }
-                        
+
                         Spacer()
-                        
+
                         Button {
                             showImportExport = true
                         } label: {
@@ -470,10 +470,10 @@ struct GeneralSettingsView: View {
                     Label("Quick Actions", systemImage: "bolt")
                         .font(.system(size: 14, weight: .semibold))
                 }
-                
+
                 Spacer()
             }
-            .padding(24)
+            .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onDisappear {
