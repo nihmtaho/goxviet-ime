@@ -194,6 +194,27 @@ pub fn apply_mark(buf: &mut Buffer, mark_value: u8, _modern: bool) -> TransformR
         return TransformResult::none();
     }
 
+    // Validate vowel cluster against NA groups before applying tone mark.
+    // Build vowel cluster string with diacritics (ă, â, ô, ơ, ư) but without tone marks.
+    // Modifier as u8 matches tone::NONE/CIRCUMFLEX/HORN constants (0/1/2).
+    {
+        use crate::data::chars as char_data;
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        let vowel_cluster: String = vowels
+            .iter()
+            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+            .collect();
+        // Only reject definitively invalid clusters: 'y' followed by a non-'ê' vowel.
+        // e.g. "ya", "yo" are not valid Vietnamese nuclei. Do NOT reject "ie" which is a
+        // valid intermediate state that normalizes to "iê" when a coda consonant follows.
+        let has_invalid_y_prefix = vowel_cluster.len() > 1
+            && vowel_cluster.starts_with('y')
+            && !vowel_cluster.starts_with("yê");
+        if has_invalid_y_prefix {
+            return TransformResult::none();
+        }
+    }
+
     // Find position using phonology rules
     // Note: We still use Phonology for complex cases (qu/gi initial, modern/traditional)
     // but tone_positioning handles the core diacritic priority logic

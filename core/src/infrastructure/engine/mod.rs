@@ -2240,6 +2240,23 @@ impl Engine {
             return None;
         }
 
+        // Reject tone mark when vowel cluster starts with 'y' followed by a non-'ê' vowel.
+        // "ya", "yo", etc. are definitively invalid Vietnamese nuclei.
+        // Single vowels and other clusters (e.g. "ie" intermediate state) are allowed.
+        {
+            use crate::data::chars as char_data;
+            let vowel_cluster: String = vowels
+                .iter()
+                .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+                .collect();
+            let has_invalid_y_prefix = vowel_cluster.len() > 1
+                && vowel_cluster.starts_with('y')
+                && !vowel_cluster.starts_with("yê");
+            if has_invalid_y_prefix {
+                return None;
+            }
+        }
+
         // Find mark position using phonology rules
         let last_vowel_pos = vowels.last().map(|v| v.pos).unwrap_or(0);
         let has_final = self.has_final_consonant(last_vowel_pos);
@@ -2668,6 +2685,14 @@ impl Engine {
                             }
                         }
                     }
+                }
+            }
+
+            // Check NA-PAC compatibility before adding a consonant that would extend the coda.
+            // Example: "hoặc" + 'h' → proposed coda "ch", NA.3 (oă) + PAC.0 (ch) → invalid → restore.
+            if keys::is_consonant(key) {
+                if let Some(restore) = self.check_coda_extension_validity(key) {
+                    return restore;
                 }
             }
 
@@ -3334,6 +3359,70 @@ impl Engine {
         let layer1_invalid_initials = (phonotactic.matched_layers & 1) != 0;
 
         phonotactic.english_confidence >= 98 || layer1_invalid_initials
+    }
+
+    /// Instant restore to raw ASCII including the newly-typed char (no trailing space).
+    ///
+    /// Used when a new consonant would form an invalid NA-PAC combination.
+    /// At this point `raw_input` already contains the new key (pushed before `process()`).
+    fn instant_restore_to_raw_with_char(&mut self) -> Result {
+        let backspace = self.buf.len().min(self.raw_input.len()).min(u8::MAX as usize) as u8;
+        let output: Vec<char> = self
+            .raw_input
+            .iter()
+            .filter_map(|(k, c)| crate::utils::key_to_char(k, c))
+            .collect();
+        self.buf.clear();
+        self.sync_buffer_with_raw_input();
+        self.last_transform = None;
+        self.is_english_word = true;
+        Result::send(backspace, &output)
+    }
+
+    /// Check if adding `new_key` as a coda consonant would create an invalid NA-PAC combination.
+    ///
+    /// Only fires when: the buffer already has Vietnamese transforms, the last buffer character
+    /// is a consonant (extending an existing coda), and the proposed 2-char coda is a Vietnamese
+    /// digraph (ch, ng, nh). Returns `Some(Result)` with an instant restore if invalid.
+    fn check_coda_extension_validity(&mut self, new_key: u16) -> Option<Result> {
+        if !self.has_vietnamese_transforms() {
+            return None;
+        }
+
+        // Only check when last char is a consonant (extending existing coda)
+        let last = self.buf.last()?;
+        if keys::is_vowel(last.key) {
+            return None;
+        }
+
+        // Build proposed 2-char coda: existing final consonant + new key
+        let last_char = crate::utils::key_to_char(last.key, false)?;
+        let new_char = crate::utils::key_to_char(new_key, false)?;
+        let proposed_coda = format!("{}{}", last_char, new_char);
+
+        // Only validate digraph codas (ch, ng, nh); single-char additions are checked elsewhere
+        if !matches!(proposed_coda.as_str(), "ch" | "ng" | "nh") {
+            return None;
+        }
+
+        // Build vowel cluster string with diacritics, without tone marks
+        use crate::data::chars as char_data;
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        let vowels = crate::utils::collect_vowels(&self.buf);
+        if vowels.is_empty() {
+            return None;
+        }
+        let vowel_cluster: String = vowels
+            .iter()
+            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+            .collect();
+
+        if !syllable_structure_validator::is_valid_na_pac_combo(&vowel_cluster, &proposed_coda) {
+            let result = self.instant_restore_to_raw_with_char();
+            return Some(result);
+        }
+
+        None
     }
 
     /// Instant restore to raw ASCII (no trailing space)

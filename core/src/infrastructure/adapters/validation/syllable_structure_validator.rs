@@ -124,6 +124,27 @@ fn find_pac_group(final_c: &str) -> Option<u8> {
     None
 }
 
+// ── Public helpers for use in transformation pipeline ────────────────────────
+
+/// Check if a vowel cluster string is a valid Vietnamese vowel nucleus (belongs to any NA group).
+pub fn is_valid_vowel_cluster(vowel_str: &str) -> bool {
+    find_na_group(vowel_str).is_some()
+}
+
+/// Check if vowel cluster + coda combination is phonotactically valid (NA-PAC compatibility).
+pub fn is_valid_na_pac_combo(vowel_str: &str, coda_str: &str) -> bool {
+    let na_group = match find_na_group(vowel_str) {
+        Some(g) => g,
+        None => return false,
+    };
+    let pac_group = match find_pac_group(coda_str) {
+        Some(g) => g,
+        None => return false,
+    };
+    let allowed = NA_PAC_COMPAT[na_group as usize];
+    !allowed.is_empty() && allowed.contains(&pac_group)
+}
+
 // ── Validator ────────────────────────────────────────────────────────────────
 
 /// PAD/NA/PAC syllable structure validator
