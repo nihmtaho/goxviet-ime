@@ -671,10 +671,11 @@ impl Engine {
             && keys::is_letter(key)
             && !_is_modifier
         {
-            // LAYER 0: Words starting with F, J, Z are ALWAYS English
+            // LAYER 0: Words starting with F, J, W, Z are ALWAYS English
+            // W is never a Vietnamese initial consonant (only used as Telex modifier)
             if self.raw_input.len() == 1 {
                 let first_key = self.raw_input.iter().next().map(|(k, _)| k).unwrap_or(0);
-                if matches!(first_key, keys::F | keys::J | keys::Z) {
+                if matches!(first_key, keys::F | keys::J | keys::W | keys::Z) {
                     self.is_english_word = true;
                     return self.handle_normal_letter(key, caps, shift);
                 }
@@ -931,6 +932,18 @@ impl Engine {
                     }
                     return result;
                 }
+            }
+        }
+
+        // LAYER 0 MODIFIER GUARD: Words starting with F, J, W, or Z are definitively English.
+        // None of these are valid Vietnamese initial consonants, so the entire word is English.
+        // Modifier keys (w=horn, f=huyền, j=nặng, s=sắc, etc.) bypass the English detection
+        // block above because that block requires `!_is_modifier`. Without this guard,
+        // "jow" → "jơ" (horn on 'o') and "window" → "windơ" instead of staying as typed.
+        if (self.method == 0 || self.method == 1) && !self.raw_input.is_empty() {
+            let first_key = self.raw_input.iter().next().map(|(k, _)| k).unwrap_or(0);
+            if matches!(first_key, keys::F | keys::J | keys::W | keys::Z) {
+                return self.handle_normal_letter(key, caps, shift);
             }
         }
 

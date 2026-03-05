@@ -4,8 +4,9 @@
 //! - Sub-A: Horn/Breve skips glide vowels ("hoacwj" → "hoặc")
 //! - Sub-B: Tone mark validates vowel cluster ("yas" → "yas", not "yá")
 //! - Sub-C: NA-PAC compatibility check on coda extension ("hoawjch" → raw "hoawjch")
+//! - Sub-D: NA-PAC unknown cluster regression (gi+ă, qu+ă, êô combos must NOT restore)
 
-use goxviet_core::utils::telex;
+use goxviet_core::utils::{telex, vni};
 
 // ── Sub-B: Tone mark + invalid vowel cluster ──────────────────────────────────
 
@@ -61,4 +62,57 @@ fn test_hoach_still_valid() {
     // "hoac" + 'h': "oa" is NA.1 which allows PAC.0 (ch) → "hoach" stays as typed
     // (no Vietnamese transforms applied before 'h', so no NA-PAC check triggers)
     telex(&[("hoach", "hoach")]);
+}
+
+// ── Sub-D: Unknown vowel cluster regression ───────────────────────────────────
+// gi+ă, qu+ă, and multi-vowel sequences (êô) are not in the NA phonotactic model
+// but are valid Vietnamese syllables — they must NOT trigger the coda-restore.
+
+#[test]
+fn test_giawng_not_restored() {
+    // gi (initial) + ă (breve a) + ng: vowel cluster "iă" is unknown to NA model
+    // → must allow through (not restore to raw)
+    telex(&[("giawng", "giăng")]);
+}
+
+#[test]
+fn test_giuwong_not_restored() {
+    // gi (initial) + ươ + ng: vowel cluster is unknown to NA model → allow through
+    telex(&[("giuwong", "giương")]);
+}
+
+#[test]
+fn test_giawngf_tone_correct() {
+    // gi + ă + ng + huyền: tone mark should land on ă (diacritic priority, Rule 1)
+    telex(&[("giawngf", "giằng")]);
+}
+
+#[test]
+fn test_quawng_not_restored() {
+    // qu (initial) + ă + ng: vowel cluster "uă" unknown to NA model → allow through
+    telex(&[("quawng", "quăng")]);
+}
+
+#[test]
+fn test_neeoong_not_restored() {
+    // nê + ô + ng: multi-circumflex vowel cluster "êô" unknown to NA model → allow through
+    telex(&[("neeoong", "nêông")]);
+}
+
+#[test]
+fn test_gia8ng_vni_not_restored() {
+    // VNI: gi + ă (a8) + ng → giăng
+    vni(&[("gia8ng", "giăng")]);
+}
+
+#[test]
+fn test_qua8ng_vni_not_restored() {
+    // VNI: qu + ă (a8) + ng → quăng
+    vni(&[("qua8ng", "quăng")]);
+}
+
+#[test]
+fn test_ne6o6ng_vni_not_restored() {
+    // VNI: nê (e6) + ô (o6) + ng → nêông
+    vni(&[("ne6o6ng", "nêông")]);
 }

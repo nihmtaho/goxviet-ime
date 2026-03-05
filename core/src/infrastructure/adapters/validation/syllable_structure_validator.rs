@@ -132,10 +132,14 @@ pub fn is_valid_vowel_cluster(vowel_str: &str) -> bool {
 }
 
 /// Check if vowel cluster + coda combination is phonotactically valid (NA-PAC compatibility).
+///
+/// Returns `true` (allow) when the vowel cluster is not found in any NA group. Unknown clusters
+/// arise from complex initial consonants (gi+ă, qu+ă) or loanword vowel sequences (êô) where
+/// the NA model doesn't apply — these should pass through, not be rejected.
 pub fn is_valid_na_pac_combo(vowel_str: &str, coda_str: &str) -> bool {
     let na_group = match find_na_group(vowel_str) {
         Some(g) => g,
-        None => return false,
+        None => return true, // Unknown cluster: allow through (not a known phonotactic violation)
     };
     let pac_group = match find_pac_group(coda_str) {
         Some(g) => g,
