@@ -169,19 +169,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Poll every 1 second to check if permission was granted
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
             let accessEnabled = AXIsProcessTrusted()
             if accessEnabled {
-                Log.info("Accessibility permission detected via auto-polling")
-                ResourceManager.shared.unregister(timerIdentifier: "AppDelegate.accessibilityPollTimer")
-                self.accessibilityPollTimer = nil
-                
-                // If modal is active, just set the flag - don't try to manipulate UI
-                if self.isModalAlertActive {
-                    self.permissionGrantedWhileModalActive = true
-                    Log.info("Permission granted while modal active - will handle after modal closes")
-                } else {
-                    self.onAccessibilityGranted()
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    Log.info("Accessibility permission detected via auto-polling")
+                    ResourceManager.shared.unregister(timerIdentifier: "AppDelegate.accessibilityPollTimer")
+                    self.accessibilityPollTimer = nil
+
+                    // If modal is active, just set the flag - don't try to manipulate UI
+                    if self.isModalAlertActive {
+                        self.permissionGrantedWhileModalActive = true
+                        Log.info("Permission granted while modal active - will handle after modal closes")
+                    } else {
+                        self.onAccessibilityGranted()
+                    }
                 }
             }
         }
@@ -470,10 +472,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self else { return }
-            // Restore Dock policy whenever any window closes; we will check if a Settings window remains.
-            self.restoreDockPolicyIfNoSettingsWindow()
-            ResourceManager.shared.unregister(observerIdentifier: ObserverKey.settingsClose, center: self.notificationCenter)
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // Restore Dock policy whenever any window closes; we will check if a Settings window remains.
+                self.restoreDockPolicyIfNoSettingsWindow()
+                ResourceManager.shared.unregister(observerIdentifier: ObserverKey.settingsClose, center: self.notificationCenter)
+            }
         }
 
         ResourceManager.shared.register(observer: observer, identifier: ObserverKey.settingsClose, center: notificationCenter)
@@ -512,7 +516,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if notification.object as? Bool != nil {
+            guard notification.object as? Bool != nil else { return }
+            Task { @MainActor [weak self] in
                 self?.updateStatusIcon()
                 self?.updateMenuStates()
             }
@@ -525,7 +530,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if notification.object as? Bool != nil {
+            guard notification.object as? Bool != nil else { return }
+            Task { @MainActor [weak self] in
                 self?.updateStatusIcon()
                 self?.updateMenuStates()
             }
@@ -538,8 +544,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { _ in
-            // Shortcut display is only in Settings, no menu update needed
-            Log.info("Shortcut changed")
+            Task { @MainActor in
+                // Shortcut display is only in Settings, no menu update needed
+                Log.info("Shortcut changed")
+            }
         }
         ResourceManager.shared.register(observer: shortcutToken, identifier: ObserverKey.shortcutChanged, center: notificationCenter)
 
@@ -549,7 +557,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateMenuStates()
+            Task { @MainActor [weak self] in
+                self?.updateMenuStates()
+            }
         }
         ResourceManager.shared.register(observer: inputMethodToken, identifier: ObserverKey.inputMethod, center: notificationCenter)
         
@@ -559,7 +569,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.checkPermissionOnActivate()
+            Task { @MainActor [weak self] in
+                self?.checkPermissionOnActivate()
+            }
         }
         ResourceManager.shared.register(observer: activateToken, identifier: ObserverKey.appActivation, center: notificationCenter)
         
@@ -569,7 +581,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleSettingsWindowCleanup()
+            Task { @MainActor [weak self] in
+                self?.handleSettingsWindowCleanup()
+            }
         }
         ResourceManager.shared.register(observer: cleanupToken, identifier: ObserverKey.settingsCleanup, center: notificationCenter)
 
@@ -579,11 +593,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            Log.warning("Accessibility permission revoked — prompting user to re-grant")
-            // Mark as post-update so the alert message instructs toggle OFF/ON
-            self.isPostUpdateLaunch = true
-            self.checkAccessibilityPermission()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                Log.warning("Accessibility permission revoked — prompting user to re-grant")
+                // Mark as post-update so the alert message instructs toggle OFF/ON
+                self.isPostUpdateLaunch = true
+                self.checkAccessibilityPermission()
+            }
         }
         ResourceManager.shared.register(observer: revokedToken, identifier: ObserverKey.accessibilityRevoked, center: notificationCenter)
 
@@ -726,19 +742,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        Log.info("Application requesting termination...")
-        
-        // Check if we should allow termination
-        // Ensure all critical operations are complete
-        let shouldTerminate = true
-        
-        if shouldTerminate {
-            Log.info("Termination approved")
-            return .terminateNow
-        } else {
-            Log.info("Termination delayed - operations in progress")
-            return .terminateLater
-        }
+        Log.info("Termination approved")
+        return .terminateNow
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {

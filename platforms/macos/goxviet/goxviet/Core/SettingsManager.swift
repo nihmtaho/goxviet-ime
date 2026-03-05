@@ -15,7 +15,7 @@ final class SettingsManager: ObservableObject {
     
     // MARK: - Singleton
     
-    nonisolated(unsafe) static let shared = SettingsManager()
+    static let shared = SettingsManager()
     
     // MARK: - Published Settings
     
@@ -319,15 +319,13 @@ final class SettingsManager: ObservableObject {
         setEnabledDebounceWork?.cancel()
         
         // Create new debounced notification (50ms delay)
-        let work = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            
+        let work = DispatchWorkItem {
             // Post notification for UI update
             NotificationCenter.default.post(
                 name: .updateStateChanged,
                 object: enabled
             )
-            
+
             Log.info("Gõ Việt input: \(enabled ? "enabled" : "disabled")")
         }
         
@@ -519,6 +517,7 @@ final class SettingsManager: ObservableObject {
     // MARK: - Shortcuts Management
     
     /// Add a new shortcut
+    @discardableResult
     func addShortcut(trigger: String, replacement: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -539,6 +538,7 @@ final class SettingsManager: ObservableObject {
     }
     
     /// Update an existing shortcut
+    @discardableResult
     func updateShortcut(oldTrigger: String, newTrigger: String, replacement: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }

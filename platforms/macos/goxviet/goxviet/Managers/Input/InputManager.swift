@@ -280,10 +280,13 @@ class InputManager: LifecycleManaged {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if let enabled = notification.object as? Bool {
-                self?.setEnabled(enabled)
-            } else {
-                self?.toggleEnabled()
+            let enabled = notification.object as? Bool
+            Task { @MainActor [weak self] in
+                if let enabled = enabled {
+                    self?.setEnabled(enabled)
+                } else {
+                    self?.toggleEnabled()
+                }
             }
         }
         ResourceManager.shared.register(observer: toggleObserver, identifier: "InputManager.toggleObserver")
@@ -293,18 +296,13 @@ class InputManager: LifecycleManaged {
             forName: .inputMethodChanged,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            guard let self = self else { return }
-            let method: Int
-            if let value = notification.object as? Int {
-                method = value
-            } else if let value = notification.userInfo?["method"] as? Int {
-                method = value
-            } else {
-                method = SettingsManager.shared.inputMethod
+        ) { notification in
+            let methodValue = notification.object as? Int ?? notification.userInfo?["method"] as? Int
+            Task { @MainActor in
+                let method = methodValue ?? SettingsManager.shared.inputMethod
+                ime_method_v2(UInt8(method))
+                Log.info("Input method changed via notification: \(method == 0 ? "Telex" : "VNI")")
             }
-            ime_method_v2(UInt8(method))
-            Log.info("Input method changed via notification: \(method == 0 ? "Telex" : "VNI")")
         }
         ResourceManager.shared.register(observer: inputMethodObserver, identifier: "InputManager.inputMethodObserver")
         
@@ -313,18 +311,13 @@ class InputManager: LifecycleManaged {
             forName: .toneStyleChanged,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            guard let self = self else { return }
-            let modern: Bool
-            if let value = notification.object as? Bool {
-                modern = value
-            } else if let value = notification.userInfo?["isModern"] as? Bool {
-                modern = value
-            } else {
-                modern = SettingsManager.shared.modernToneStyle
+        ) { notification in
+            let modernValue = notification.object as? Bool ?? notification.userInfo?["isModern"] as? Bool
+            Task { @MainActor in
+                let modern = modernValue ?? SettingsManager.shared.modernToneStyle
+                ime_modern_v2(modern)
+                Log.info("Tone style changed via notification: \(modern ? "Modern" : "Traditional")")
             }
-            ime_modern_v2(modern)
-            Log.info("Tone style changed via notification: \(modern ? "Modern" : "Traditional")")
         }
         ResourceManager.shared.register(observer: toneStyleObserver, identifier: "InputManager.toneStyleObserver")
         
@@ -334,12 +327,14 @@ class InputManager: LifecycleManaged {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self else { return }
-            let settings = SettingsManager.shared
-            self.restoreShortcutEnabled = settings.restoreShortcutEnabled
-            self.restoreShortcut = settings.restoreShortcut
-            self.restoreTapHistory.removeAll()
-            Log.info("Restore shortcut changed: \(self.restoreShortcutEnabled ? "enabled" : "disabled") — \(self.restoreShortcut.displayString)")
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let settings = SettingsManager.shared
+                self.restoreShortcutEnabled = settings.restoreShortcutEnabled
+                self.restoreShortcut = settings.restoreShortcut
+                self.restoreTapHistory.removeAll()
+                Log.info("Restore shortcut changed: \(self.restoreShortcutEnabled ? "enabled" : "disabled") — \(self.restoreShortcut.displayString)")
+            }
         }
         ResourceManager.shared.register(observer: restoreShortcutObserver, identifier: "InputManager.restoreShortcutObserver")
         
@@ -348,18 +343,13 @@ class InputManager: LifecycleManaged {
             forName: .instantRestoreChanged,
             object: nil,
             queue: .main
-        ) { [weak self] notification in
-            guard let self = self else { return }
-            let enabled: Bool
-            if let value = notification.object as? Bool {
-                enabled = value
-            } else if let value = notification.userInfo?["enabled"] as? Bool {
-                enabled = value
-            } else {
-                enabled = SettingsManager.shared.instantRestoreEnabled
+        ) { notification in
+            let enabledValue = notification.object as? Bool ?? notification.userInfo?["enabled"] as? Bool
+            Task { @MainActor in
+                let enabled = enabledValue ?? SettingsManager.shared.instantRestoreEnabled
+                ime_instant_restore_v2(enabled)
+                Log.info("Instant restore changed via notification: \(enabled ? "enabled" : "disabled")")
             }
-            ime_instant_restore_v2(enabled)
-            Log.info("Instant restore changed via notification: \(enabled ? "enabled" : "disabled")")
         }
         ResourceManager.shared.register(observer: instantRestoreObserver, identifier: "InputManager.instantRestoreObserver")
         
@@ -369,18 +359,21 @@ class InputManager: LifecycleManaged {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            // Reload toggle shortcut configuration
-            if let shortcut = notification.object as? KeyboardShortcut {
-                self?.currentShortcut = shortcut
-                Log.info("Toggle shortcut updated: \(shortcut.displayString)")
-            } else {
-                self?.currentShortcut = KeyboardShortcut.load()
-                let shortcutName = self?.currentShortcut.displayString ?? "unknown"
-                Log.info("Toggle shortcut reloaded: \(shortcutName)")
+            let shortcut = notification.object as? KeyboardShortcut
+            Task { @MainActor [weak self] in
+                // Reload toggle shortcut configuration
+                if let shortcut = shortcut {
+                    self?.currentShortcut = shortcut
+                    Log.info("Toggle shortcut updated: \(shortcut.displayString)")
+                } else {
+                    self?.currentShortcut = KeyboardShortcut.load()
+                    let shortcutName = self?.currentShortcut.displayString ?? "unknown"
+                    Log.info("Toggle shortcut reloaded: \(shortcutName)")
+                }
+
+                // Also reload text expansion shortcuts
+                self?.reloadShortcuts()
             }
-            
-            // Also reload text expansion shortcuts
-            self?.reloadShortcuts()
         }
         ResourceManager.shared.register(observer: shortcutObserver, identifier: "InputManager.shortcutObserver")
         
@@ -390,19 +383,15 @@ class InputManager: LifecycleManaged {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            let enabled: Bool
-            if let value = notification.object as? Bool {
-                enabled = value
-            } else if let value = notification.userInfo?["enabled"] as? Bool {
-                enabled = value
-            } else {
-                enabled = SettingsManager.shared.textExpansionEnabled
+            let enabledValue = notification.object as? Bool ?? notification.userInfo?["enabled"] as? Bool
+            Task { @MainActor [weak self] in
+                let enabled = enabledValue ?? SettingsManager.shared.textExpansionEnabled
+                _ = ime_set_shortcuts_enabled_v2(enabled)
+                if enabled {
+                    self?.reloadShortcuts()
+                }
+                Log.info("Text expansion \(enabled ? "enabled" : "disabled") via notification")
             }
-            _ = ime_set_shortcuts_enabled_v2(enabled)
-            if enabled {
-                self?.reloadShortcuts()
-            }
-            Log.info("Text expansion \(enabled ? "enabled" : "disabled") via notification")
         }
         ResourceManager.shared.register(observer: textExpansionObserver, identifier: "InputManager.textExpansionObserver")
     }

@@ -14,7 +14,7 @@ final class RustEngineV2 {
     
     // MARK: - Singleton
     
-    nonisolated(unsafe) static let shared = RustEngineV2()
+    static let shared = RustEngineV2()
     
     // MARK: - Private Properties
     

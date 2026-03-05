@@ -133,7 +133,7 @@ struct ShortcutEditorSheet: View {
             TextField("Ví dụ: brb, omw, ty...", text: $trigger)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
-                .onChange(of: trigger, perform: { _ in validateTrigger() })
+                .onChange(of: trigger) { _, _ in validateTrigger() }
             
             if let error = triggerError {
                 HStack(spacing: 4) {
@@ -169,14 +169,14 @@ struct ShortcutEditorSheet: View {
                         .scrollContentBackground(.hidden)
                         .background(Color(NSColor.textBackgroundColor))
                         .border(Color.secondary.opacity(0.3), width: 1)
-                        .onChange(of: replacement, perform: { _ in validateReplacement() })
+                        .onChange(of: replacement) { _, _ in validateReplacement() }
                 } else {
                     TextEditor(text: $replacement)
                         .font(.body)
                         .frame(minHeight: 100, maxHeight: 150)
                         .lineLimit(10)
                         .border(Color.secondary.opacity(0.3), width: 1)
-                        .onChange(of: replacement, perform: { _ in validateReplacement() })
+                        .onChange(of: replacement) { _, _ in validateReplacement() }
                 }
             }
             
