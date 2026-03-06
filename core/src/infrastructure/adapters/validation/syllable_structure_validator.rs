@@ -131,6 +131,16 @@ pub fn is_valid_vowel_cluster(vowel_str: &str) -> bool {
     find_na_group(vowel_str).is_some()
 }
 
+/// Returns `true` if the vowel cluster belongs to a group that allows ANY final consonant.
+/// Returns `false` only for NA.4 (uơ) and NA.5 (diphthongs/triphthongs) which are open-only.
+/// Returns `true` for unknown clusters (allow through — cannot validate without model entry).
+pub fn vowel_cluster_allows_coda(vowel_str: &str) -> bool {
+    match find_na_group(vowel_str) {
+        Some(na) => !NA_PAC_COMPAT[na as usize].is_empty(),
+        None => true, // Unknown cluster: allow through
+    }
+}
+
 /// Check if vowel cluster + coda combination is phonotactically valid (NA-PAC compatibility).
 ///
 /// Returns `true` (allow) when the vowel cluster is not found in any NA group. Unknown clusters

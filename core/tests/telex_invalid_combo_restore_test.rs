@@ -5,6 +5,7 @@
 //! - Sub-B: Tone mark validates vowel cluster ("yas" → "yas", not "yá")
 //! - Sub-C: NA-PAC compatibility check on coda extension ("hoawjch" → raw "hoawjch")
 //! - Sub-D: NA-PAC unknown cluster regression (gi+ă, qu+ă, êô combos must NOT restore)
+//! - Sub-E: NA.5 diphthong + coda → immediate restore ("voiwsc" → "voiwsc", "voicws" → "voicws")
 
 use goxviet_core::utils::{telex, vni};
 
@@ -115,4 +116,45 @@ fn test_qua8ng_vni_not_restored() {
 fn test_ne6o6ng_vni_not_restored() {
     // VNI: nê (e6) + ô (o6) + ng → nêông
     vni(&[("ne6o6ng", "nêông")]);
+}
+
+// ── Sub-E: NA.5 diphthong + coda → immediate restore ─────────────────────────
+// NA.5 vowel clusters (oi, ơi, ai, ay, etc.) allow NO final consonants.
+// When a coda is added to a diphthong that has Vietnamese transforms,
+// the engine must immediately restore to raw (not wait for SPACE).
+
+#[test]
+fn test_voiwsc_restores_raw() {
+    // v + oi + w(horn on o → ơi) + s(sắc) + c(coda on NA.5 → invalid)
+    // "ơi" is NA.5 (open only) — adding 'c' must restore immediately
+    telex(&[("voiwsc", "voiwsc")]);
+}
+
+#[test]
+fn test_voicws_restores_raw() {
+    // v + oi + c(added first, no transform yet) + w(horn on o → ơi, NA.5 + existing coda → invalid)
+    // After horn, vowel cluster becomes "ơi" (NA.5) while coda 'c' already exists → restore
+    telex(&[("voicws", "voicws")]);
+}
+
+#[test]
+fn test_voif_no_coda_stays_viet() {
+    // v + oi + f(huyền) → "vòi" — NA.5 open syllable with tone is valid
+    telex(&[("voif", "vòi")]);
+}
+
+#[test]
+fn test_oic_restores_raw() {
+    // oi (NA.5) + c → no transforms, but to verify boundary check doesn't break things
+    // Without Vietnamese transforms, check_first_coda_validity doesn't fire
+    // The boundary check (at SPACE) may or may not restore — just ensure no crash
+    // (No assertion on exact output — just ensure it doesn't panic)
+    telex(&[("oic", "oic")]);
+}
+
+#[test]
+fn test_uowc_valid_uo_compound() {
+    // u + o + w → "ươ" compound (NA.2, allows PAC.1) + c → "ươc" is valid Vietnamese
+    // The engine normalizes "uow" to "ươ" (NA.2), NOT "uơ" (NA.4 open-only)
+    telex(&[("uowc", "ươc")]);
 }

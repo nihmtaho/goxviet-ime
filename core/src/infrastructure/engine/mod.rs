@@ -1108,6 +1108,16 @@ impl Engine {
                                     }
                                 }
                             }
+                        } else {
+                            // Horn/Breve: skip English detection (see comment above), but still
+                            // validate NA-PAC compatibility after the vowel transform. If the horn
+                            // creates an invalid NA.4/NA.5 vowel cluster that already has a coda
+                            // (e.g., "voic"+w → vowel cluster "ơi" which is NA.5, coda "c" → invalid),
+                            // restore immediately rather than letting the sequence stay as garbled text.
+                            if let Some(restore) = self.check_na_pac_after_horn() {
+                                self.last_transform = None;
+                                return restore;
+                            }
                         }
 
                         return result; // Return the result from try_tone with correct backspace
@@ -2701,10 +2711,15 @@ impl Engine {
                 }
             }
 
-            // Check NA-PAC compatibility before adding a consonant that would extend the coda.
+            // Check NA-PAC compatibility before adding a consonant.
+            // Two checks: (1) extending existing coda to digraph, (2) adding first coda to vowel-ending buffer.
             // Example: "hoặc" + 'h' → proposed coda "ch", NA.3 (oă) + PAC.0 (ch) → invalid → restore.
+            // Example: "vơi" + 'c' → first coda 'c' on NA.5 (ơi) → invalid → restore.
             if keys::is_consonant(key) {
                 if let Some(restore) = self.check_coda_extension_validity(key) {
+                    return restore;
+                }
+                if let Some(restore) = self.check_first_coda_validity(key) {
                     return restore;
                 }
             }
@@ -3431,6 +3446,85 @@ impl Engine {
             .collect();
 
         if !syllable_structure_validator::is_valid_na_pac_combo(&vowel_cluster, &proposed_coda) {
+            let result = self.instant_restore_to_raw_with_char();
+            return Some(result);
+        }
+
+        None
+    }
+
+    /// Check if adding `new_key` as the FIRST coda consonant creates an invalid NA-PAC combination.
+    ///
+    /// Only fires when: the buffer has Vietnamese transforms, the last buffer character
+    /// is a vowel (no coda yet), and the vowel cluster is NA.4 or NA.5 (open-only groups
+    /// that allow no final consonants). Catches cases like "vơi" + 'c' where "ơi" is NA.5.
+    ///
+    /// Note: does NOT use `is_valid_na_pac_combo` directly because that rejects unknown codas
+    /// (e.g., 'k' in ethnic minority words). Instead uses `vowel_cluster_allows_coda` which
+    /// only rejects when the vowel cluster itself forbids any coda.
+    fn check_first_coda_validity(&mut self, new_key: u16) -> Option<Result> {
+        if !self.has_vietnamese_transforms() {
+            return None;
+        }
+
+        // Only fires when last char is a vowel (no existing coda)
+        let last = self.buf.last()?;
+        if !keys::is_vowel(last.key) {
+            return None;
+        }
+
+        // Build vowel cluster string with diacritics, without tone marks
+        use crate::data::chars as char_data;
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        let vowels = crate::utils::collect_vowels(&self.buf);
+        if vowels.is_empty() {
+            return None;
+        }
+        let vowel_cluster: String = vowels
+            .iter()
+            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+            .collect();
+
+        // Only restore when the vowel cluster is definitively open-only (NA.4/NA.5).
+        // Unknown codas (like 'k' in ethnic minority words) pass through.
+        if !syllable_structure_validator::vowel_cluster_allows_coda(&vowel_cluster) {
+            let _ = new_key; // coda doesn't matter — no coda allowed at all
+            let result = self.instant_restore_to_raw_with_char();
+            return Some(result);
+        }
+
+        None
+    }
+
+    /// Check NA-PAC validity after a Horn/Breve transform.
+    ///
+    /// Called immediately after `try_tone` succeeds for Horn/Breve. If the horn transform
+    /// changed the vowel cluster to NA.4/NA.5 while an existing coda consonant is present,
+    /// the combination is now invalid and must be restored to raw.
+    ///
+    /// Example: "voic" + w → horn on 'o' → vowel cluster "ơi" (NA.5) + coda "c" → invalid.
+    fn check_na_pac_after_horn(&mut self) -> Option<Result> {
+        // Only fires when last char is a consonant (existing coda)
+        let last = self.buf.last()?;
+        if keys::is_vowel(last.key) {
+            return None;
+        }
+
+        // Build vowel cluster string with diacritics, without tone marks
+        use crate::data::chars as char_data;
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        let vowels = crate::utils::collect_vowels(&self.buf);
+        if vowels.is_empty() {
+            return None;
+        }
+        let vowel_cluster: String = vowels
+            .iter()
+            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+            .collect();
+
+        // Only restore when the vowel cluster is open-only (NA.4/NA.5).
+        if !syllable_structure_validator::vowel_cluster_allows_coda(&vowel_cluster) {
+            // raw_input already contains the horn modifier key ('w'/'b').
             let result = self.instant_restore_to_raw_with_char();
             return Some(result);
         }
