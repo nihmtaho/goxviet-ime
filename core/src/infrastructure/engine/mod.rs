@@ -710,7 +710,7 @@ impl Engine {
                 // Check programming terms and common English words to prevent Vietnamese transforms
                 // PRIORITY: Check dictionary FIRST, before deciding if key is a modifier
                 // This prevents "console" from becoming "cónole" when 's' is typed
-                let is_dict = self.is_english_dictionary_word();
+                let is_dict = self.is_english_by_phonotactic();
 
                 if is_dict {
                     // DOUBLE-KEY REVERT: If the current key matches the last transform,
@@ -1167,7 +1167,7 @@ impl Engine {
                                 // After diacritical is applied (aa→â, ee→ê, oo→ô),
                                 // check if the raw input matches an English dictionary word.
                                 if self.instant_restore_enabled && self.has_vietnamese_transforms() {
-                                    if self.is_english_dictionary_word() {
+                                    if self.is_english_by_phonotactic() {
                                         self.is_english_word = true;
                                         let restore = self.instant_restore_english();
                                         self.sync_buffer_with_raw_input();
@@ -2915,13 +2915,13 @@ impl Engine {
                 // Only check dictionary, as patterns (phonotactics) are more robust
                 // But we should use both for consistency.
                 let is_still_english =
-                    self.is_english_dictionary_word() || self.has_definite_english_pattern();
+                    self.is_english_by_phonotactic() || self.has_definite_english_pattern();
 
                 if !is_still_english {
                     self.is_english_word = false;
                 }
             } else {
-                if self.is_english_dictionary_word() || self.has_definite_english_pattern() {
+                if self.is_english_by_phonotactic() || self.has_definite_english_pattern() {
                     self.is_english_word = true;
                 }
             }
@@ -3233,7 +3233,7 @@ impl Engine {
         // CRITICAL: Re-detect English status for the restored word
         // This ensures subsequent keys are handled correctly if backspaced into English
         if self.raw_input.len() >= 2 {
-            if self.is_english_dictionary_word() || self.has_definite_english_pattern() {
+            if self.is_english_by_phonotactic() || self.has_definite_english_pattern() {
                 self.is_english_word = true;
             }
         }
@@ -3341,16 +3341,7 @@ impl Engine {
             }
         }
 
-        // 1. Dictionary Check (O(1)) - Highest Priority
-        // MEMORY OPTIMIZATION: Disabled in release builds to save ~1.4MB
-        #[cfg(debug_assertions)]
-        {
-            if self.is_english_dictionary_word() {
-                return true;
-            }
-        }
-
-        // 2. Vietnamese Validation
+        // Vietnamese Validation
         // If the word structure is VALID Vietnamese, we treat it as Vietnamese
         // (unless it was already found in the English Dictionary above)
         // Use buffer keys (with transforms applied) PLUS the current key being typed
@@ -3387,69 +3378,23 @@ impl Engine {
         false
     }
 
-    /// Check if current buffer is an English word using Vietnamese-first detection.
+    /// Check if current buffer is English using phonotactic analysis only (no dictionary).
     ///
     /// Pipeline:
-    /// 1. If last Telex key was NOT a tone modifier AND raw word is in English dict → English.
-    ///    Rationale: "core" (last key 'e') → "coẻ" looks like Vietnamese, but user didn't
-    ///    intend any Vietnamese tone. Check dict first to catch this class of words.
-    /// 2. If rendered buffer is a valid Vietnamese syllable → not English.
-    ///    Rationale: "beets" (last key 's'=modifier) → "bết" valid Vietnamese → not English.
-    /// 3. Fallback: phonotactic analysis on raw key sequence.
-    fn is_english_dictionary_word(&self) -> bool {
+    /// 1. If rendered buffer is a valid Vietnamese syllable → not English.
+    /// 2. Telex 'w' guard: never treat as English (it's a Vietnamese modifier).
+    /// 3. Phonotactic analysis on filtered raw key sequence → english_confidence >= 80.
+    fn is_english_by_phonotactic(&self) -> bool {
         let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
 
-        // Determine whether the LAST typed key was an explicit Telex tone modifier.
-        // When the last key is a modifier (s/f/r/x/j), the user explicitly applied a
-        // Vietnamese tone — respect that intent and let Vietnamese check run first.
-        // When the last key is NOT a modifier, any marks in buf came from mid-word
-        // absorption (e.g. 'r' in "core" absorbs as hỏi on 'o'), not from explicit intent.
-        let last_key_is_telex_modifier = self.method == 0 && {
-            use crate::data::keys as k;
-            const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
-            self.raw_input
-                .iter()
-                .last()
-                .map_or(false, |(key, _)| TELEX_TONE_MODIFIERS.contains(&key))
-        };
-
-        let raw_word: String = self
-            .raw_input
-            .iter()
-            .filter_map(|(k, _)| crate::utils::key_to_char(k, false))
-            .collect();
-
-        // Priority 1 (HIGHEST): Vietnamese syllable check — if the current buffer renders
-        // to a valid Vietnamese syllable, keep it as Vietnamese even if the raw input
-        // matches an English dictionary word.
-        // Example: "veen"→"vên" — "vên" IS valid Vietnamese, "veen" is an obscure English word;
-        //          prefer Vietnamese to avoid false restore.
-        // Example: "core"→"cỏe" — "cỏe" is NOT valid Vietnamese; continue to dict check.
+        // Priority 1: Vietnamese syllable check — if the current buffer renders to a valid
+        // Vietnamese syllable, keep it as Vietnamese.
         let output = self.buf.to_full_string();
         if crate::data::viet_syllables::is_valid_vietnamese_syllable(&output) {
             return false;
         }
 
-        // Priority 0 (early): English dict — only when last key is NOT an explicit Telex modifier.
-        // This catches words like "core" → "coẻ" (looks Vietnamese but isn't intended as such).
-        if !last_key_is_telex_modifier
-            && !raw_word.is_empty()
-            && crate::data::english_words::is_english_word(&raw_word)
-        {
-            return true;
-        }
-
-        // Priority 0 (fallback): English dict when last key WAS a modifier but Vietnamese
-        // output is still invalid (unusual case).
-        if last_key_is_telex_modifier
-            && !raw_word.is_empty()
-            && crate::data::english_words::is_english_word(&raw_word)
-        {
-            return true;
-        }
-
-        // In Telex, 'w' is a tone modifier (naw→nă, law→lă). Never treat as English
-        // unless found in the English dictionary above (or produces invalid Vietnamese).
+        // In Telex, 'w' is a tone modifier (naw→nă, law→lă). Never treat as English.
         if self.method == 0 {
             if let Some(&last_key) = keys.last() {
                 if last_key == keys::W {
@@ -3458,7 +3403,7 @@ impl Engine {
             }
         }
 
-        // Priority 2: Phonotactic analysis on raw key sequence
+        // Phonotactic analysis on raw key sequence.
         // In Telex, when tone modifiers were consumed (raw longer than rendered),
         // filter them out so patterns like SP in "tieesp" don't falsely fire.
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
@@ -3685,7 +3630,7 @@ impl Engine {
         // English dictionary check: runs before transforms guard.
         // Handles both normal transforms and double-key reverts (raw > buf).
         if has_pending_restore || self.has_vietnamese_transforms() {
-            let is_dict = self.is_english_dictionary_word();
+            let is_dict = self.is_english_by_phonotactic();
             if is_dict {
                 // If the user explicitly applied a Vietnamese tone mark (sắc/huyền/hỏi/ngã/nặng)
                 // If the user explicitly applied a Vietnamese tone mark via a Telex
@@ -3856,7 +3801,7 @@ impl Engine {
         let raw_len = self.raw_input.len();
         let buf_len = self.buf.len();
         if raw_len >= buf_len + 2 {
-            let is_dict = self.is_english_dictionary_word();
+            let is_dict = self.is_english_by_phonotactic();
             if is_dict {
                 self.is_english_word = true;
                 let mut result = self.instant_restore_english();
@@ -3969,10 +3914,7 @@ impl Engine {
             )
         };
 
-        // Check dictionary for restore decision below
-        let is_dict = self.is_english_dictionary_word();
-
-        // Restore if: high English confidence (>=80) OR dictionary match
+        // Restore if: high English confidence (>=80) OR phonotactic match
         // But if buffer is VALID VIETNAMESE, be more conservative:
         // - Require very high confidence (>=90) AND dictionary match to override valid Vietnamese
         // - OR require invalid Vietnamese syllable
@@ -3984,7 +3926,7 @@ impl Engine {
             // Only restore if we are SUPER confident it's English
             // CRITICAL FIX: Check dictionary against RAW input, not transformed buffer
             let raw_keys_only: Vec<u16> = self.raw_input.iter().map(|item| item.0).collect();
-            let is_raw_dict = self.is_english_dictionary_word();
+            let is_raw_dict = self.is_english_by_phonotactic();
 
             // SPECIAL HANDLING: For short 2-character valid Vietnamese words that are NOT
             // in the Vietnamese dictionary (like "re" which appears in English but not as standalone Vietnamese),
@@ -4034,7 +3976,7 @@ impl Engine {
             // unless it looks like Vietnamese phonotactics.
             // Lowered threshold to 60 because invalid Vietnamese SHOULD be restored.
             // This catches short words like "res" (confidence 75), "off" (confidence 70), etc.
-            let is_raw_dict = self.is_english_dictionary_word();
+            let is_raw_dict = self.is_english_by_phonotactic();
 
             if strict_mode {
                 is_raw_dict
@@ -4143,7 +4085,7 @@ impl Engine {
         // LAYER 2 (FINAL): Dictionary check as tie-breaker
         // LAYER 2 (FINAL): Dictionary check as tie-breaker
         // Trust the dictionary presence (conflicts were filtered at generation time)
-        if self.is_english_dictionary_word() {
+        if self.is_english_by_phonotactic() {
             // FIX: If the word is a valid Vietnamese word AND contains transforms (e.g. "lawn" -> "lăn"),
             // we should prefer the Vietnamese word in Vietnamese mode.
             // This prevents common valid words like "lăn", "râu" (row), "vơ" (vow) from being auto-restored.
@@ -4184,7 +4126,7 @@ impl Engine {
         }
 
         // LAYER 2 (FINAL): Vietnamese-first dictionary check as confidence booster
-        if self.is_english_dictionary_word() {
+        if self.is_english_by_phonotactic() {
             return 100; // English confirmed = 100% confidence
         }
 
