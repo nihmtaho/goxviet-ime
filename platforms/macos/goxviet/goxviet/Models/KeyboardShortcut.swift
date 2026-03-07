@@ -141,19 +141,17 @@ struct KeyboardShortcut: Codable, Equatable {
     
     // MARK: - Persistence
     
-    private static let storageKey = "com.vietnamese.ime.toggleShortcut"
-    
     static func load() -> KeyboardShortcut {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+        guard let data = UserDefaults.standard.data(forKey: SettingsKey.toggleShortcut),
               let shortcut = try? JSONDecoder().decode(KeyboardShortcut.self, from: data) else {
             return .default
         }
         return shortcut
     }
-    
+
     func save() {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: KeyboardShortcut.storageKey)
+            UserDefaults.standard.set(data, forKey: SettingsKey.toggleShortcut)
             
             // Notify observers that shortcut changed
             NotificationCenter.default.post(name: NSNotification.Name("shortcutChanged"), object: self)

@@ -406,7 +406,9 @@ private struct BundleConstants {
         "com.microsoft.VSCode", "com.google.antigravity", "com.todesktop.cursor",
         "com.visualstudio.code.oss", "com.vscodium",
         // Other code editors
-        "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3", "com.panic.Nova"
+        "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3", "com.panic.Nova",
+        // DBeaver
+        "org.jkiss.dbeaver.core.product"
     ]
 
     /// Combined set of code editors and terminals for method detection
@@ -653,7 +655,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     
     // Code editors & terminals - higher delays for Monaco/Electron-based apps
     if BundleConstants.codeEditorsAndTerminals.contains(bundleId) {
-        return cached(.slow, (8000, 25000, 8000), "slow:code")
+        return cached(.slow, (4000, 15000, 4000), "slow:code")
     }
 
     // LaTeX editors (Qt-based) - charByChar for reliable Unicode
@@ -686,7 +688,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     }
     
     // Default: safe delays (changed from instant to fast)
-    return cached(.fast, (0, 0, 0), "default")
+    return cached(.fast, (100, 500, 100), "default")
 }
 
 // MARK: - Screen Text Reading (for word restoration)

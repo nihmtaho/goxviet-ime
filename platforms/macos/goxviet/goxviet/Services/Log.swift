@@ -22,13 +22,13 @@ enum Log {
     /// Whether logging is enabled (persisted in UserDefaults)
     static var isEnabled: Bool {
         get {
-            UserDefaults.standard.object(forKey: "com.goxviet.logging.enabled") as? Bool ?? false
+            UserDefaults.standard.object(forKey: SettingsKey.loggingEnabled) as? Bool ?? false
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: "com.goxviet.logging.enabled")
+            UserDefaults.standard.set(newValue, forKey: SettingsKey.loggingEnabled)
             // Post notification for UI updates
             NotificationCenter.default.post(
-                name: NSNotification.Name("com.goxviet.loggingStateChanged"),
+                name: .loggingStateChanged,
                 object: newValue
             )
         }

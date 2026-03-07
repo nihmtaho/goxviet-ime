@@ -21,7 +21,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var inputMethod: Int = 0 {
         didSet {
-            saveToDefaults(Keys.inputMethod, value: inputMethod)
+            saveToDefaults(SettingsKey.inputMethod, value: inputMethod)
             syncToCore()
             postNotification(.inputMethodChanged, value: inputMethod)
         }
@@ -29,7 +29,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var modernToneStyle: Bool = false {
         didSet {
-            saveToDefaults(Keys.modernToneStyle, value: modernToneStyle)
+            saveToDefaults(SettingsKey.modernToneStyle, value: modernToneStyle)
             syncToCore()
             postNotification(.toneStyleChanged, value: modernToneStyle)
         }
@@ -37,7 +37,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var restoreShortcutEnabled: Bool = true {
         didSet {
-            saveToDefaults(Keys.restoreShortcutEnabled, value: restoreShortcutEnabled)
+            saveToDefaults(SettingsKey.restoreShortcutEnabled, value: restoreShortcutEnabled)
             syncToCore()
             postNotification(.restoreShortcutChanged, value: restoreShortcutEnabled)
         }
@@ -52,7 +52,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var freeToneEnabled: Bool = false {
         didSet {
-            saveToDefaults(Keys.freeToneEnabled, value: freeToneEnabled)
+            saveToDefaults(SettingsKey.freeToneEnabled, value: freeToneEnabled)
             syncToCore()
             postNotification(.freeToneChanged, value: freeToneEnabled)
         }
@@ -60,7 +60,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var instantRestoreEnabled: Bool = true {
         didSet {
-            saveToDefaults(Keys.instantRestoreEnabled, value: instantRestoreEnabled)
+            saveToDefaults(SettingsKey.instantRestoreEnabled, value: instantRestoreEnabled)
             syncToCore()
             postNotification(.instantRestoreChanged, value: instantRestoreEnabled)
         }
@@ -68,20 +68,20 @@ final class SettingsManager: ObservableObject {
     
     @Published var smartModeEnabled: Bool = true {
         didSet {
-            saveToDefaults(Keys.smartModeEnabled, value: smartModeEnabled)
+            saveToDefaults(SettingsKey.smartModeEnabled, value: smartModeEnabled)
             postNotification(.smartModeChanged, value: smartModeEnabled)
         }
     }
     
     @Published var autoDisableForNonLatin: Bool = true {
         didSet {
-            saveToDefaults(Keys.autoDisableForNonLatin, value: autoDisableForNonLatin)
+            saveToDefaults(SettingsKey.autoDisableForNonLatin, value: autoDisableForNonLatin)
         }
     }
     
     @Published var hideFromDock: Bool = false {
         didSet {
-            saveToDefaults(Keys.hideFromDock, value: hideFromDock)
+            saveToDefaults(SettingsKey.hideFromDock, value: hideFromDock)
             // Use legacy notification for now (hideFromDockChanged not in TypedNotifications yet)
             NotificationCenter.default.post(name: NSNotification.Name("hideFromDockChanged"), object: hideFromDock)
         }
@@ -91,7 +91,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var outputEncoding: OutputEncoding = .unicode {
         didSet {
-            saveToDefaults(Keys.outputEncoding, value: outputEncoding.rawValue)
+            saveToDefaults(SettingsKey.outputEncoding, value: outputEncoding.rawValue)
             syncToCore()
             postNotification(.outputEncodingChanged, value: outputEncoding)
             Log.info("Output encoding changed to: \(outputEncoding.shortName)")
@@ -100,7 +100,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var shiftBackspaceEnabled: Bool = false {
         didSet {
-            saveToDefaults(Keys.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
+            saveToDefaults(SettingsKey.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
             postNotification(.shiftBackspaceEnabledChanged, value: shiftBackspaceEnabled)
             Log.info("Shift+Backspace \(shiftBackspaceEnabled ? "enabled" : "disabled")")
         }
@@ -108,7 +108,7 @@ final class SettingsManager: ObservableObject {
     
     @Published var textExpansionEnabled: Bool = true {
         didSet {
-            saveToDefaults(Keys.textExpansionEnabled, value: textExpansionEnabled)
+            saveToDefaults(SettingsKey.textExpansionEnabled, value: textExpansionEnabled)
             // TODO: v2 API doesn't support shortcuts yet
             // _ = RustBridgeSafe.shared.setShortcutsEnabled(textExpansionEnabled)
             postNotification(.textExpansionEnabledChanged, value: textExpansionEnabled)
@@ -138,36 +138,45 @@ final class SettingsManager: ObservableObject {
     private let lock = NSRecursiveLock()
     private var cancellables = Set<AnyCancellable>()
     
-    // Keys for UserDefaults
-    private enum Keys {
-        static let isEnabled = "isEnabled"
-        static let inputMethod = "inputMethod"
-        static let modernToneStyle = "modernToneStyle"
-        static let restoreShortcutEnabled = "restoreShortcutEnabled"
-        static let freeToneEnabled = "freeToneEnabled"
-        static let instantRestoreEnabled = "instantRestoreEnabled"
-        static let smartModeEnabled = "smartModeEnabled"
-        static let autoDisableForNonLatin = "com.goxviet.ime.autoDisableNonLatin"
-        static let hideFromDock = "com.goxviet.ime.hideFromDock"
-        
-        // Phase 2.9 keys
-        static let outputEncoding = "com.goxviet.ime.outputEncoding"
-        static let shiftBackspaceEnabled = "com.goxviet.ime.shiftBackspaceEnabled"
-        static let textExpansionEnabled = "com.goxviet.ime.textExpansionEnabled"
-        
-        // Shortcuts key
-        static let shortcuts = "com.goxviet.ime.shortcuts"
-    }
     
     // MARK: - Initialization
     
-    nonisolated private init() {}
+    private init() {}
 
     /// Must be called once from @MainActor context (AppDelegate) before any settings access.
     func initialize() {
+        migrateKeysIfNeeded()
         loadFromDefaults()
         setupObservers()
         Log.info("SettingsManager initialized")
+    }
+
+    // MARK: - Key Migration
+
+    /// One-time migration of legacy UserDefaults keys to the com.goxviet.ime.* namespace.
+    /// Idempotent: only migrates if the new key is absent and the old key has a value.
+    private func migrateKeysIfNeeded() {
+        let ud = userDefaults
+        let migrations: [(old: String, new: String)] = [
+            ("isEnabled",                        SettingsKey.isEnabled),
+            ("inputMethod",                      SettingsKey.inputMethod),
+            ("modernToneStyle",                  SettingsKey.modernToneStyle),
+            ("restoreShortcutEnabled",           SettingsKey.restoreShortcutEnabled),
+            ("freeToneEnabled",                  SettingsKey.freeToneEnabled),
+            ("instantRestoreEnabled",            SettingsKey.instantRestoreEnabled),
+            ("smartModeEnabled",                 SettingsKey.smartModeEnabled),
+            ("hasLaunchedBefore",                SettingsKey.hasLaunchedBefore),
+            ("GoxViet.permissionGranted",        SettingsKey.permissionGranted),
+            ("GoxViet.lastKnownVersion",         SettingsKey.lastKnownVersion),
+            ("com.vietnamese.ime.toggleShortcut", SettingsKey.toggleShortcut),
+            ("com.goxviet.logging.enabled",      SettingsKey.loggingEnabled),
+        ]
+        for (old, new) in migrations {
+            guard ud.object(forKey: new) == nil,
+                  let existing = ud.object(forKey: old) else { continue }
+            ud.set(existing, forKey: new)
+            ud.removeObject(forKey: old)
+        }
     }
     
     // MARK: - Public API
@@ -185,7 +194,7 @@ final class SettingsManager: ObservableObject {
         guard method != inputMethod else { return }
         
         inputMethod = method
-        saveToDefaults(Keys.inputMethod, value: method)
+        saveToDefaults(SettingsKey.inputMethod, value: method)
         Log.info("Input method changed to: \(method == 0 ? "Telex" : "VNI")")
     }
     
@@ -197,7 +206,7 @@ final class SettingsManager: ObservableObject {
         guard modern != modernToneStyle else { return }
         
         modernToneStyle = modern
-        saveToDefaults(Keys.modernToneStyle, value: modern)
+        saveToDefaults(SettingsKey.modernToneStyle, value: modern)
         Log.info("Tone style changed to: \(modern ? "Modern" : "Traditional")")
     }
     
@@ -209,7 +218,7 @@ final class SettingsManager: ObservableObject {
         guard enabled != restoreShortcutEnabled else { return }
         
         restoreShortcutEnabled = enabled
-        saveToDefaults(Keys.restoreShortcutEnabled, value: enabled)
+        saveToDefaults(SettingsKey.restoreShortcutEnabled, value: enabled)
     }
     
     /// Update restore shortcut
@@ -228,7 +237,7 @@ final class SettingsManager: ObservableObject {
         guard enabled != freeToneEnabled else { return }
         
         freeToneEnabled = enabled
-        saveToDefaults(Keys.freeToneEnabled, value: enabled)
+        saveToDefaults(SettingsKey.freeToneEnabled, value: enabled)
     }
     
     /// Toggle instant auto-restore
@@ -239,7 +248,7 @@ final class SettingsManager: ObservableObject {
         guard enabled != instantRestoreEnabled else { return }
         
         instantRestoreEnabled = enabled
-        saveToDefaults(Keys.instantRestoreEnabled, value: enabled)
+        saveToDefaults(SettingsKey.instantRestoreEnabled, value: enabled)
     }
     
     /// Toggle smart mode
@@ -250,7 +259,7 @@ final class SettingsManager: ObservableObject {
         guard enabled != smartModeEnabled else { return }
         
         smartModeEnabled = enabled
-        saveToDefaults(Keys.smartModeEnabled, value: enabled)
+        saveToDefaults(SettingsKey.smartModeEnabled, value: enabled)
     }
     
     /// Toggle auto-disable for non-Latin apps
@@ -261,7 +270,7 @@ final class SettingsManager: ObservableObject {
         guard enabled != autoDisableForNonLatin else { return }
         
         autoDisableForNonLatin = enabled
-        saveToDefaults(Keys.autoDisableForNonLatin, value: enabled)
+        saveToDefaults(SettingsKey.autoDisableForNonLatin, value: enabled)
     }
     
     /// Toggle hide from dock
@@ -272,7 +281,7 @@ final class SettingsManager: ObservableObject {
         guard hide != hideFromDock else { return }
         
         hideFromDock = hide
-        saveToDefaults(Keys.hideFromDock, value: hide)
+        saveToDefaults(SettingsKey.hideFromDock, value: hide)
         Log.info("Hide from dock: \(hide)")
     }
     
@@ -313,7 +322,7 @@ final class SettingsManager: ObservableObject {
         isEnabled = enabled
         
         // Persist to UserDefaults
-        userDefaults.set(enabled, forKey: Keys.isEnabled)
+        userDefaults.set(enabled, forKey: SettingsKey.isEnabled)
         
         // Cancel pending debounce work
         setEnabledDebounceWork?.cancel()
@@ -343,11 +352,9 @@ final class SettingsManager: ObservableObject {
     }
     
     // MARK: - Per-App Mode Management
-    
+
     /// Maximum number of per-app settings to store (prevents unbounded memory growth)
     private static let MAX_PER_APP_ENTRIES = 100
-    private static let perAppModesKey = "com.goxviet.ime.perAppModes"
-    private static let knownAppsKey = "com.goxviet.ime.knownApps"
     
     /// Get the saved mode for a specific app
     /// Returns false (disabled/English) by default if no specific setting exists
@@ -355,7 +362,7 @@ final class SettingsManager: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
-        guard let dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] else {
+        guard let dict = userDefaults.dictionary(forKey: SettingsKey.perAppModes) as? [String: Bool] else {
             return false  // Default: disabled (English mode)
         }
         
@@ -367,7 +374,7 @@ final class SettingsManager: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
-        var dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+        var dict = userDefaults.dictionary(forKey: SettingsKey.perAppModes) as? [String: Bool] ?? [:]
         
         let isNewApp = (dict[bundleId] == nil)
         
@@ -394,7 +401,7 @@ final class SettingsManager: ObservableObject {
             recordKnownApp(bundleId: bundleId)
         }
         
-        userDefaults.set(dict, forKey: Self.perAppModesKey)
+        userDefaults.set(dict, forKey: SettingsKey.perAppModes)
         
         Log.info("Per-app mode saved: \(bundleId) = \(enabled ? "Vietnamese" : "English")")
         postNotification(.perAppModesChanged, value: nil)
@@ -405,9 +412,9 @@ final class SettingsManager: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
-        var dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+        var dict = userDefaults.dictionary(forKey: SettingsKey.perAppModes) as? [String: Bool] ?? [:]
         dict.removeValue(forKey: bundleId)
-        userDefaults.set(dict, forKey: Self.perAppModesKey)
+        userDefaults.set(dict, forKey: SettingsKey.perAppModes)
         
         removeKnownApp(bundleId: bundleId)
         
@@ -420,7 +427,7 @@ final class SettingsManager: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
-        return userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+        return userDefaults.dictionary(forKey: SettingsKey.perAppModes) as? [String: Bool] ?? [:]
     }
     
     /// Clear all per-app settings
@@ -428,8 +435,8 @@ final class SettingsManager: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
-        userDefaults.removeObject(forKey: Self.perAppModesKey)
-        userDefaults.removeObject(forKey: Self.knownAppsKey)
+        userDefaults.removeObject(forKey: SettingsKey.perAppModes)
+        userDefaults.removeObject(forKey: SettingsKey.knownApps)
         Log.info("All per-app modes cleared")
         postNotification(.perAppModesChanged, value: nil)
     }
@@ -439,7 +446,7 @@ final class SettingsManager: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
-        let dict = userDefaults.dictionary(forKey: Self.perAppModesKey) as? [String: Bool] ?? [:]
+        let dict = userDefaults.dictionary(forKey: SettingsKey.perAppModes) as? [String: Bool] ?? [:]
         return dict.count
     }
     
@@ -453,7 +460,7 @@ final class SettingsManager: ObservableObject {
     private func recordKnownApp(bundleId: String) {
         guard !bundleId.isEmpty else { return }
         
-        var known = userDefaults.array(forKey: Self.knownAppsKey) as? [String] ?? []
+        var known = userDefaults.array(forKey: SettingsKey.knownApps) as? [String] ?? []
         
         if known.contains(bundleId) { return }
         
@@ -463,15 +470,15 @@ final class SettingsManager: ObservableObject {
         }
         
         known.append(bundleId)
-        userDefaults.set(known, forKey: Self.knownAppsKey)
+        userDefaults.set(known, forKey: SettingsKey.knownApps)
         postNotification(.perAppModesChanged, value: nil)
     }
     
     private func removeKnownApp(bundleId: String) {
-        var known = userDefaults.array(forKey: Self.knownAppsKey) as? [String] ?? []
+        var known = userDefaults.array(forKey: SettingsKey.knownApps) as? [String] ?? []
         guard let idx = known.firstIndex(of: bundleId) else { return }
         known.remove(at: idx)
-        userDefaults.set(known, forKey: Self.knownAppsKey)
+        userDefaults.set(known, forKey: SettingsKey.knownApps)
         postNotification(.perAppModesChanged, value: nil)
     }
     
@@ -480,7 +487,7 @@ final class SettingsManager: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         
-        return userDefaults.array(forKey: Self.knownAppsKey) as? [String] ?? []
+        return userDefaults.array(forKey: SettingsKey.knownApps) as? [String] ?? []
     }
     
     /// Get a map of known apps -> effective enabled state
@@ -632,7 +639,7 @@ final class SettingsManager: ObservableObject {
     // MARK: - Private Shortcuts Helpers
     
     private func loadShortcutsFromDefaults() {
-        if let data = userDefaults.data(forKey: Keys.shortcuts),
+        if let data = userDefaults.data(forKey: SettingsKey.shortcuts),
            let saved = try? JSONDecoder().decode([TextShortcutItem].self, from: data) {
             shortcuts = saved
             Log.info("Loaded \(shortcuts.count) shortcuts from UserDefaults")
@@ -650,7 +657,7 @@ final class SettingsManager: ObservableObject {
             }
             // Persist to UserDefaults so they appear in UI
             if let data = try? JSONEncoder().encode(shortcuts) {
-                userDefaults.set(data, forKey: Keys.shortcuts)
+                userDefaults.set(data, forKey: SettingsKey.shortcuts)
             }
             Log.info("Loaded \(shortcuts.count) default shortcuts and saved to UserDefaults")
         }
@@ -674,7 +681,7 @@ final class SettingsManager: ObservableObject {
                 
                 // Save to UserDefaults
                 if let data = try? JSONEncoder().encode(self.shortcuts) {
-                    self.userDefaults.set(data, forKey: Keys.shortcuts)
+                    self.userDefaults.set(data, forKey: SettingsKey.shortcuts)
                 }
                 
                 // Sync to Rust engine
@@ -757,24 +764,24 @@ final class SettingsManager: ObservableObject {
     
     private func loadFromDefaults() {
         // Check if this is first launch
-        let hasLaunchedBefore = userDefaults.bool(forKey: "hasLaunchedBefore")
+        let hasLaunchedBefore = userDefaults.bool(forKey: SettingsKey.hasLaunchedBefore)
         
         if !hasLaunchedBefore {
             // First launch: Register default values without triggering didSet
             let defaults: [String: Any] = [
-                Keys.isEnabled: true,
-                Keys.inputMethod: 0,
-                Keys.modernToneStyle: false,
-                Keys.restoreShortcutEnabled: true,
-                Keys.freeToneEnabled: false,
-                Keys.instantRestoreEnabled: true,
-                Keys.smartModeEnabled: true,
-                Keys.autoDisableForNonLatin: true,
-                Keys.hideFromDock: true,
-                Keys.outputEncoding: OutputEncoding.unicode.rawValue,
-                Keys.shiftBackspaceEnabled: false,
-                Keys.textExpansionEnabled: true,
-                "hasLaunchedBefore": true
+                SettingsKey.isEnabled: true,
+                SettingsKey.inputMethod: 0,
+                SettingsKey.modernToneStyle: false,
+                SettingsKey.restoreShortcutEnabled: true,
+                SettingsKey.freeToneEnabled: false,
+                SettingsKey.instantRestoreEnabled: true,
+                SettingsKey.smartModeEnabled: true,
+                SettingsKey.autoDisableForNonLatin: true,
+                SettingsKey.hideFromDock: true,
+                SettingsKey.outputEncoding: OutputEncoding.unicode.rawValue,
+                SettingsKey.shiftBackspaceEnabled: false,
+                SettingsKey.textExpansionEnabled: true,
+                SettingsKey.hasLaunchedBefore: true
             ]
             userDefaults.register(defaults: defaults)
             
@@ -784,29 +791,29 @@ final class SettingsManager: ObservableObject {
         }
         
         // Load from UserDefaults (will use registered defaults if keys don't exist)
-        isEnabled = userDefaults.bool(forKey: Keys.isEnabled)
-        inputMethod = userDefaults.integer(forKey: Keys.inputMethod)
-        modernToneStyle = userDefaults.bool(forKey: Keys.modernToneStyle)
-        restoreShortcutEnabled = userDefaults.bool(forKey: Keys.restoreShortcutEnabled)
+        isEnabled = userDefaults.bool(forKey: SettingsKey.isEnabled)
+        inputMethod = userDefaults.integer(forKey: SettingsKey.inputMethod)
+        modernToneStyle = userDefaults.bool(forKey: SettingsKey.modernToneStyle)
+        restoreShortcutEnabled = userDefaults.bool(forKey: SettingsKey.restoreShortcutEnabled)
         restoreShortcut = RestoreShortcut.load()
-        freeToneEnabled = userDefaults.bool(forKey: Keys.freeToneEnabled)
-        instantRestoreEnabled = userDefaults.bool(forKey: Keys.instantRestoreEnabled)
-        smartModeEnabled = userDefaults.bool(forKey: Keys.smartModeEnabled)
-        autoDisableForNonLatin = userDefaults.bool(forKey: Keys.autoDisableForNonLatin)
-        hideFromDock = userDefaults.bool(forKey: Keys.hideFromDock)
+        freeToneEnabled = userDefaults.bool(forKey: SettingsKey.freeToneEnabled)
+        instantRestoreEnabled = userDefaults.bool(forKey: SettingsKey.instantRestoreEnabled)
+        smartModeEnabled = userDefaults.bool(forKey: SettingsKey.smartModeEnabled)
+        autoDisableForNonLatin = userDefaults.bool(forKey: SettingsKey.autoDisableForNonLatin)
+        hideFromDock = userDefaults.bool(forKey: SettingsKey.hideFromDock)
         
         // Phase 2.9 settings
-        if let encoding = OutputEncoding(rawValue: userDefaults.integer(forKey: Keys.outputEncoding)) {
+        if let encoding = OutputEncoding(rawValue: userDefaults.integer(forKey: SettingsKey.outputEncoding)) {
             outputEncoding = encoding
         }
-        shiftBackspaceEnabled = userDefaults.bool(forKey: Keys.shiftBackspaceEnabled)
-        textExpansionEnabled = userDefaults.bool(forKey: Keys.textExpansionEnabled)
+        shiftBackspaceEnabled = userDefaults.bool(forKey: SettingsKey.shiftBackspaceEnabled)
+        textExpansionEnabled = userDefaults.bool(forKey: SettingsKey.textExpansionEnabled)
         
         loadShortcutsFromDefaults()
 
         // Mark as launched after loading
         if !hasLaunchedBefore {
-            userDefaults.set(true, forKey: "hasLaunchedBefore")
+            userDefaults.set(true, forKey: SettingsKey.hasLaunchedBefore)
             // Explicitly save all loaded defaults to ensure persistence
             saveAllToDefaults()
             Log.info("First launch defaults saved to UserDefaults")
@@ -818,17 +825,17 @@ final class SettingsManager: ObservableObject {
     }
     
     private func saveAllToDefaults() {
-        saveToDefaults(Keys.isEnabled, value: isEnabled)
-        saveToDefaults(Keys.inputMethod, value: inputMethod)
-        saveToDefaults(Keys.modernToneStyle, value: modernToneStyle)
-        saveToDefaults(Keys.restoreShortcutEnabled, value: restoreShortcutEnabled)
-        saveToDefaults(Keys.freeToneEnabled, value: freeToneEnabled)
-        saveToDefaults(Keys.instantRestoreEnabled, value: instantRestoreEnabled)
-        saveToDefaults(Keys.smartModeEnabled, value: smartModeEnabled)
-        saveToDefaults(Keys.autoDisableForNonLatin, value: autoDisableForNonLatin)
-        saveToDefaults(Keys.hideFromDock, value: hideFromDock)
-        saveToDefaults(Keys.outputEncoding, value: outputEncoding.rawValue)
-        saveToDefaults(Keys.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
+        saveToDefaults(SettingsKey.isEnabled, value: isEnabled)
+        saveToDefaults(SettingsKey.inputMethod, value: inputMethod)
+        saveToDefaults(SettingsKey.modernToneStyle, value: modernToneStyle)
+        saveToDefaults(SettingsKey.restoreShortcutEnabled, value: restoreShortcutEnabled)
+        saveToDefaults(SettingsKey.freeToneEnabled, value: freeToneEnabled)
+        saveToDefaults(SettingsKey.instantRestoreEnabled, value: instantRestoreEnabled)
+        saveToDefaults(SettingsKey.smartModeEnabled, value: smartModeEnabled)
+        saveToDefaults(SettingsKey.autoDisableForNonLatin, value: autoDisableForNonLatin)
+        saveToDefaults(SettingsKey.hideFromDock, value: hideFromDock)
+        saveToDefaults(SettingsKey.outputEncoding, value: outputEncoding.rawValue)
+        saveToDefaults(SettingsKey.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
     }
     
     private func syncToCore() {
@@ -931,3 +938,4 @@ struct TextShortcutItem: Identifiable, Codable, Equatable {
         self.isEnabled = isEnabled
     }
 }
+
