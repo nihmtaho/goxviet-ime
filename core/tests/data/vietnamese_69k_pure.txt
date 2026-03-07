@@ -30974,7 +30974,6 @@ lô mét
 lô nhô
 lô xô
 lô xô như bát úp
-lôgic
 lôi
 lôi bè kéo cánh
 lôi cuốn
@@ -33990,8 +33989,7 @@ mô típ
 mô tô
 mô tả
 mô đun
-mô đéc
-môbilet
+mô đé
 môi
 môi giới
 môi hóa
@@ -47271,7 +47269,6 @@ sâm si
 sâm sẩm
 sâm thương
 sâm thương cách trở
-sâmbanh
 sân
 sân bay
 sân bãi
@@ -47485,7 +47482,6 @@ sông sâu nước cả
 sông sâu sào ngắn
 sông sống
 sông đào
-sôvanh
 sõi
 sõi đời
 sõng
@@ -55515,8 +55511,6 @@ tuân
 tuân hành
 tuân lệnh
 tuân thủ
-tuôcbin
-tuôcnăng
 tuôn
 tuôn lệ
 tuông
@@ -60834,7 +60828,6 @@ xanh xanh
 xanh xao
 xanh xao hốc hác
 xanh xám
-xanhđica
 xao
 xao lãng
 xao nhãng
@@ -64124,8 +64117,6 @@ yểu điệu thục nữ
 đi ở
 điezen
 đin
-đinamit
-đinamo
 đinh
 đinh ba
 đinh bạ

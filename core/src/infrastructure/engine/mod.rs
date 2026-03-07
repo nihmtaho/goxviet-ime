@@ -682,6 +682,29 @@ impl Engine {
             }
 
             if self.raw_input.len() >= 2 {
+                // Guard: if the current key completes a digraph coda (c→ch, n→ng/nh) on a
+                // buffer with Vietnamese transforms, skip English detection entirely.
+                // The intermediate "incomplete coda" state (buf ending in 'c' or 'n') may look
+                // phonotactically like English but the full digraph is valid Vietnamese.
+                // Let handle_normal_letter run the proper NA-PAC check.
+                {
+                    let is_completing_digraph_early = keys::is_consonant(key)
+                        && self.buf.last().map_or(false, |last_c| {
+                            keys::is_consonant(last_c.key)
+                                && crate::utils::key_to_char(last_c.key, false)
+                                    .and_then(|lc| {
+                                        crate::utils::key_to_char(key, false).map(|nc| {
+                                            let proposed = format!("{}{}", lc, nc);
+                                            matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                        })
+                                    })
+                                    .unwrap_or(false)
+                        });
+                    if is_completing_digraph_early && self.has_vietnamese_transforms() {
+                        return self.handle_normal_letter(key, caps, shift);
+                    }
+                }
+
                 // 1. VIETNAMESE DICTIONARY LOOKUP: Removed as per request (replaced by Phonotactic Engine)
                 // 2. ENGLISH DICTIONARY LOOKUP
                 // Check programming terms and common English words to prevent Vietnamese transforms
@@ -708,18 +731,35 @@ impl Engine {
                         // Don't set is_english_word yet - let revert happen first
                         // Fall through to revert check
                     } else {
-                        // Guard: if buf has explicit Vietnamese diacritical modifiers (circumflex/horn/breve
-                        // from 'aa', 'ee', 'oo', 'aw', 'ow', 'uw'), do NOT flag as English or restore.
-                        // The user intentionally used Telex diacritical shortcuts → they're typing Vietnamese.
-                        let has_diacritical_modifier = self.buf.iter().any(|c| c.tone != tone::NONE);
+                        // Guard: if buf has explicit Vietnamese transforms (diacritical marks: circumflex/horn/breve
+                        // from 'aa', 'ee', 'oo', 'aw', 'ow', 'uw'; OR tone marks: sắc/huyền/hỏi/ngã/nặng
+                        // from 's', 'f', 'r', 'x', 'j'), do NOT flag as English or restore.
+                        // Both are explicit Vietnamese typing intent and must be respected.
+                        let has_diacritical_modifier = self.buf.iter().any(|c| c.tone != tone::NONE || c.mark != 0);
                         if !has_diacritical_modifier {
                             self.is_english_word = true;
                         }
+
+                        // Guard: don't restore when pressing 'h'/'g' that would complete an
+                        // incomplete digraph coda ('c'→'ch', 'n'→'ng'/'nh'). The intermediate
+                        // state (buf ending in 'c' or 'n') looks phonotactically invalid, but
+                        // the full digraph is valid. Let handle_normal_letter do the NA-PAC check.
+                        let is_completing_digraph = keys::is_consonant(key)
+                            && self.buf.last().map_or(false, |last_c| {
+                                keys::is_consonant(last_c.key)
+                                    && crate::utils::key_to_char(last_c.key, false)
+                                        .and_then(|lc| crate::utils::key_to_char(key, false).map(|nc| {
+                                            let proposed = format!("{}{}", lc, nc);
+                                            matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                        }))
+                                        .unwrap_or(false)
+                            });
 
                         // INSTANT RESTORE: If already transformed, undo immediately
                         if self.instant_restore_enabled
                             && self.has_vietnamese_transforms()
                             && !has_diacritical_modifier
+                            && !is_completing_digraph
                         {
                             let result = self.instant_restore_english();
                             self.sync_buffer_with_raw_input();
@@ -760,16 +800,32 @@ impl Engine {
                         if result.is_some() {
                             // Fall through to modifier handling
                         } else {
-                            let has_diacritical_modifier =
-                                self.buf.iter().any(|c| c.tone != tone::NONE);
+                            // For definite English patterns (e.g. "ex" prefix, invalid initials),
+                            // only check diacritical marks (circumflex/horn), NOT tone marks.
+                            // Definite patterns have very high confidence (>=98%) and override tones
+                            // that may have been accidentally absorbed (e.g. "express": x=ngã on e).
+                            let has_diacritical_modifier = self.buf.iter().any(|c| c.tone != tone::NONE);
                             if !has_diacritical_modifier {
                                 self.is_english_word = true;
                             }
+
+                            // Guard: don't restore when completing a digraph coda (c→ch, n→ng/nh)
+                            let is_completing_digraph = keys::is_consonant(key)
+                                && self.buf.last().map_or(false, |last_c| {
+                                    keys::is_consonant(last_c.key)
+                                        && crate::utils::key_to_char(last_c.key, false)
+                                            .and_then(|lc| crate::utils::key_to_char(key, false).map(|nc| {
+                                                let proposed = format!("{}{}", lc, nc);
+                                                matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                            }))
+                                            .unwrap_or(false)
+                                });
 
                             // INSTANT RESTORE: If already transformed, undo immediately
                             if self.instant_restore_enabled
                                 && self.has_vietnamese_transforms()
                                 && !has_diacritical_modifier
+                                && !is_completing_digraph
                             {
                                 let result = self.instant_restore_english();
                                 self.sync_buffer_with_raw_input();
@@ -813,15 +869,27 @@ impl Engine {
                         if result.is_some() {
                             // Fall through to modifier handling
                         } else {
-                            let has_diacritical_modifier =
-                                self.buf.iter().any(|c| c.tone != tone::NONE);
+                            let has_diacritical_modifier = self.buf.iter().any(|c| c.tone != tone::NONE || c.mark != 0);
                             if !has_diacritical_modifier {
                                 self.is_english_word = true;
                             }
 
+                            // Guard: don't restore when completing a digraph coda (c→ch, n→ng/nh)
+                            let is_completing_digraph = keys::is_consonant(key)
+                                && self.buf.last().map_or(false, |last_c| {
+                                    keys::is_consonant(last_c.key)
+                                        && crate::utils::key_to_char(last_c.key, false)
+                                            .and_then(|lc| crate::utils::key_to_char(key, false).map(|nc| {
+                                                let proposed = format!("{}{}", lc, nc);
+                                                matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                            }))
+                                            .unwrap_or(false)
+                                });
+
                             if self.instant_restore_enabled
                                 && self.has_vietnamese_transforms()
                                 && !has_diacritical_modifier
+                                && !is_completing_digraph
                             {
                                 let result = self.instant_restore_english();
                                 self.sync_buffer_with_raw_input();
@@ -2738,8 +2806,27 @@ impl Engine {
             // raw_input legitimately has more entries than buf. Syncing in that case would strip
             // the Vietnamese transform and output raw ASCII instead of the correct Vietnamese
             // characters (e.g., "loong" would produce "loon" instead of "lông").
-            let has_active_diacritical = self.buf.iter().any(|c| c.tone != tone::NONE);
-            if self.is_english_word && self.raw_input.len() > self.buf.len() && !has_active_diacritical {
+            // Guard includes both diacritical marks (circumflex/horn from 'aa','oo','aw') AND
+            // tone marks (sắc/huyền/hỏi/ngã/nặng from 's','f','r','x','j'). Both indicate
+            // intentional Vietnamese typing and must not trigger the raw-sync restore.
+            let has_active_diacritical = self.buf.iter().any(|c| c.tone != tone::NONE || c.mark != 0);
+            // Guard: if the buffer just completed a Vietnamese digraph coda (ch/ng/nh) while
+            // having Vietnamese tone transforms, the "incomplete coda" state (e.g. "ríc" before
+            // 'h' completes it to "rích") may have falsely set is_english_word=true. Do not
+            // restore at this point; let check_and_restore_english (with its Vietnamese guard)
+            // make the final decision.
+            let buf_len_now = self.buf.len();
+            let just_completed_digraph = buf_len_now >= 2 && {
+                let prev_key = self.buf.get(buf_len_now - 2).map(|c| c.key);
+                let last_key = self.buf.get(buf_len_now - 1).map(|c| c.key);
+                matches!(
+                    (prev_key, last_key),
+                    (Some(keys::C), Some(keys::H))
+                        | (Some(keys::N), Some(keys::G))
+                        | (Some(keys::N), Some(keys::H))
+                )
+            } && self.has_vietnamese_transforms();
+            if self.is_english_word && self.raw_input.len() > self.buf.len() && !has_active_diacritical && !just_completed_digraph {
                 // displayed = chars on screen BEFORE this keystroke (buf.len after push - 1)
                 let displayed = (self.buf.len() - 1).min(u8::MAX as usize) as u8;
                 let raw_chars: Vec<char> = self
@@ -2916,6 +3003,54 @@ impl Engine {
     /// Collect vowels from buffer
     fn collect_vowels(&self) -> Vec<Vowel> {
         utils::collect_vowels(&self.buf)
+    }
+
+    /// Build vowel cluster string for NA-PAC phonotactic validation.
+    ///
+    /// `gi` and `qu` initials include a glide vowel (`i`/`u`) that is part of the
+    /// consonant cluster, not the vowel nucleus. This function excludes those glides
+    /// so that NA-PAC compatibility is checked against the actual nucleus.
+    ///
+    /// Rules:
+    /// - `qu` initial: always exclude `u` (it is always a consonant glide, never nucleus).
+    /// - `gi` initial: exclude `i` only when the full cluster (`ia`, `io`, …) is open-only
+    ///   (NA.5/NA.4). When `i` forms a coda-compatible diphthong (`iê`, NA.1), keep it.
+    fn na_pac_vowel_cluster(&self) -> String {
+        use crate::data::chars as char_data;
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        let vowels = utils::collect_vowels(&self.buf);
+        let has_gi = utils::has_gi_initial(&self.buf);
+        let has_qu = utils::has_qu_initial(&self.buf);
+
+        let first_key = vowels.first().map(|v| v.key);
+
+        // For "qu" initial: always exclude the 'u' glide from the cluster.
+        // The 'u' is always part of the "qu" consonant, never the vowel nucleus.
+        if has_qu && first_key == Some(keys::U) && vowels.len() > 1 {
+            return vowels[1..]
+                .iter()
+                .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+                .collect();
+        }
+
+        let full: String = vowels
+            .iter()
+            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+            .collect();
+
+        // For "gi" initial: the 'i' is part of the nucleus only when the full cluster
+        // is coda-compatible (e.g., "iê" → NA.1 allows all codas). When the full
+        // cluster is open-only (e.g., "ia" → NA.5), exclude 'i' and use the remainder.
+        if has_gi && first_key == Some(keys::I) && vowels.len() > 1 {
+            if !syllable_structure_validator::vowel_cluster_allows_coda(&full) {
+                return vowels[1..]
+                    .iter()
+                    .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+                    .collect();
+            }
+        }
+
+        full
     }
 
     /// Check for final consonant after position
@@ -3433,17 +3568,12 @@ impl Engine {
             return None;
         }
 
-        // Build vowel cluster string with diacritics, without tone marks
-        use crate::data::chars as char_data;
+        // Build vowel cluster string for NA-PAC validation (excludes gi/qu glides)
         use crate::infrastructure::adapters::validation::syllable_structure_validator;
-        let vowels = crate::utils::collect_vowels(&self.buf);
-        if vowels.is_empty() {
+        let vowel_cluster = self.na_pac_vowel_cluster();
+        if vowel_cluster.is_empty() {
             return None;
         }
-        let vowel_cluster: String = vowels
-            .iter()
-            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
-            .collect();
 
         if !syllable_structure_validator::is_valid_na_pac_combo(&vowel_cluster, &proposed_coda) {
             let result = self.instant_restore_to_raw_with_char();
@@ -3473,17 +3603,12 @@ impl Engine {
             return None;
         }
 
-        // Build vowel cluster string with diacritics, without tone marks
-        use crate::data::chars as char_data;
+        // Build vowel cluster string for NA-PAC validation (excludes gi/qu glides)
         use crate::infrastructure::adapters::validation::syllable_structure_validator;
-        let vowels = crate::utils::collect_vowels(&self.buf);
-        if vowels.is_empty() {
+        let vowel_cluster = self.na_pac_vowel_cluster();
+        if vowel_cluster.is_empty() {
             return None;
         }
-        let vowel_cluster: String = vowels
-            .iter()
-            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
-            .collect();
 
         // Only restore when the vowel cluster is definitively open-only (NA.4/NA.5).
         // Unknown codas (like 'k' in ethnic minority words) pass through.
@@ -3510,17 +3635,12 @@ impl Engine {
             return None;
         }
 
-        // Build vowel cluster string with diacritics, without tone marks
-        use crate::data::chars as char_data;
+        // Build vowel cluster string for NA-PAC validation (excludes gi/qu glides)
         use crate::infrastructure::adapters::validation::syllable_structure_validator;
-        let vowels = crate::utils::collect_vowels(&self.buf);
-        if vowels.is_empty() {
+        let vowel_cluster = self.na_pac_vowel_cluster();
+        if vowel_cluster.is_empty() {
             return None;
         }
-        let vowel_cluster: String = vowels
-            .iter()
-            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
-            .collect();
 
         // Only restore when the vowel cluster is open-only (NA.4/NA.5).
         if !syllable_structure_validator::vowel_cluster_allows_coda(&vowel_cluster) {
