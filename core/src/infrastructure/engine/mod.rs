@@ -1518,7 +1518,19 @@ impl Engine {
                     if let Some(stroked_pos) =
                         self.buf.iter().position(|c| c.key == keys::D && c.stroke)
                     {
-                        return Some(self.revert_stroke(key, stroked_pos));
+                        // If buffer has ONLY the stroked 'd' (no other chars follow it),
+                        // restore all raw keystrokes to raw output.
+                        // e.g. "ddd" → restore to "ddd" (not toggle back to "dd").
+                        // "đd" is an invalid Vietnamese combo (đ must precede a vowel),
+                        // so we treat the third 'd' as an invalid-combo restore trigger.
+                        //
+                        // If the buffer has chars after the stroked 'd' (e.g. "đa"),
+                        // use the normal toggle path instead so "dadd" → "dad".
+                        if self.buf.len() == 1 {
+                            return Some(self.restore_stroke_to_raw(stroked_pos));
+                        } else {
+                            return Some(self.revert_stroke(key, stroked_pos));
+                        }
                     }
                 }
             }
@@ -2698,11 +2710,71 @@ impl Engine {
             // CRITICAL FIX: Mark as English to prevent re-stroke loop
             self.is_english_word = true;
 
+            // Trim raw_input to match buf length to prevent CASE A misfires.
+            // (mirrors what revert_tone does to keep raw_input in sync)
+            while self.raw_input.len() > self.buf.len() {
+                self.raw_input.pop();
+            }
+
             // Use the calculated screen length for backspace
             return self.rebuild_from_with_backspace(pos, old_screen_len);
         }
 
         Result::none()
+    }
+
+    /// Restore a stroked 'd' (and any following chars) to their raw keystrokes.
+    ///
+    /// Called when `buf.len() == 1` (only the stroked 'd' with nothing after it),
+    /// meaning the user typed e.g. "ddd" — the third 'd' triggers an invalid-combo
+    /// restore rather than a toggle back to "dd".
+    ///
+    /// Sets `raw_mode = true` so subsequent letters in the same word cannot
+    /// re-apply the stroke transformation.
+    fn restore_stroke_to_raw(&mut self, pos: usize) -> Result {
+        self.last_transform = None;
+
+        let should_revert = self
+            .buf
+            .get(pos)
+            .map_or(false, |c| c.key == keys::D && c.stroke);
+
+        if !should_revert {
+            return Result::none();
+        }
+
+        // Compute how many screen characters are currently displayed from `pos` onward.
+        let mut old_screen_len: usize = 0;
+        for i in pos..self.buf.len() {
+            if let Some(ch) = self.buf.get(i) {
+                if ch.key == keys::D && ch.stroke {
+                    old_screen_len += 1; // 'đ' is 1 char
+                } else if chars::to_char(ch.key, ch.caps, ch.tone, ch.mark).is_some() {
+                    old_screen_len += 1;
+                } else if utils::key_to_char(ch.key, ch.caps).is_some() {
+                    old_screen_len += 1;
+                }
+            }
+        }
+
+        // Collect raw chars BEFORE mutating buf.
+        let raw_chars: Vec<char> = self
+            .raw_input
+            .iter()
+            .filter_map(|(k, c)| utils::key_to_char(k, c))
+            .collect();
+
+        if raw_chars.is_empty() {
+            return Result::none();
+        }
+
+        // Sync buf to raw (plain chars, no transforms).
+        self.sync_buffer_with_raw_input();
+        self.is_english_word = true;
+        // Lock out further Vietnamese transforms for this word.
+        self.raw_mode = true;
+
+        Result::send(old_screen_len as u8, &raw_chars)
     }
 
     /// Try to apply remove modifier
@@ -3816,6 +3888,10 @@ impl Engine {
         // because the revert result hasn't been applied to display yet.
         if offset == 0 && self.is_english_word && self.raw_input.len() > self.buf.len() {
             let result = self.instant_restore_english();
+            if !result.requires_action() {
+                // No transforms to restore — let the caller produce its own result.
+                return None;
+            }
             self.sync_buffer_with_raw_input();
             self.last_transform = None; // Clear stale transform after English restore
             return Some(result);

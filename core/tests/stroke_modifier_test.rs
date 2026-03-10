@@ -64,7 +64,7 @@ fn test_triple_d_toggle() {
     println!("After 2nd 'd': buffer='{}'", e.get_buffer());
     assert_eq!(e.get_buffer(), "đ");
 
-    // Type 'd' third time - should toggle back to 'dd'
+    // Type 'd' third time - invalid combo ("đd" not valid Vietnamese), should restore to raw "ddd"
     let result = e.on_key(keys::D, false, false);
     let buffer = e.get_buffer();
     println!(
@@ -72,12 +72,12 @@ fn test_triple_d_toggle() {
         buffer, result.backspace, result.count
     );
 
-    assert_eq!(buffer, "dd", "Expected 'dd' but got '{}'", buffer);
+    assert_eq!(buffer, "ddd", "Expected 'ddd' (invalid-combo restore) but got '{}'", buffer);
     assert_eq!(
         result.backspace, 1,
-        "Should have backspace=1 to replace 'đ' with 'dd'"
+        "Should have backspace=1 to replace 'đ' with 'ddd'"
     );
-    assert_eq!(result.count, 2, "Should output 2 chars 'dd'");
+    assert_eq!(result.count, 3, "Should output 3 chars 'ddd'");
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn test_ddd_with_space() {
     e.on_key(keys::D, false, false);
     println!("After 2nd 'd': buffer='{}'", e.get_buffer());
 
-    // Type 'd' third time - should toggle back to 'dd'
+    // Type 'd' third time - invalid combo restore to raw "ddd"
     // CRITICAL: This should send backspace=1 (delete 'đ'), NOT backspace=2 (which would delete space+'đ')
     let result = e.on_key(keys::D, false, false);
     let buffer = e.get_buffer();
@@ -109,8 +109,8 @@ fn test_ddd_with_space() {
         buffer, result.backspace, result.count
     );
 
-    // The buffer should show "dd"
-    assert_eq!(buffer, "dd", "Buffer should be 'dd', got '{}'", buffer);
+    // The buffer should show "ddd" (raw restore)
+    assert_eq!(buffer, "ddd", "Buffer should be 'ddd', got '{}'", buffer);
 
     // CRITICAL FIX VERIFICATION: backspace should be 1, NOT 2
     // backspace=2 would delete the space before 'đ', which was the reported bug
@@ -118,7 +118,7 @@ fn test_ddd_with_space() {
         result.backspace, 1,
         "Should backspace 1 char (đ only), not 2 (which would delete preceding space)"
     );
-    assert_eq!(result.count, 2, "Should output 2 chars (dd)");
+    assert_eq!(result.count, 3, "Should output 3 chars (ddd)");
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn test_four_d_presses() {
     e.set_method(0); // Telex
     e.set_enabled(true);
 
-    println!("\n=== Test 4 x 'd' presses: d→'d', dd→'đ', ddd→'dd'(revert), dddd→'ddd' ===");
+    println!("\n=== Test 4 x 'd' presses: d→'d', dd→'đ', ddd→'ddd'(raw restore), dddd→'dddd' ===");
     for i in 1..=4 {
         let result = e.on_key(keys::D, false, false);
         println!(
@@ -183,8 +183,8 @@ fn test_four_d_presses() {
 
     let buf = e.get_buffer();
     assert_eq!(
-        buf, "ddd",
-        "4 d-presses should produce 'ddd', got '{}'",
+        buf, "dddd",
+        "4 d-presses should produce 'dddd', got '{}'",
         buf
     );
 }
