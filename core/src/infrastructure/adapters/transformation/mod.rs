@@ -13,7 +13,7 @@ pub mod validation;
 pub mod vowel_compound;
 
 // Re-exports for convenience
-pub use vietnamese_mark_adapter::VietnameseMarkAdapter;
-pub use vietnamese_tone_adapter::VietnameseToneAdapter;
 pub use syllable::Syllable;
 pub use transform::{ModifierType, TransformResult};
+pub use vietnamese_mark_adapter::VietnameseMarkAdapter;
+pub use vietnamese_tone_adapter::VietnameseToneAdapter;

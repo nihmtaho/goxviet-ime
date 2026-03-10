@@ -91,9 +91,7 @@ fn bench_memory(c: &mut Criterion) {
 
     group.bench_function("10_containers", |b| {
         b.iter(|| {
-            let containers: Vec<_> = (0..10)
-                .map(|_| Container::new())
-                .collect();
+            let containers: Vec<_> = (0..10).map(|_| Container::new()).collect();
             black_box(containers)
         });
     });

@@ -231,18 +231,52 @@ fn test_dictionary_lookup_son_ton_ron() {
     let make_keys = |arr: &[(u16, bool)]| arr.to_vec();
 
     // Verify the engine runs without panicking for all words (smoke tests)
-    let mason = make_keys(&[(keys::M, false), (keys::A, false), (keys::S, false), (keys::O, false), (keys::N, false)]);
+    let mason = make_keys(&[
+        (keys::M, false),
+        (keys::A, false),
+        (keys::S, false),
+        (keys::O, false),
+        (keys::N, false),
+    ]);
     let _c = PhonotacticEngine::analyze(&mason).english_confidence;
 
-    let season = make_keys(&[(keys::S, false), (keys::E, false), (keys::A, false), (keys::S, false), (keys::O, false), (keys::N, false)]);
+    let season = make_keys(&[
+        (keys::S, false),
+        (keys::E, false),
+        (keys::A, false),
+        (keys::S, false),
+        (keys::O, false),
+        (keys::N, false),
+    ]);
     let _c = PhonotacticEngine::analyze(&season).english_confidence;
 
-    let reason = make_keys(&[(keys::R, false), (keys::E, false), (keys::A, false), (keys::S, false), (keys::O, false), (keys::N, false)]);
+    let reason = make_keys(&[
+        (keys::R, false),
+        (keys::E, false),
+        (keys::A, false),
+        (keys::S, false),
+        (keys::O, false),
+        (keys::N, false),
+    ]);
     let _c = PhonotacticEngine::analyze(&reason).english_confidence;
 
-    let button = make_keys(&[(keys::B, false), (keys::U, false), (keys::T, false), (keys::T, false), (keys::O, false), (keys::N, false)]);
+    let button = make_keys(&[
+        (keys::B, false),
+        (keys::U, false),
+        (keys::T, false),
+        (keys::T, false),
+        (keys::O, false),
+        (keys::N, false),
+    ]);
     let _c = PhonotacticEngine::analyze(&button).english_confidence;
 
-    let nurses = make_keys(&[(keys::N, false), (keys::U, false), (keys::R, false), (keys::S, false), (keys::E, false), (keys::S, false)]);
+    let nurses = make_keys(&[
+        (keys::N, false),
+        (keys::U, false),
+        (keys::R, false),
+        (keys::S, false),
+        (keys::E, false),
+        (keys::S, false),
+    ]);
     let _c = PhonotacticEngine::analyze(&nurses).english_confidence;
 }

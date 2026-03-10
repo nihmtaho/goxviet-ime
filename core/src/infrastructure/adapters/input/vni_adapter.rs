@@ -189,7 +189,10 @@ mod tests {
     fn test_detect_diacritic_circumflex() {
         let adapter = VniAdapter::new();
         let event = create_key_event('6');
-        assert_eq!(adapter.detect_diacritic(&event), Some(DiacriticType::Circumflex));
+        assert_eq!(
+            adapter.detect_diacritic(&event),
+            Some(DiacriticType::Circumflex)
+        );
     }
 
     #[test]
@@ -210,7 +213,10 @@ mod tests {
     fn test_detect_diacritic_stroke() {
         let adapter = VniAdapter::new();
         let event = create_key_event('9');
-        assert_eq!(adapter.detect_diacritic(&event), Some(DiacriticType::Stroke));
+        assert_eq!(
+            adapter.detect_diacritic(&event),
+            Some(DiacriticType::Stroke)
+        );
     }
 
     #[test]

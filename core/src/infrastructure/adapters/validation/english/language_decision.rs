@@ -119,13 +119,32 @@ mod tests {
         s.chars()
             .filter_map(|c| {
                 let key = match c {
-                    'a' => keys::A, 'b' => keys::B, 'c' => keys::C, 'd' => keys::D,
-                    'e' => keys::E, 'f' => keys::F, 'g' => keys::G, 'h' => keys::H,
-                    'i' => keys::I, 'j' => keys::J, 'k' => keys::K, 'l' => keys::L,
-                    'm' => keys::M, 'n' => keys::N, 'o' => keys::O, 'p' => keys::P,
-                    'q' => keys::Q, 'r' => keys::R, 's' => keys::S, 't' => keys::T,
-                    'u' => keys::U, 'v' => keys::V, 'w' => keys::W, 'x' => keys::X,
-                    'y' => keys::Y, 'z' => keys::Z,
+                    'a' => keys::A,
+                    'b' => keys::B,
+                    'c' => keys::C,
+                    'd' => keys::D,
+                    'e' => keys::E,
+                    'f' => keys::F,
+                    'g' => keys::G,
+                    'h' => keys::H,
+                    'i' => keys::I,
+                    'j' => keys::J,
+                    'k' => keys::K,
+                    'l' => keys::L,
+                    'm' => keys::M,
+                    'n' => keys::N,
+                    'o' => keys::O,
+                    'p' => keys::P,
+                    'q' => keys::Q,
+                    'r' => keys::R,
+                    's' => keys::S,
+                    't' => keys::T,
+                    'u' => keys::U,
+                    'v' => keys::V,
+                    'w' => keys::W,
+                    'x' => keys::X,
+                    'y' => keys::Y,
+                    'z' => keys::Z,
                     _ => return None,
                 };
                 Some((key, false))
@@ -139,7 +158,10 @@ mod tests {
     fn test_viet_dict_word_not_english() {
         // "trường" in TuDien → never English
         let result = LanguageDecisionEngine::decide_with_validation(
-            &k("truong"), false, None, Some("trường"),
+            &k("truong"),
+            false,
+            None,
+            Some("trường"),
         );
         assert!(!result.is_english, "TuDien word should not be English");
         assert_eq!(result.confidence, 0);
@@ -148,10 +170,12 @@ mod tests {
     #[test]
     fn test_viet_dict_word_overrides_phonotactics() {
         // "ban" looks somewhat English but is in TuDien
-        let result = LanguageDecisionEngine::decide_with_validation(
-            &k("ban"), false, None, Some("ban"),
+        let result =
+            LanguageDecisionEngine::decide_with_validation(&k("ban"), false, None, Some("ban"));
+        assert!(
+            !result.is_english,
+            "TuDien word 'ban' must not be English even if phonotactics suggest it"
         );
-        assert!(!result.is_english, "TuDien word 'ban' must not be English even if phonotactics suggest it");
     }
 
     // ── No output_str: falls through to phonotactics ─────────────────────────
@@ -162,11 +186,13 @@ mod tests {
         // "syntax" has 0 phonotactic confidence (no strong English phoneme signal).
         // Detection relies on providing output_str for TuDien lookup or phonotactics
         // for words with strong English-only patterns.
-        let result = LanguageDecisionEngine::decide_with_validation(
-            &k("syntax"), false, None, None,
-        );
+        let result =
+            LanguageDecisionEngine::decide_with_validation(&k("syntax"), false, None, None);
         // "syntax" does not trigger the phonotactic engine → ambiguous, not English
-        assert!(!result.is_english, "syntax without output_str is ambiguous (not English) under Vietnamese-first policy");
+        assert!(
+            !result.is_english,
+            "syntax without output_str is ambiguous (not English) under Vietnamese-first policy"
+        );
     }
 
     // ── Diacritics penalty ────────────────────────────────────────────────────
@@ -174,9 +200,15 @@ mod tests {
     #[test]
     fn test_diacritics_prevent_english_detection() {
         let result = LanguageDecisionEngine::decide_with_validation(
-            &k("truong"), true, None, None, // has_diacritics=true
+            &k("truong"),
+            true,
+            None,
+            None, // has_diacritics=true
         );
-        assert!(!result.is_english, "Word with diacritics should not be English");
+        assert!(
+            !result.is_english,
+            "Word with diacritics should not be English"
+        );
     }
 
     // ── Empty / edge cases ───────────────────────────────────────────────────

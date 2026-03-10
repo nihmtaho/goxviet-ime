@@ -2,9 +2,9 @@
 //!
 //! Exposes C-compatible API for platform integrations
 
-pub mod types;
-pub mod conversions;
 pub mod api;
+pub mod conversions;
+pub mod types;
 
-pub use types::*;
 pub use conversions::*;
+pub use types::*;

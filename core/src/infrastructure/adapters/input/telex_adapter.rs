@@ -75,12 +75,18 @@ impl TelexAdapter {
 
     /// Checks if a character is a tone mark key
     fn is_tone_key(ch: char) -> bool {
-        matches!(ch, 's' | 'S' | 'f' | 'F' | 'r' | 'R' | 'x' | 'X' | 'j' | 'J')
+        matches!(
+            ch,
+            's' | 'S' | 'f' | 'F' | 'r' | 'R' | 'x' | 'X' | 'j' | 'J'
+        )
     }
 
     /// Checks if a character is a diacritic modifier key
     fn is_diacritic_key(ch: char) -> bool {
-        matches!(ch, 'a' | 'A' | 'e' | 'E' | 'o' | 'O' | 'w' | 'W' | 'd' | 'D')
+        matches!(
+            ch,
+            'a' | 'A' | 'e' | 'E' | 'o' | 'O' | 'w' | 'W' | 'd' | 'D'
+        )
     }
 
     /// Checks if a character is the remove mark key
@@ -196,9 +202,18 @@ mod tests {
     #[test]
     fn test_detect_tone_uppercase() {
         let adapter = TelexAdapter::new();
-        assert_eq!(adapter.detect_tone(&create_key_event('S')), Some(ToneType::Sac));
-        assert_eq!(adapter.detect_tone(&create_key_event('F')), Some(ToneType::Huyen));
-        assert_eq!(adapter.detect_tone(&create_key_event('X')), Some(ToneType::Nga));
+        assert_eq!(
+            adapter.detect_tone(&create_key_event('S')),
+            Some(ToneType::Sac)
+        );
+        assert_eq!(
+            adapter.detect_tone(&create_key_event('F')),
+            Some(ToneType::Huyen)
+        );
+        assert_eq!(
+            adapter.detect_tone(&create_key_event('X')),
+            Some(ToneType::Nga)
+        );
     }
 
     #[test]
@@ -212,21 +227,30 @@ mod tests {
     fn test_detect_diacritic_circumflex_a() {
         let adapter = TelexAdapter::new();
         let event = create_key_event('a');
-        assert_eq!(adapter.detect_diacritic(&event), Some(DiacriticType::Circumflex));
+        assert_eq!(
+            adapter.detect_diacritic(&event),
+            Some(DiacriticType::Circumflex)
+        );
     }
 
     #[test]
     fn test_detect_diacritic_circumflex_e() {
         let adapter = TelexAdapter::new();
         let event = create_key_event('e');
-        assert_eq!(adapter.detect_diacritic(&event), Some(DiacriticType::Circumflex));
+        assert_eq!(
+            adapter.detect_diacritic(&event),
+            Some(DiacriticType::Circumflex)
+        );
     }
 
     #[test]
     fn test_detect_diacritic_circumflex_o() {
         let adapter = TelexAdapter::new();
         let event = create_key_event('o');
-        assert_eq!(adapter.detect_diacritic(&event), Some(DiacriticType::Circumflex));
+        assert_eq!(
+            adapter.detect_diacritic(&event),
+            Some(DiacriticType::Circumflex)
+        );
     }
 
     #[test]
@@ -241,15 +265,27 @@ mod tests {
     fn test_detect_diacritic_stroke_d() {
         let adapter = TelexAdapter::new();
         let event = create_key_event('d');
-        assert_eq!(adapter.detect_diacritic(&event), Some(DiacriticType::Stroke));
+        assert_eq!(
+            adapter.detect_diacritic(&event),
+            Some(DiacriticType::Stroke)
+        );
     }
 
     #[test]
     fn test_detect_diacritic_uppercase() {
         let adapter = TelexAdapter::new();
-        assert_eq!(adapter.detect_diacritic(&create_key_event('A')), Some(DiacriticType::Circumflex));
-        assert_eq!(adapter.detect_diacritic(&create_key_event('W')), Some(DiacriticType::Horn));
-        assert_eq!(adapter.detect_diacritic(&create_key_event('D')), Some(DiacriticType::Stroke));
+        assert_eq!(
+            adapter.detect_diacritic(&create_key_event('A')),
+            Some(DiacriticType::Circumflex)
+        );
+        assert_eq!(
+            adapter.detect_diacritic(&create_key_event('W')),
+            Some(DiacriticType::Horn)
+        );
+        assert_eq!(
+            adapter.detect_diacritic(&create_key_event('D')),
+            Some(DiacriticType::Stroke)
+        );
     }
 
     #[test]

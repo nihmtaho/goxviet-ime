@@ -11,7 +11,10 @@ fn test_than_s_telex_gives_than_sac() {
     engine.on_key(keys::N, false, false);
     engine.on_key(keys::S, false, false);
     let buf = engine.get_buffer();
-    assert_eq!(buf, "thán", "Tone sắc should apply to 'a' after final consonant 'n'");
+    assert_eq!(
+        buf, "thán",
+        "Tone sắc should apply to 'a' after final consonant 'n'"
+    );
 }
 
 #[test]
@@ -23,7 +26,10 @@ fn test_moi_oo_telex_gives_moi_circumflex() {
     engine.on_key(keys::I, false, false);
     engine.on_key(keys::O, false, false);
     let buf = engine.get_buffer();
-    assert_eq!(buf, "môi", "Circumflex should apply backward to 'o' in 'oi' diphthong");
+    assert_eq!(
+        buf, "môi",
+        "Circumflex should apply backward to 'o' in 'oi' diphthong"
+    );
 }
 
 #[test]
@@ -51,7 +57,10 @@ fn test_moi_6_4_vni_gives_moi_nga() {
     engine.on_key(keys::N6, false, false);
     engine.on_key(keys::N4, false, false);
     let buf = engine.get_buffer();
-    assert_eq!(buf, "mỗi", "VNI should apply circumflex and ngã to get 'mỗi'");
+    assert_eq!(
+        buf, "mỗi",
+        "VNI should apply circumflex and ngã to get 'mỗi'"
+    );
 }
 
 #[test]
@@ -65,7 +74,10 @@ fn test_khoe_o_should_not_apply_circumflex() {
     engine.on_key(keys::O, false, false);
     let buf = engine.get_buffer();
     // "ôe" is NOT a valid Vietnamese diphthong, so circumflex should NOT apply backward
-    assert_ne!(buf, "khôe", "Should NOT apply circumflex backward to form invalid 'ôe' diphthong");
+    assert_ne!(
+        buf, "khôe",
+        "Should NOT apply circumflex backward to form invalid 'ôe' diphthong"
+    );
 }
 
 #[test]
@@ -77,7 +89,10 @@ fn test_dau_a_telex_gives_dau_circumflex() {
     engine.on_key(keys::U, false, false);
     engine.on_key(keys::A, false, false);
     let buf = engine.get_buffer();
-    assert_eq!(buf, "dâu", "Circumflex should apply backward to 'a' in 'au' diphthong");
+    assert_eq!(
+        buf, "dâu",
+        "Circumflex should apply backward to 'a' in 'au' diphthong"
+    );
 }
 
 #[test]
@@ -89,7 +104,10 @@ fn test_cay_a_telex_gives_cay_circumflex() {
     engine.on_key(keys::Y, false, false);
     engine.on_key(keys::A, false, false);
     let buf = engine.get_buffer();
-    assert_eq!(buf, "cây", "Circumflex should apply backward to 'a' in 'ay' → 'ây'");
+    assert_eq!(
+        buf, "cây",
+        "Circumflex should apply backward to 'a' in 'ay' → 'ây'"
+    );
 }
 
 #[test]
@@ -101,7 +119,10 @@ fn test_keu_e_telex_gives_keu_circumflex() {
     engine.on_key(keys::U, false, false);
     engine.on_key(keys::E, false, false);
     let buf = engine.get_buffer();
-    assert_eq!(buf, "kêu", "Circumflex should apply backward to 'e' in 'eu' → 'êu'");
+    assert_eq!(
+        buf, "kêu",
+        "Circumflex should apply backward to 'e' in 'eu' → 'êu'"
+    );
 }
 
 #[test]
@@ -113,7 +134,10 @@ fn test_cam_a_telex_gives_cam_circumflex() {
     engine.on_key(keys::M, false, false);
     engine.on_key(keys::A, false, false);
     let buf = engine.get_buffer();
-    assert_eq!(buf, "câm", "Circumflex should apply backward after final consonant");
+    assert_eq!(
+        buf, "câm",
+        "Circumflex should apply backward after final consonant"
+    );
 }
 
 #[test]
@@ -139,40 +163,49 @@ fn test_backspace_after_space_tone_change() {
     engine.on_key(keys::N, false, false);
     let buf_before_space = engine.get_buffer();
     println!("before space: '{}'", buf_before_space);
-    
+
     // Space commits the word
     engine.on_key(keys::SPACE, false, false);
     let buf_after_space = engine.get_buffer();
     println!("after space: '{}'", buf_after_space);
-    
+
     // Backspace removes the space and restores buffer
     engine.on_key(keys::DELETE, false, false);
     let buf_after_backspace = engine.get_buffer();
     println!("after backspace: '{}'", buf_after_backspace);
-    
+
     // Now type 's' to apply tone sắc
     engine.on_key(keys::S, false, false);
     let buf_final = engine.get_buffer();
     println!("after 's': '{}'", buf_final);
-    
-    assert_eq!(buf_final, "thán", "After space+backspace, tone 's' should apply to restored 'than' → 'thán'");
+
+    assert_eq!(
+        buf_final, "thán",
+        "After space+backspace, tone 's' should apply to restored 'than' → 'thán'"
+    );
 }
 
 #[test]
 fn test_shortcut_expansion_default() {
     let mut engine = Engine::new();
     engine.shortcuts_enabled = true;
-    
+
     // Type "hcm" + space → should expand to "Hồ Chí Minh"
     engine.on_key(keys::H, false, false);
     engine.on_key(keys::C, false, false);
     engine.on_key(keys::M, false, false);
     let result = engine.on_key(keys::SPACE, false, false);
-    
+
     // Check if result has characters (expansion happened)
     let chars_count = result.count;
-    println!("hcm expansion: count={}, backspace={}", chars_count, result.backspace);
-    assert!(chars_count > 0 || result.backspace > 0, "Shortcut 'hcm' should trigger expansion");
+    println!(
+        "hcm expansion: count={}, backspace={}",
+        chars_count, result.backspace
+    );
+    assert!(
+        chars_count > 0 || result.backspace > 0,
+        "Shortcut 'hcm' should trigger expansion"
+    );
 }
 
 #[test]

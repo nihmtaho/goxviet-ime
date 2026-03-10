@@ -187,8 +187,7 @@ pub trait MarkTransformer: Send + Sync {
     /// apply_mark("cua", Horn, 1)       => "cưa"
     /// apply_mark("can", Breve, 1)      => "căn"
     /// ```
-    fn apply_mark(&self, text: &CharSequence, mark: MarkType, position: usize)
-        -> TransformResult;
+    fn apply_mark(&self, text: &CharSequence, mark: MarkType, position: usize) -> TransformResult;
 
     /// Applies mark to a syllable's vowel
     ///

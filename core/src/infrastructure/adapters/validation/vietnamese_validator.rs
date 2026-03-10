@@ -1,5 +1,7 @@
 use crate::data::keys;
-use crate::infrastructure::adapters::validation::fsm::tables::{CHAR_PROPS, PROP_VOWEL, VIETNAMESE_BIGRAMS};
+use crate::infrastructure::adapters::validation::fsm::tables::{
+    CHAR_PROPS, PROP_VOWEL, VIETNAMESE_BIGRAMS,
+};
 
 pub struct ValidationResult {
     pub is_valid: bool,
@@ -81,7 +83,9 @@ impl VietnameseSyllableValidator {
         // Rule 5: Coda validation
         let last = keys[len - 1];
         if len > 1
-            && (CHAR_PROPS[last as usize] & crate::infrastructure::adapters::validation::fsm::tables::PROP_CODA_INVALID) != 0
+            && (CHAR_PROPS[last as usize]
+                & crate::infrastructure::adapters::validation::fsm::tables::PROP_CODA_INVALID)
+                != 0
         {
             // Allow 'k' as a final consonant for names like "Đăk Lăk"
             if last == keys::K {

@@ -36,19 +36,19 @@
 // ============================================================
 // CLEAN ARCHITECTURE (v3.0.0)
 // ============================================================
-pub mod domain;          // Core business logic (entities, ports, value objects)
-pub mod application;     // Use cases & services (orchestration)
-pub mod infrastructure;  // Adapters & implementations (Telex, VNI, validators)
-pub mod presentation;    // FFI API & DI container
-pub mod shared;          // Shared utilities (buffer, types)
-pub mod features;        // Feature modules (shortcuts, encoding)
-pub mod unified_engine;  // SOLID facade for engine components
+pub mod application; // Use cases & services (orchestration)
+pub mod domain; // Core business logic (entities, ports, value objects)
+pub mod features; // Feature modules (shortcuts, encoding)
+pub mod infrastructure; // Adapters & implementations (Telex, VNI, validators)
+pub mod presentation; // FFI API & DI container
+pub mod shared; // Shared utilities (buffer, types)
+pub mod unified_engine; // SOLID facade for engine components
 
 // ============================================================
 // UTILITIES & DATA
 // ============================================================
-pub mod data;            // Constants, keys, dictionaries, FSM tables
-pub mod utils;           // Helper functions
+pub mod data; // Constants, keys, dictionaries, FSM tables
+pub mod utils; // Helper functions
 
 // ============================================================
 // LEGACY CODE REMOVED (v3.1.0)
@@ -68,8 +68,8 @@ pub mod engine_v2 {
 }
 
 // Other utilities
-pub mod input;           // Input utilities
-pub mod updater;         // Auto-update functionality
+pub mod input; // Input utilities
+pub mod updater; // Auto-update functionality
 
 // ============================================================
 // OBSOLETE MODULES DELETED (v3.0.0)
@@ -77,7 +77,7 @@ pub mod updater;         // Auto-update functionality
 // The following modules have been removed as they were unused/obsolete:
 // - processors/  (44KB) - Old processor implementation
 // - state/       (24KB) - Old state management
-// - traits/      (28KB) - Old trait definitions  
+// - traits/      (28KB) - Old trait definitions
 // - types.rs     (310 lines) - Obsolete type definitions
 // - transformers/ (empty)
 // - validators/   (empty)
@@ -86,27 +86,24 @@ pub mod updater;         // Auto-update functionality
 
 // Re-export main types from presentation layer
 pub use presentation::ffi::types::{
-    FfiConfig_v2,
-    FfiProcessResult_v2,
-    FfiStatusCode,
-    FfiVersionInfo,
+    FfiConfig_v2, FfiProcessResult_v2, FfiStatusCode, FfiVersionInfo,
 };
 
 // Re-export v2 FFI API
 pub use presentation::ffi::api::{
-    ime_create_engine_v2,
-    ime_destroy_engine_v2,
-    ime_process_key_v2,
-    ime_get_config_v2,
-    ime_set_config_v2,
-    ime_get_version_v2,
-    ime_free_string_v2,
     // Shortcut API
     ime_add_shortcut_v2,
-    ime_remove_shortcut_v2,
     ime_clear_shortcuts_v2,
-    ime_shortcuts_count_v2,
+    ime_create_engine_v2,
+    ime_destroy_engine_v2,
+    ime_free_string_v2,
+    ime_get_config_v2,
+    ime_get_version_v2,
+    ime_process_key_v2,
+    ime_remove_shortcut_v2,
+    ime_set_config_v2,
     ime_set_shortcuts_enabled_v2,
+    ime_shortcuts_count_v2,
 };
 
 // ============================================================

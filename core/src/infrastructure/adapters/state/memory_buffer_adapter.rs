@@ -2,10 +2,7 @@
 //!
 //! In-memory implementation of BufferManager using InputBuffer.
 
-use crate::domain::{
-    entities::buffer::InputBuffer,
-    ports::state::BufferManager,
-};
+use crate::domain::{entities::buffer::InputBuffer, ports::state::BufferManager};
 
 /// Memory-based buffer adapter
 ///
@@ -119,7 +116,7 @@ mod tests {
         // Fill buffer to capacity (256 chars)
         let large_text = "a".repeat(256);
         assert!(adapter.append(&large_text));
-        
+
         // Try to append more - should return false
         assert!(!adapter.append("b"));
     }
@@ -128,7 +125,7 @@ mod tests {
     fn test_delete() {
         let mut adapter = MemoryBufferAdapter::new();
         adapter.append("hello");
-        
+
         let deleted = adapter.delete(2);
         assert_eq!(deleted, 2);
         assert_eq!(adapter.current().content().as_str(), "hel");
@@ -138,7 +135,7 @@ mod tests {
     fn test_delete_more_than_available() {
         let mut adapter = MemoryBufferAdapter::new();
         adapter.append("hi");
-        
+
         let deleted = adapter.delete(5);
         assert_eq!(deleted, 2); // Only deleted what was available
         assert!(adapter.is_empty());
@@ -165,10 +162,10 @@ mod tests {
     fn test_is_empty() {
         let mut adapter = MemoryBufferAdapter::new();
         assert!(adapter.is_empty());
-        
+
         adapter.append("a");
         assert!(!adapter.is_empty());
-        
+
         adapter.clear();
         assert!(adapter.is_empty());
     }
@@ -177,10 +174,10 @@ mod tests {
     fn test_len() {
         let mut adapter = MemoryBufferAdapter::new();
         assert_eq!(adapter.len(), 0);
-        
+
         adapter.append("hello");
         assert_eq!(adapter.len(), 5);
-        
+
         adapter.delete(2);
         assert_eq!(adapter.len(), 3);
     }
@@ -192,7 +189,7 @@ mod tests {
         adapter.append("ư");
         adapter.append("ờ");
         adapter.append("ng");
-        
+
         assert_eq!(adapter.current().content().as_str(), "trường");
         assert_eq!(adapter.len(), 6);
     }
@@ -201,11 +198,11 @@ mod tests {
     fn test_current_and_current_mut() {
         let mut adapter = MemoryBufferAdapter::new();
         adapter.append("test");
-        
+
         // Test immutable reference
         let buffer_ref = adapter.current();
         assert_eq!(buffer_ref.content().as_str(), "test");
-        
+
         // Test mutable reference
         let buffer_mut = adapter.current_mut();
         buffer_mut.append('!');
@@ -216,10 +213,10 @@ mod tests {
     fn test_snapshot() {
         let mut adapter = MemoryBufferAdapter::new();
         adapter.append("hello");
-        
+
         let snapshot = adapter.snapshot();
         assert_eq!(snapshot.as_str(), "hello");
-        
+
         adapter.append(" world");
         assert_eq!(adapter.current().content().as_str(), "hello world");
         assert_eq!(snapshot.as_str(), "hello"); // Snapshot unchanged

@@ -60,9 +60,8 @@ const NA_2: &[&str] = &[
 const NA_3: &[&str] = &["oă"];
 const NA_4: &[&str] = &["uơ"];
 const NA_5: &[&str] = &[
-    "ai", "ao", "au", "âu", "ay", "ây", "eo", "êu", "ia", "iêu", "iu", "oai", "oao", "oay",
-    "oeo", "oi", "ôi", "ơi", "ưa", "uây", "ui", "ưi", "uôi", "ươi", "ươu", "ưu", "uya", "uyu",
-    "yêu",
+    "ai", "ao", "au", "âu", "ay", "ây", "eo", "êu", "ia", "iêu", "iu", "oai", "oao", "oay", "oeo",
+    "oi", "ôi", "ơi", "ưa", "uây", "ui", "ưi", "uôi", "ươi", "ươu", "ưu", "uya", "uyu", "yêu",
 ];
 
 const NA_GROUPS: &[&[&str]] = &[NA_0, NA_1, NA_2, NA_3, NA_4, NA_5];
@@ -425,7 +424,10 @@ mod tests {
         let s = Syllable::from_parts("b", "xyz", "", ToneType::Ngang);
         let r = v().validate(&s);
         assert!(r.is_invalid());
-        assert!(matches!(r.error(), Some(ValidationError::InvalidVowel { .. })));
+        assert!(matches!(
+            r.error(),
+            Some(ValidationError::InvalidVowel { .. })
+        ));
     }
 
     // ── Invalid: bad final ────────────────────────────────────────────────────
@@ -444,8 +446,14 @@ mod tests {
         // b (PAD.0) + uơ (NA.4) — PAD_NA.0 does NOT allow NA.4
         let s = Syllable::from_parts("b", "uơ", "", ToneType::Ngang);
         let r = v().validate(&s);
-        assert!(r.is_invalid(), "b+uơ should be invalid (PAD.0 cannot precede NA.4)");
-        assert!(matches!(r.error(), Some(ValidationError::PhonotacticViolation { .. })));
+        assert!(
+            r.is_invalid(),
+            "b+uơ should be invalid (PAD.0 cannot precede NA.4)"
+        );
+        assert!(matches!(
+            r.error(),
+            Some(ValidationError::PhonotacticViolation { .. })
+        ));
     }
 
     #[test]
@@ -453,7 +461,10 @@ mod tests {
         // ch (PAD.2) + uơ (NA.4) — PAD_NA.2 does NOT allow NA.4
         let s = Syllable::from_parts("ch", "uơ", "", ToneType::Ngang);
         let r = v().validate(&s);
-        assert!(r.is_invalid(), "ch+uơ should be invalid (PAD.2 cannot precede NA.4)");
+        assert!(
+            r.is_invalid(),
+            "ch+uơ should be invalid (PAD.2 cannot precede NA.4)"
+        );
     }
 
     // ── Invalid: NA–PAC incompatibility ──────────────────────────────────────
@@ -463,7 +474,10 @@ mod tests {
         // uơ (NA.4) + n — NA_PAC.4 is open only
         let s = Syllable::from_parts("", "uơ", "n", ToneType::Ngang);
         let r = v().validate(&s);
-        assert!(r.is_invalid(), "uơ+n should be invalid (NA.4 allows no PAC)");
+        assert!(
+            r.is_invalid(),
+            "uơ+n should be invalid (NA.4 allows no PAC)"
+        );
     }
 
     #[test]
@@ -471,7 +485,10 @@ mod tests {
         // ai (NA.5) + n — NA_PAC.5 is open only
         let s = Syllable::from_parts("", "ai", "n", ToneType::Ngang);
         let r = v().validate(&s);
-        assert!(r.is_invalid(), "ai+n should be invalid (NA.5 allows no PAC)");
+        assert!(
+            r.is_invalid(),
+            "ai+n should be invalid (NA.5 allows no PAC)"
+        );
     }
 
     #[test]
@@ -479,7 +496,10 @@ mod tests {
         // i (NA.0) + c (PAC.1) — NA_PAC.0 allows PAC.0 and PAC.2, NOT PAC.1
         let s = Syllable::from_parts("", "i", "c", ToneType::Ngang);
         let r = v().validate(&s);
-        assert!(r.is_invalid(), "i+c should be invalid (NA.0 does not allow PAC.1)");
+        assert!(
+            r.is_invalid(),
+            "i+c should be invalid (NA.0 does not allow PAC.1)"
+        );
     }
 
     #[test]
@@ -487,7 +507,10 @@ mod tests {
         // o (NA.2) + ch (PAC.0) — NA_PAC.2 allows PAC.1 and PAC.2, NOT PAC.0
         let s = Syllable::from_parts("", "o", "ch", ToneType::Ngang);
         let r = v().validate(&s);
-        assert!(r.is_invalid(), "o+ch should be invalid (NA.2 does not allow PAC.0)");
+        assert!(
+            r.is_invalid(),
+            "o+ch should be invalid (NA.2 does not allow PAC.0)"
+        );
     }
 
     // ── Invalid: tone–final rule ──────────────────────────────────────────────
@@ -498,7 +521,10 @@ mod tests {
         let s = Syllable::from_parts("c", "â", "p", ToneType::Hoi);
         let r = v().validate(&s);
         assert!(r.is_invalid());
-        assert!(matches!(r.error(), Some(ValidationError::InvalidTonePlacement { .. })));
+        assert!(matches!(
+            r.error(),
+            Some(ValidationError::InvalidTonePlacement { .. })
+        ));
     }
 
     #[test]

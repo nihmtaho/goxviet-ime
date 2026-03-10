@@ -80,10 +80,7 @@ fn test_english_array_not_transformed() {
     let result = type_word_telex("array");
     // 'a' 'r' 'r' 'a' 'y' → no standard Telex modifier; should pass through
     // 'r' = dấu hỏi in Telex, but "array" is an English word → auto-restore
-    assert!(
-        !result.is_empty(),
-        "Expected output for 'array'"
-    );
+    assert!(!result.is_empty(), "Expected output for 'array'");
     // The result should contain only ASCII (auto-restored)
     assert!(
         result.chars().all(|c| c.is_ascii()),
@@ -127,20 +124,14 @@ fn test_vni_basic_tone() {
 fn test_telex_basic_tone_sac() {
     // Telex: "as" → "á"
     let result = type_telex("as");
-    assert!(
-        !result.is_empty(),
-        "Telex 'as' should produce output"
-    );
+    assert!(!result.is_empty(), "Telex 'as' should produce output");
 }
 
 #[test]
 fn test_telex_basic_dd() {
     // Telex: "dd" → "đ"
     let result = type_telex("dd");
-    assert!(
-        !result.is_empty(),
-        "Telex 'dd' should produce output"
-    );
+    assert!(!result.is_empty(), "Telex 'dd' should produce output");
 }
 
 #[test]
@@ -187,7 +178,10 @@ fn test_engine_reset_after_word() {
 
     // Output should contain 'o' somewhere (clean state after space)
     assert!(
-        output.contains('o') || output.contains('ô') || output.contains('ơ') || output.ends_with('o'),
+        output.contains('o')
+            || output.contains('ô')
+            || output.contains('ơ')
+            || output.ends_with('o'),
         "After space+reset, typing 'o' should append 'o', got: {:?}",
         output
     );
@@ -197,10 +191,7 @@ fn test_engine_reset_after_word() {
 fn test_windows_english_not_transformed() {
     // "windows" contains 'w' (Telex modifier for ư/ơ) but is an English word
     let result = type_word_telex("windows");
-    assert!(
-        !result.is_empty(),
-        "Expected output for 'windows'"
-    );
+    assert!(!result.is_empty(), "Expected output for 'windows'");
     // Result should be ASCII (auto-restored)
     assert!(
         result.chars().all(|c| c.is_ascii()),
@@ -213,16 +204,14 @@ fn test_windows_english_not_transformed() {
 
 #[cfg(test)]
 mod input_method_config_tests {
-    use goxviet_core::domain::entities::input_method_config::{
-        InputAction, InputMethodConfig,
-    };
+    use goxviet_core::domain::entities::input_method_config::{InputAction, InputMethodConfig};
 
     #[test]
     fn test_telex_config_roundtrip() {
         let original = InputMethodConfig::telex();
         let json = original.to_json().expect("serialize telex config");
-        let restored = InputMethodConfig::from_json_bytes(json.as_bytes())
-            .expect("deserialize telex config");
+        let restored =
+            InputMethodConfig::from_json_bytes(json.as_bytes()).expect("deserialize telex config");
         assert_eq!(original.name, restored.name);
         assert_eq!(original.mappings.len(), restored.mappings.len());
     }
@@ -231,8 +220,8 @@ mod input_method_config_tests {
     fn test_vni_config_roundtrip() {
         let original = InputMethodConfig::vni();
         let json = original.to_json().expect("serialize vni config");
-        let restored = InputMethodConfig::from_json_bytes(json.as_bytes())
-            .expect("deserialize vni config");
+        let restored =
+            InputMethodConfig::from_json_bytes(json.as_bytes()).expect("deserialize vni config");
         assert_eq!(original.name, restored.name);
         assert_eq!(original.mappings.len(), restored.mappings.len());
     }

@@ -4,9 +4,7 @@
 //! and Vietnamese validator to determine if text is Vietnamese or non-Vietnamese.
 
 use crate::domain::{
-    ports::validation::language_detector::{
-        ConfidenceLevel, DetectionResult, LanguageDetector,
-    },
+    ports::validation::language_detector::{ConfidenceLevel, DetectionResult, LanguageDetector},
     value_objects::char_sequence::CharSequence,
 };
 use crate::infrastructure::external::english::language_decision::LanguageDecisionEngine;
@@ -113,7 +111,10 @@ impl LanguageDetectorAdapter {
     /// Validates text as Vietnamese syllable
     ///
     /// Extracts keys only and validates using Vietnamese validator
-    fn validate_vietnamese(&self, text: &CharSequence) -> Option<crate::infrastructure::external::vietnamese_validator::ValidationResult> {
+    fn validate_vietnamese(
+        &self,
+        text: &CharSequence,
+    ) -> Option<crate::infrastructure::external::vietnamese_validator::ValidationResult> {
         use crate::data::chars::parse_char;
 
         let mut keys = Vec::new();
@@ -153,7 +154,7 @@ impl LanguageDetector for LanguageDetectorAdapter {
 
         // Validate as Vietnamese syllable
         let vietnamese_validation = self.validate_vietnamese(text);
-        
+
         // Check if validation is valid before passing to decision engine
         let is_valid_vietnamese = vietnamese_validation
             .as_ref()

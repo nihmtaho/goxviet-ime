@@ -12,18 +12,16 @@ use std::fmt;
 pub enum ValidationResult {
     /// Input is valid Vietnamese
     Valid,
-    
+
     /// Input is invalid Vietnamese with reason
     Invalid {
         reason: ValidationError,
         position: Option<usize>,
     },
-    
+
     /// Input is ambiguous (could be valid or invalid depending on context)
-    Ambiguous {
-        message: String,
-    },
-    
+    Ambiguous { message: String },
+
     /// Input appears to be English (not Vietnamese)
     NonVietnamese,
 }
@@ -107,9 +105,7 @@ impl ValidationResult {
         match self {
             ValidationResult::Valid => Ok(()),
             ValidationResult::Invalid { reason, .. } => Err(reason),
-            ValidationResult::Ambiguous { message } => {
-                Err(ValidationError::Ambiguous { message })
-            }
+            ValidationResult::Ambiguous { message } => Err(ValidationError::Ambiguous { message }),
             ValidationResult::NonVietnamese => Err(ValidationError::NonVietnamese),
         }
     }
@@ -127,50 +123,31 @@ impl Default for ValidationResult {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ValidationError {
     /// Invalid consonant combination
-    InvalidConsonant { 
-        consonant: String,
-        context: String,
-    },
-    
+    InvalidConsonant { consonant: String, context: String },
+
     /// Invalid vowel combination
-    InvalidVowel {
-        vowel: String,
-        context: String,
-    },
-    
+    InvalidVowel { vowel: String, context: String },
+
     /// Invalid tone placement
-    InvalidTonePlacement {
-        syllable: String,
-        reason: String,
-    },
-    
+    InvalidTonePlacement { syllable: String, reason: String },
+
     /// Syllable structure violation
-    InvalidStructure {
-        syllable: String,
-        reason: String,
-    },
-    
+    InvalidStructure { syllable: String, reason: String },
+
     /// Phonotactic constraint violation
-    PhonotacticViolation {
-        rule: String,
-        context: String,
-    },
-    
+    PhonotacticViolation { rule: String, context: String },
+
     /// Ambiguous case (could be valid or invalid)
-    Ambiguous {
-        message: String,
-    },
-    
+    Ambiguous { message: String },
+
     /// Not Vietnamese language
     NonVietnamese,
-    
+
     /// Empty input
     Empty,
-    
+
     /// Other error with custom message
-    Other {
-        message: String,
-    },
+    Other { message: String },
 }
 
 impl ValidationError {
@@ -195,12 +172,8 @@ impl ValidationError {
             ValidationError::Ambiguous { message } => {
                 format!("Ambiguous: {}", message)
             }
-            ValidationError::NonVietnamese => {
-                "Not Vietnamese language".to_string()
-            }
-            ValidationError::Empty => {
-                "Empty input".to_string()
-            }
+            ValidationError::NonVietnamese => "Not Vietnamese language".to_string(),
+            ValidationError::Empty => "Empty input".to_string(),
             ValidationError::Other { message } => message.clone(),
         }
     }

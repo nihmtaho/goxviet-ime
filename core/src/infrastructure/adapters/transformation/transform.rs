@@ -8,8 +8,8 @@ use crate::data::{
     keys,
     vowel::Phonology,
 };
-use crate::shared::buffer::{Buffer, MAX};
 use crate::infrastructure::adapters::transformation::tone_positioning;
+use crate::shared::buffer::{Buffer, MAX};
 use crate::utils;
 
 /// Modifier type detected from key

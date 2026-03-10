@@ -1,10 +1,10 @@
 //! Test Vietnamese 22k word list.
 //! Converts Vietnamese words to Telex/VNI input and verifies engine output.
-//! 
+//!
 //! Updated to use v2 API (Clean Architecture with Container/ProcessorService)
 
 use goxviet_core::application::dto::EngineConfig;
-use goxviet_core::domain::entities::key_event::{KeyEvent, Action};
+use goxviet_core::domain::entities::key_event::{Action, KeyEvent};
 use goxviet_core::domain::ports::input::InputMethodId;
 use goxviet_core::domain::ports::transformation::ToneStrategy;
 use goxviet_core::presentation::di::Container;
@@ -16,42 +16,41 @@ use std::time::Instant;
 /// Helper function to simulate typing using v2 Container API
 fn type_word(container: &mut Container, input: &str) -> String {
     let mut screen = String::new();
-    
+
     for ch in input.chars() {
         // Convert character to macOS virtual keycode (not Unicode!)
         let keycode = goxviet_core::utils::char_to_key(ch);
         let is_shift = ch.is_uppercase();
-        
+
         // Create KeyEvent with virtual keycode
         let key_event = KeyEvent::new(
-            keycode, 
-            is_shift,  // shift
-            false,     // ctrl
-            false,     // alt
-            false      // meta
+            keycode, is_shift, // shift
+            false,    // ctrl
+            false,    // alt
+            false,    // meta
         );
-        
+
         // Process key via container's processor service
         let process_result = {
             let processor_arc = container.processor_service();
             let mut processor_guard = processor_arc.lock().unwrap();
             processor_guard.process_key(key_event)
         };
-        
+
         match process_result {
             Ok(result) => {
                 let backspace = result.backspace_count();
                 let new_text = result.new_text().as_str();
                 let action = result.action();
-                
+
                 // Check if Engine returned text (action=Replace or Insert)
                 let has_transformation = matches!(action, Action::Replace { .. } | Action::Insert);
-                
+
                 // Apply backspaces
                 for _ in 0..backspace {
                     screen.pop();
                 }
-                
+
                 // Append new text or original character
                 if !new_text.is_empty() {
                     // Engine returned transformed text
@@ -72,7 +71,7 @@ fn type_word(container: &mut Container, input: &str) -> String {
             }
         }
     }
-    
+
     screen
 }
 
@@ -1174,4 +1173,3 @@ fn test_vni_specific_cases() {
 
     assert_eq!(failed, 0, "VNI specific cases test failed!");
 }
-

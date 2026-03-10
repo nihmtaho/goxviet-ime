@@ -121,9 +121,7 @@ fn generate_viet_compound_bin(path: &Path, out_dir: &str) {
         out.write_all(bytes).expect("Failed to write entry bytes");
     }
 
-    let file_size = fs::metadata(&out_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
 
     eprintln!(
         "cargo:warning=Generated viet_compound.bin: {} entries, {} bytes ({:.0}KB)",
@@ -132,4 +130,3 @@ fn generate_viet_compound_bin(path: &Path, out_dir: &str) {
         file_size as f64 / 1024.0
     );
 }
-

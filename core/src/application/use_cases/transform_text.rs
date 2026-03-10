@@ -71,11 +71,7 @@ impl TransformRequest {
     }
 
     /// Create request to apply mark
-    pub fn apply_mark(
-        text: impl Into<CharSequence>,
-        mark: MarkType,
-        position: usize,
-    ) -> Self {
+    pub fn apply_mark(text: impl Into<CharSequence>, mark: MarkType, position: usize) -> Self {
         Self {
             text: text.into(),
             transformation: TransformationType::ApplyMark,
@@ -164,8 +160,7 @@ impl TransformTextUseCase {
 
     fn remove_mark(&self, request: &TransformRequest) -> TransformResult {
         let position = request.position.unwrap_or(0);
-        self.mark_transformer
-            .remove_mark(&request.text, position)
+        self.mark_transformer.remove_mark(&request.text, position)
     }
 }
 
@@ -194,7 +189,12 @@ mod tests {
     struct MockMarkTransformer;
 
     impl MarkTransformer for MockMarkTransformer {
-        fn apply_mark(&self, _text: &CharSequence, _mark: MarkType, _position: usize) -> TransformResult {
+        fn apply_mark(
+            &self,
+            _text: &CharSequence,
+            _mark: MarkType,
+            _position: usize,
+        ) -> TransformResult {
             TransformResult::new(Action::Insert, CharSequence::from("ơ"))
         }
 
@@ -204,10 +204,7 @@ mod tests {
     }
 
     fn create_test_use_case() -> TransformTextUseCase {
-        TransformTextUseCase::new(
-            Box::new(MockToneTransformer),
-            Box::new(MockMarkTransformer),
-        )
+        TransformTextUseCase::new(Box::new(MockToneTransformer), Box::new(MockMarkTransformer))
     }
 
     #[test]

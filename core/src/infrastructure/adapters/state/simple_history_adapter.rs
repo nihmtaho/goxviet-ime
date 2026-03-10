@@ -25,14 +25,14 @@ use crate::domain::{
 /// # use goxviet_core::domain::ports::state::HistoryTracker;
 /// # use goxviet_core::domain::value_objects::char_sequence::CharSequence;
 /// let mut adapter = SimpleHistoryAdapter::new(10);
-/// 
+///
 /// adapter.record(CharSequence::from("h"));
 /// adapter.record(CharSequence::from("ho"));
 /// adapter.record(CharSequence::from("hoa"));
-/// 
+///
 /// let prev = adapter.undo();
 /// assert_eq!(prev.unwrap().as_str(), "ho");
-/// 
+///
 /// let next = adapter.redo();
 /// assert_eq!(next.unwrap().as_str(), "hoa");
 /// ```
@@ -163,7 +163,7 @@ mod tests {
     fn test_record_first_entry() {
         let mut adapter = SimpleHistoryAdapter::new(10);
         adapter.record(CharSequence::from("hello"));
-        
+
         assert_eq!(adapter.history_size(), 1);
         assert_eq!(adapter.current_position(), 0);
         assert!(!adapter.can_undo());
@@ -176,7 +176,7 @@ mod tests {
         adapter.record(CharSequence::from("h"));
         adapter.record(CharSequence::from("he"));
         adapter.record(CharSequence::from("hel"));
-        
+
         assert_eq!(adapter.history_size(), 3);
         assert_eq!(adapter.current_position(), 2);
         assert!(adapter.can_undo());
@@ -189,7 +189,7 @@ mod tests {
         adapter.record(CharSequence::from("h"));
         adapter.record(CharSequence::from("he"));
         adapter.record(CharSequence::from("hel"));
-        
+
         let prev = adapter.undo();
         assert_eq!(prev.unwrap().as_str(), "he");
         assert_eq!(adapter.current_position(), 1);
@@ -202,7 +202,7 @@ mod tests {
         let mut adapter = SimpleHistoryAdapter::new(10);
         adapter.record(CharSequence::from("h"));
         adapter.record(CharSequence::from("he"));
-        
+
         adapter.undo();
         assert_eq!(adapter.current_position(), 0);
         assert!(!adapter.can_undo());
@@ -222,7 +222,7 @@ mod tests {
         adapter.record(CharSequence::from("h"));
         adapter.record(CharSequence::from("he"));
         adapter.record(CharSequence::from("hel"));
-        
+
         adapter.undo();
         let next = adapter.redo();
         assert_eq!(next.unwrap().as_str(), "hel");
@@ -235,7 +235,7 @@ mod tests {
     fn test_redo_without_undo() {
         let mut adapter = SimpleHistoryAdapter::new(10);
         adapter.record(CharSequence::from("hello"));
-        
+
         let result = adapter.redo();
         assert!(result.is_none());
     }
@@ -246,14 +246,14 @@ mod tests {
         adapter.record(CharSequence::from("h"));
         adapter.record(CharSequence::from("he"));
         adapter.record(CharSequence::from("hel"));
-        
+
         adapter.undo(); // Back to "he"
         assert!(adapter.can_redo());
-        
+
         adapter.record(CharSequence::from("ho")); // New branch
         assert!(!adapter.can_redo());
         assert_eq!(adapter.history_size(), 3); // ["h", "he", "ho"]
-        
+
         let prev = adapter.undo();
         assert_eq!(prev.unwrap().as_str(), "he");
     }
@@ -265,14 +265,17 @@ mod tests {
         adapter.record(CharSequence::from("b"));
         adapter.record(CharSequence::from("c"));
         adapter.record(CharSequence::from("d")); // Should drop "a"
-        
+
         assert_eq!(adapter.history_size(), 3);
         assert_eq!(adapter.current_position(), 2);
-        
+
         // Verify oldest was dropped
         adapter.undo();
         adapter.undo();
-        assert_eq!(adapter.entries[adapter.current_position()].content.as_str(), "b");
+        assert_eq!(
+            adapter.entries[adapter.current_position()].content.as_str(),
+            "b"
+        );
     }
 
     #[test]
@@ -283,13 +286,16 @@ mod tests {
         adapter.record(CharSequence::from("c"));
         adapter.record(CharSequence::from("d"));
         adapter.record(CharSequence::from("e"));
-        
+
         assert_eq!(adapter.history_size(), 2);
         assert_eq!(adapter.current_position(), 1);
-        
+
         // Should only have "d" and "e"
         adapter.undo();
-        assert_eq!(adapter.entries[adapter.current_position()].content.as_str(), "d");
+        assert_eq!(
+            adapter.entries[adapter.current_position()].content.as_str(),
+            "d"
+        );
     }
 
     #[test]
@@ -298,7 +304,7 @@ mod tests {
         adapter.record(CharSequence::from("h"));
         adapter.record(CharSequence::from("he"));
         adapter.record(CharSequence::from("hel"));
-        
+
         adapter.clear();
         assert_eq!(adapter.history_size(), 0);
         assert_eq!(adapter.current_position(), 0);
@@ -339,22 +345,22 @@ mod tests {
         adapter.record(CharSequence::from("h"));
         adapter.record(CharSequence::from("ho"));
         adapter.record(CharSequence::from("hoa"));
-        
+
         // Undo twice
         let prev1 = adapter.undo();
         assert_eq!(prev1.unwrap().as_str(), "ho");
         let prev2 = adapter.undo();
         assert_eq!(prev2.unwrap().as_str(), "h");
-        
+
         assert!(!adapter.can_undo());
         assert!(adapter.can_redo());
-        
+
         // Redo twice
         let next1 = adapter.redo();
         assert_eq!(next1.unwrap().as_str(), "ho");
         let next2 = adapter.redo();
         assert_eq!(next2.unwrap().as_str(), "hoa");
-        
+
         assert!(adapter.can_undo());
         assert!(!adapter.can_redo());
     }
@@ -366,7 +372,7 @@ mod tests {
         adapter.record(CharSequence::from("ho"));
         adapter.record(CharSequence::from("hoa"));
         adapter.record(CharSequence::from("hoà"));
-        
+
         let prev = adapter.undo();
         assert_eq!(prev.unwrap().as_str(), "hoa");
     }
@@ -377,7 +383,7 @@ mod tests {
         adapter.record(CharSequence::from("a"));
         adapter.record(CharSequence::from("b"));
         adapter.record(CharSequence::from("c"));
-        
+
         assert_eq!(adapter.history_size(), 1);
         assert_eq!(adapter.current_position(), 0);
         assert_eq!(adapter.entries[0].content.as_str(), "c");

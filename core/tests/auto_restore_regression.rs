@@ -128,11 +128,7 @@ fn test_vietnamese_an_transformed() {
     let result = type_word_telex("awn ");
     let trimmed = result.trim();
     // "awn" in Telex = "ăn"
-    assert_eq!(
-        trimmed, "ăn",
-        "Expected Vietnamese 'ăn', got '{}'",
-        trimmed
-    );
+    assert_eq!(trimmed, "ăn", "Expected Vietnamese 'ăn', got '{}'", trimmed);
 }
 
 /// "uống" in Telex: u-o-o-n-g-s (oo=ô tone, s=sắc)
@@ -224,11 +220,7 @@ fn test_telex_khong_raw() {
 fn test_vietnamese_khong_transformed() {
     let result = type_word_telex("khoong ");
     let trimmed = result.trim();
-    assert_eq!(
-        trimmed, "không",
-        "Expected 'không', got '{}'",
-        trimmed
-    );
+    assert_eq!(trimmed, "không", "Expected 'không', got '{}'", trimmed);
 }
 
 // ─── T1.1.D: Compound words (multi-syllable) ───────────────────────────────

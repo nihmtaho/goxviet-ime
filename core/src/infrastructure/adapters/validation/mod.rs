@@ -8,10 +8,10 @@ pub mod phonotactic_adapter;
 pub mod syllable_structure_validator;
 
 // Validation modules (moved from infrastructure/external/)
+pub mod diacritical_validator;
 pub mod english;
 pub mod fsm;
 pub mod vietnamese_validator;
-pub mod diacritical_validator;
 
 // Re-exports for convenience
 pub use fsm_validator_adapter::FsmValidatorAdapter;

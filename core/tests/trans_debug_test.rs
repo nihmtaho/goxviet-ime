@@ -50,20 +50,35 @@ fn debug_risch() {
 
     // r+i+s+c+h → expected "rích"
     let mut e = Engine::new();
-    let chars = vec![('r', keys::R), ('i', keys::I), ('s', keys::S), ('c', keys::C), ('h', keys::H)];
+    let chars = vec![
+        ('r', keys::R),
+        ('i', keys::I),
+        ('s', keys::S),
+        ('c', keys::C),
+        ('h', keys::H),
+    ];
     let mut screen = String::new();
     for (ch, key) in chars {
         let r = e.on_key(key, false, false);
         let action = r.action;
         let bs = r.backspace;
         let count = r.count;
-        let text: String = (0..count as usize).filter_map(|i| {
-            unsafe { char::from_u32(*r.chars.offset(i as isize)) }
-        }).collect();
-        println!("key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
-            ch, action, bs, text, e.get_buffer(), screen);
+        let text: String = (0..count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r.chars.offset(i as isize)) })
+            .collect();
+        println!(
+            "key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
+            ch,
+            action,
+            bs,
+            text,
+            e.get_buffer(),
+            screen
+        );
         if action == Action::Send as u8 {
-            for _ in 0..bs { screen.pop(); }
+            for _ in 0..bs {
+                screen.pop();
+            }
             screen.push_str(&text);
         } else {
             screen.push(ch);
@@ -81,20 +96,36 @@ fn debug_huyjch() {
 
     // h+u+y+j+c+h → expected "huỵch"
     let mut e = Engine::new();
-    let chars = vec![('h', keys::H), ('u', keys::U), ('y', keys::Y), ('j', keys::J), ('c', keys::C), ('h', keys::H)];
+    let chars = vec![
+        ('h', keys::H),
+        ('u', keys::U),
+        ('y', keys::Y),
+        ('j', keys::J),
+        ('c', keys::C),
+        ('h', keys::H),
+    ];
     let mut screen = String::new();
     for (ch, key) in chars {
         let r = e.on_key(key, false, false);
         let action = r.action;
         let bs = r.backspace;
         let count = r.count;
-        let text: String = (0..count as usize).filter_map(|i| {
-            unsafe { char::from_u32(*r.chars.offset(i as isize)) }
-        }).collect();
-        println!("key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
-            ch, action, bs, text, e.get_buffer(), screen);
+        let text: String = (0..count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r.chars.offset(i as isize)) })
+            .collect();
+        println!(
+            "key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
+            ch,
+            action,
+            bs,
+            text,
+            e.get_buffer(),
+            screen
+        );
         if action == Action::Send as u8 {
-            for _ in 0..bs { screen.pop(); }
+            for _ in 0..bs {
+                screen.pop();
+            }
             screen.push_str(&text);
         } else {
             screen.push(ch);
@@ -112,20 +143,35 @@ fn debug_coxng() {
 
     // c+o+x+n+g → expected "cõng"
     let mut e = Engine::new();
-    let chars = vec![('c', keys::C), ('o', keys::O), ('x', keys::X), ('n', keys::N), ('g', keys::G)];
+    let chars = vec![
+        ('c', keys::C),
+        ('o', keys::O),
+        ('x', keys::X),
+        ('n', keys::N),
+        ('g', keys::G),
+    ];
     let mut screen = String::new();
     for (ch, key) in chars {
         let r = e.on_key(key, false, false);
         let action = r.action;
         let bs = r.backspace;
         let count = r.count;
-        let text: String = (0..count as usize).filter_map(|i| {
-            unsafe { char::from_u32(*r.chars.offset(i as isize)) }
-        }).collect();
-        println!("key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
-            ch, action, bs, text, e.get_buffer(), screen);
+        let text: String = (0..count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r.chars.offset(i as isize)) })
+            .collect();
+        println!(
+            "key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
+            ch,
+            action,
+            bs,
+            text,
+            e.get_buffer(),
+            screen
+        );
         if action == Action::Send as u8 {
-            for _ in 0..bs { screen.pop(); }
+            for _ in 0..bs {
+                screen.pop();
+            }
             screen.push_str(&text);
         } else {
             screen.push(ch);
@@ -144,20 +190,35 @@ fn debug_tone_early_gia() {
 
     // Step-by-step for "giasc" → expected "giác"
     let mut e = Engine::new();
-    let chars = vec![('g', keys::G), ('i', keys::I), ('a', keys::A), ('s', keys::S), ('c', keys::C)];
+    let chars = vec![
+        ('g', keys::G),
+        ('i', keys::I),
+        ('a', keys::A),
+        ('s', keys::S),
+        ('c', keys::C),
+    ];
     let mut screen = String::new();
     for (ch, key) in chars {
         let r = e.on_key(key, false, false);
         let action = r.action;
         let bs = r.backspace;
         let count = r.count;
-        let text: String = (0..count as usize).filter_map(|i| {
-            unsafe { char::from_u32(*r.chars.offset(i as isize)) }
-        }).collect();
-        println!("key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
-            ch, action, bs, text, e.get_buffer(), screen);
+        let text: String = (0..count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r.chars.offset(i as isize)) })
+            .collect();
+        println!(
+            "key='{}' action={} bs={} text='{}' buf='{}' screen_before='{}'",
+            ch,
+            action,
+            bs,
+            text,
+            e.get_buffer(),
+            screen
+        );
         if action == Action::Send as u8 {
-            for _ in 0..bs { screen.pop(); }
+            for _ in 0..bs {
+                screen.pop();
+            }
             screen.push_str(&text);
         } else {
             screen.push(ch);

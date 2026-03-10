@@ -29,7 +29,7 @@ use std::fmt;
 ///     .with_vowel("ươ")
 ///     .with_final("ng")
 ///     .with_tone(ToneType::Huyền);
-/// 
+///
 /// assert_eq!(syllable.to_string(), "trường");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,9 +153,7 @@ impl Syllable {
 
     /// Check if syllable is empty
     pub fn is_empty(&self) -> bool {
-        self.initial.is_empty() 
-            && self.vowel.is_empty() 
-            && self.final_consonant.is_empty()
+        self.initial.is_empty() && self.vowel.is_empty() && self.final_consonant.is_empty()
     }
 
     /// Apply tone to this syllable
@@ -239,7 +237,12 @@ impl Syllable {
     /// Check if syllable matches a pattern
     ///
     /// Useful for validation and transformation rules.
-    pub fn matches_pattern(&self, initial_pattern: &str, vowel_pattern: &str, final_pattern: &str) -> bool {
+    pub fn matches_pattern(
+        &self,
+        initial_pattern: &str,
+        vowel_pattern: &str,
+        final_pattern: &str,
+    ) -> bool {
         (initial_pattern.is_empty() || self.initial.as_str() == initial_pattern)
             && (vowel_pattern.is_empty() || self.vowel.as_str() == vowel_pattern)
             && (final_pattern.is_empty() || self.final_consonant.as_str() == final_pattern)
@@ -373,8 +376,7 @@ mod tests {
 
     #[test]
     fn test_syllable_apply_tone() {
-        let mut syllable = Syllable::new()
-            .with_vowel("a");
+        let mut syllable = Syllable::new().with_vowel("a");
 
         assert_eq!(syllable.tone(), ToneType::Ngang);
 
@@ -385,7 +387,7 @@ mod tests {
     #[test]
     fn test_syllable_set_components() {
         let mut syllable = Syllable::new();
-        
+
         syllable.set_initial("t");
         syllable.set_vowel("o");
         syllable.set_final("n");
@@ -398,9 +400,9 @@ mod tests {
     #[test]
     fn test_syllable_clear() {
         let mut syllable = Syllable::from_parts("h", "a", "n", ToneType::Sac);
-        
+
         syllable.clear();
-        
+
         assert!(syllable.is_empty());
         assert_eq!(syllable.tone(), ToneType::Ngang);
     }
@@ -415,7 +417,7 @@ mod tests {
     fn test_syllable_as_tuple() {
         let syllable = Syllable::from_parts("h", "a", "n", ToneType::Sac);
         let (i, v, f, t) = syllable.as_tuple();
-        
+
         assert_eq!(i, "h");
         assert_eq!(v, "a");
         assert_eq!(f, "n");
@@ -441,7 +443,7 @@ mod tests {
     #[test]
     fn test_syllable_matches_pattern() {
         let syllable = Syllable::from_parts("h", "a", "n", ToneType::Ngang);
-        
+
         assert!(syllable.matches_pattern("h", "a", "n"));
         assert!(syllable.matches_pattern("h", "", "")); // Only initial matches
         assert!(!syllable.matches_pattern("t", "a", "n"));
@@ -462,14 +464,10 @@ mod tests {
 
     #[test]
     fn test_syllable_builder_validated() {
-        let valid = SyllableBuilder::new()
-            .vowel("a")
-            .build_validated();
+        let valid = SyllableBuilder::new().vowel("a").build_validated();
         assert!(valid.is_some());
 
-        let invalid = SyllableBuilder::new()
-            .initial("h")
-            .build_validated(); // No vowel
+        let invalid = SyllableBuilder::new().initial("h").build_validated(); // No vowel
         assert!(invalid.is_none());
     }
 

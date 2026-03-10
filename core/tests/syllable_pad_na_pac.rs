@@ -113,9 +113,9 @@ fn na5_diphthongs_valid_open() {
 fn pac0_ch_nh_with_na1() {
     // NA.1 (a, iê) allows PAC.0 (ch, nh)
     // "ch" is a stop consonant → requires Sắc or Nặng
-    ok("", "a", "ch", ToneType::Sac);    // "ách"
-    ok("", "a", "nh", ToneType::Ngang);  // "anh"
-    ok("", "iê", "ch", ToneType::Sac);   // "iếch"
+    ok("", "a", "ch", ToneType::Sac); // "ách"
+    ok("", "a", "nh", ToneType::Ngang); // "anh"
+    ok("", "iê", "ch", ToneType::Sac); // "iếch"
     ok("", "iê", "nh", ToneType::Ngang); // "iênh"
 }
 
@@ -123,22 +123,26 @@ fn pac0_ch_nh_with_na1() {
 fn pac0_ch_nh_with_na0() {
     // NA.0 (ê, i) allows PAC.0 (ch, nh)
     // "ch" is a stop → Sắc; "nh" is nasal → any tone
-    ok("", "ê", "ch", ToneType::Sac);    // "ếch"
-    ok("", "i", "nh", ToneType::Ngang);  // "inh"
+    ok("", "ê", "ch", ToneType::Sac); // "ếch"
+    ok("", "i", "nh", ToneType::Ngang); // "inh"
 }
 
 #[test]
 fn pac1_c_ng_with_na1() {
     // "c" is a stop consonant → Sắc or Nặng; "ng" is nasal → any tone
-    ok("", "a", "c", ToneType::Sac);     // "ác"
-    ok("", "a", "ng", ToneType::Ngang);  // "ang"
+    ok("", "a", "c", ToneType::Sac); // "ác"
+    ok("", "a", "ng", ToneType::Ngang); // "ang"
 }
 
 #[test]
 fn pac2_mnpt_with_na1() {
     for fc in &["m", "n", "p", "t"] {
         // p and t need Sắc or Nặng tone
-        let tone = if *fc == "p" || *fc == "t" { ToneType::Sac } else { ToneType::Ngang };
+        let tone = if *fc == "p" || *fc == "t" {
+            ToneType::Sac
+        } else {
+            ToneType::Ngang
+        };
         ok("", "a", fc, tone);
     }
 }
@@ -203,7 +207,12 @@ fn na5_cannot_have_any_final() {
 #[test]
 fn stop_finals_require_sac_or_nang() {
     for fc in &["p", "t", "c", "ch"] {
-        for tone in &[ToneType::Ngang, ToneType::Huyen, ToneType::Hoi, ToneType::Nga] {
+        for tone in &[
+            ToneType::Ngang,
+            ToneType::Huyen,
+            ToneType::Hoi,
+            ToneType::Nga,
+        ] {
             bad("", "a", fc, *tone);
         }
         ok("", "a", fc, ToneType::Sac);
@@ -261,16 +270,16 @@ fn empty_vowel_rejected() {
 fn real_words_valid() {
     // (initial, vowel, final, tone) for a set of well-known syllables
     let cases: &[(&str, &str, &str, ToneType)] = &[
-        ("b", "a", "n", ToneType::Ngang),        // ban
-        ("v", "iê", "t", ToneType::Nang),         // việt (stop final + nặng ✓)
-        ("n", "ă", "m", ToneType::Ngang),         // năm
-        ("th", "ươ", "ng", ToneType::Ngang),      // thương
-        ("x", "iê", "ng", ToneType::Ngang),       // xiếng
-        ("kh", "o", "ng", ToneType::Ngang),       // không
-        ("", "ươi", "", ToneType::Ngang),          // ươi (open NA.5)
-        ("qu", "a", "", ToneType::Ngang),          // qua
-        ("gi", "a", "", ToneType::Ngang),          // gia
-        ("ngh", "e", "", ToneType::Ngang),         // nghe
+        ("b", "a", "n", ToneType::Ngang),    // ban
+        ("v", "iê", "t", ToneType::Nang),    // việt (stop final + nặng ✓)
+        ("n", "ă", "m", ToneType::Ngang),    // năm
+        ("th", "ươ", "ng", ToneType::Ngang), // thương
+        ("x", "iê", "ng", ToneType::Ngang),  // xiếng
+        ("kh", "o", "ng", ToneType::Ngang),  // không
+        ("", "ươi", "", ToneType::Ngang),    // ươi (open NA.5)
+        ("qu", "a", "", ToneType::Ngang),    // qua
+        ("gi", "a", "", ToneType::Ngang),    // gia
+        ("ngh", "e", "", ToneType::Ngang),   // nghe
     ];
     for &(i, v, f, t) in cases {
         ok(i, v, f, t);

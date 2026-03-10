@@ -49,7 +49,7 @@ impl Container {
 
         // Create processor service with all dependencies
         let processor_service = Self::create_processor_service(config.clone());
-        
+
         // Create shortcut manager
         let shortcut_manager = Arc::new(Mutex::new(ManageShortcutsUseCase::new()));
 
@@ -140,7 +140,7 @@ impl Container {
     pub fn processor_service(&self) -> Arc<Mutex<ProcessorService>> {
         self.processor_service.clone()
     }
-    
+
     /// Get shortcut manager
     pub fn shortcut_manager(&self) -> Arc<Mutex<ManageShortcutsUseCase>> {
         self.shortcut_manager.clone()

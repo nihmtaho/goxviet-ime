@@ -8,8 +8,8 @@
 pub mod chars;
 pub mod constants;
 pub mod keys;
-pub mod vowel;
 pub mod viet_syllables;
+pub mod vowel;
 
 pub use chars::{get_d, mark, to_char, tone};
 pub use constants::*;

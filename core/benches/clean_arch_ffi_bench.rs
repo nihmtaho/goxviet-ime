@@ -39,9 +39,7 @@ fn bench_keystroke_latency(c: &mut Criterion) {
     group.bench_function("single_char_a", |b| {
         b.iter(|| {
             let key = CString::new("a").unwrap();
-            let result = unsafe { 
-                ime_process_key(black_box(engine), key.as_ptr(), 0) 
-            };
+            let result = unsafe { ime_process_key(black_box(engine), key.as_ptr(), 0) };
             if !result.text.is_null() {
                 unsafe { ime_free_string(result.text) };
             }
@@ -52,9 +50,7 @@ fn bench_keystroke_latency(c: &mut Criterion) {
     group.bench_function("tone_mark_s", |b| {
         b.iter(|| {
             let key = CString::new("s").unwrap();
-            let result = unsafe { 
-                ime_process_key(black_box(engine), key.as_ptr(), 0) 
-            };
+            let result = unsafe { ime_process_key(black_box(engine), key.as_ptr(), 0) };
             if !result.text.is_null() {
                 unsafe { ime_free_string(result.text) };
             }
@@ -93,9 +89,7 @@ fn bench_throughput(c: &mut Criterion) {
             for _ in 0..1000 {
                 for ch in "viets ".chars() {
                     let key = CString::new(&ch.to_string()[..]).unwrap();
-                    let result = unsafe {
-                        ime_process_key(engine, key.as_ptr(), 0)
-                    };
+                    let result = unsafe { ime_process_key(engine, key.as_ptr(), 0) };
                     if !result.text.is_null() {
                         unsafe { ime_free_string(result.text) };
                     }

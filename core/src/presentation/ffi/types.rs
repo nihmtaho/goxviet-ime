@@ -130,7 +130,7 @@ impl Default for FfiConfig {
 pub enum FfiStatusCode {
     /// Operation successful
     Success = 0,
-    
+
     // Input errors
     /// Engine pointer is null
     ErrorNullEngine = -1,
@@ -142,7 +142,7 @@ pub enum FfiStatusCode {
     ErrorInvalidKey = -4,
     /// Invalid argument (generic)
     ErrorInvalidArgument = -5,
-    
+
     // Processing errors
     /// Processing failed
     ErrorProcessingFailed = -10,
@@ -150,13 +150,13 @@ pub enum FfiStatusCode {
     ErrorInvalidUtf8 = -11,
     /// JSON parse error (e.g. for ime_load_input_config_v2)
     ErrorParseError = -12,
-    
+
     // Shortcut errors
     /// Shortcut already exists
     ErrorAlreadyExists = -30,
     /// Shortcut not found
     ErrorNotFound = -31,
-    
+
     // System errors
     /// Out of memory
     ErrorOutOfMemory = -20,
@@ -171,7 +171,7 @@ impl FfiStatusCode {
     pub const fn to_c_int(self) -> c_int {
         self as c_int
     }
-    
+
     /// Check if success
     pub const fn is_success(self) -> bool {
         matches!(self, FfiStatusCode::Success)
@@ -301,7 +301,13 @@ mod tests {
         // Ensure all FFI types are properly aligned and sized
         // FfiResult has bool + c_int, with padding
         assert!(std::mem::size_of::<FfiResult>() >= std::mem::size_of::<c_int>());
-        assert_eq!(std::mem::size_of::<FfiInputMethod>(), std::mem::size_of::<c_int>());
-        assert_eq!(std::mem::size_of::<FfiToneStyle>(), std::mem::size_of::<c_int>());
+        assert_eq!(
+            std::mem::size_of::<FfiInputMethod>(),
+            std::mem::size_of::<c_int>()
+        );
+        assert_eq!(
+            std::mem::size_of::<FfiToneStyle>(),
+            std::mem::size_of::<c_int>()
+        );
     }
 }
