@@ -214,8 +214,20 @@ impl PhonotacticEngine {
         // All consonants that can double in English but NOT in Vietnamese
         // Excludes: D (dd→đ in Telex), A/E/O (aa→â, ee→ê, oo→ô in Telex)
         const DOUBLE_CONSONANTS: &[u16] = &[
-            keys::B, keys::C, keys::F, keys::G, keys::H, keys::K, keys::L,
-            keys::M, keys::N, keys::P, keys::R, keys::S, keys::T, keys::V,
+            keys::B,
+            keys::C,
+            keys::F,
+            keys::G,
+            keys::H,
+            keys::K,
+            keys::L,
+            keys::M,
+            keys::N,
+            keys::P,
+            keys::R,
+            keys::S,
+            keys::T,
+            keys::V,
             keys::Z,
         ];
 
@@ -237,18 +249,24 @@ impl PhonotacticEngine {
         const SUFFIXES_3: &[&[u16; 3]] = &[
             &[keys::I, keys::N, keys::G], // -ing
             &[keys::O, keys::R, keys::E], // -ore
-            &[keys::I, keys::V, keys::E],     // -ive (active, native, massive)
-            &[keys::O, keys::U, keys::S],     // -ous (various, serious, obvious)
-            &[keys::A, keys::T, keys::E],     // -ate (private, create, state)
-            &[keys::I, keys::T, keys::Y],     // -ity (quality, city, ability)
-            &[keys::A, keys::L, keys::L],     // -all (overall, install)
-            &[keys::F, keys::U, keys::L],     // -ful (beautiful, careful)
-            &[keys::I, keys::C, keys::K],     // -ick (thick, click, trick)
-            &[keys::I, keys::T, keys::H],     // -ith (with, zenith, filth)
-            &[keys::I, keys::A, keys::N],     // -ian (ician, guardian, median)
-            &[keys::O, keys::T, keys::H],     // -oth (cloth, month, growth)
-            &[keys::R, keys::T, keys::H],     // -rth (birth, north, earth)
-            &[keys::T, keys::I, keys::C],     // -tic (static, mystic, plastic)
+            &[keys::I, keys::V, keys::E], // -ive (active, native, massive)
+            &[keys::O, keys::U, keys::S], // -ous (various, serious, obvious)
+            &[keys::A, keys::T, keys::E], // -ate (private, create, state)
+            &[keys::I, keys::T, keys::Y], // -ity (quality, city, ability)
+            &[keys::A, keys::L, keys::L], // -all (overall, install)
+            &[keys::F, keys::U, keys::L], // -ful (beautiful, careful)
+            &[keys::I, keys::C, keys::K], // -ick (thick, click, trick)
+            &[keys::I, keys::T, keys::H], // -ith (with, zenith, filth)
+            &[keys::I, keys::A, keys::N], // -ian (ician, guardian, median)
+            &[keys::O, keys::T, keys::H], // -oth (cloth, month, growth)
+            &[keys::R, keys::T, keys::H], // -rth (birth, north, earth)
+            &[keys::T, keys::I, keys::C], // -tic (static, mystic, plastic)
+            &[keys::O, keys::I, keys::D], // -oid (humanoid, android, alkaloid)
+            // OOK/OOT/OOL/OOM removed: Telex "oo" = "ô" → conflicts with Vietnamese buốt/bốt/cốt/etc.
+            // OWL removed: "owl" raw=[O,W,L] fires for "rơle" (rowle) Telex sequence
+            &[keys::A, keys::W, keys::K], // -awk (hawk, gawk, squawk)
+            &[keys::A, keys::W, keys::L], // -awl (bawl, crawl, drawl, yawl)
+            &[keys::E, keys::E, keys::L], // -eel (eel, reel, feel, heel)
         ];
 
         const SUFFIXES_4_CORE: &[u16; 4] = &[keys::C, keys::O, keys::R, keys::E]; // -core (hardcore, multicore)
@@ -271,6 +289,23 @@ impl PhonotacticEngine {
             &[keys::D, keys::I, keys::N, keys::G], // -ding (adding, doing)
             &[keys::A, keys::S, keys::P, keys::H], // -asph (blasphemy, blasphemous)
             &[keys::Y, keys::C, keys::A, keys::T], // -ycat (Telex-filtered -ycast: raycast)
+            // Additional English suffixes from failure analysis
+            &[keys::L, keys::I, keys::T, keys::I], // -liti (fragility→fragiliti, ability→abiliti)
+            &[keys::A, keys::T, keys::E, keys::S], // -ates (creates, operates, generates)
+            &[keys::I, keys::O, keys::N, keys::S], // -ions (solutions, options, conditions)
+            &[keys::I, keys::Z, keys::E, keys::S], // -izes (realizes, organizes)
+            &[keys::A, keys::T, keys::O, keys::R], // -ator (creator, generator, operator)
+            &[keys::E, keys::C, keys::T, keys::S], // -ects (affects, connects, projects)
+            &[keys::N, keys::I, keys::Z, keys::E], // -nize (recognize, organize)
+            &[keys::E, keys::N, keys::C, keys::Y], // -ency (frequency, emergency, tendency)
+            &[keys::F, keys::F, keys::E, keys::R], // -ffer (differ, suffer, buffer, offer)
+            &[keys::R, keys::I, keys::E, keys::S], // -ries (countries, factories, directories)
+            &[keys::T, keys::I, keys::E, keys::S], // -ties (abilities, facilities, parties)
+            &[keys::R, keys::I, keys::Z, keys::E], // -rize (authorize, summarize, memorize)
+            &[keys::L, keys::E, keys::S, keys::S], // -less (useless, endless, countless)
+            &[keys::A, keys::N, keys::C, keys::Y], // -ancy (vacancy, redundancy, infancy)
+            &[keys::L, keys::I, keys::Z, keys::E], // -lize (realize, normalize, stabilize)
+            &[keys::O, keys::S, keys::I, keys::S], // -osis (diagnosis, metamorphosis)
         ];
 
         const SUFFIXES_5: &[&[u16; 5]] = &[
@@ -280,6 +315,7 @@ impl PhonotacticEngine {
             &[keys::I, keys::Z, keys::I, keys::N, keys::G], // -izing (realizing, organizing)
             &[keys::S, keys::T, keys::O, keys::R, keys::E], // -store (restore, store, offshore)
             &[keys::Y, keys::C, keys::A, keys::S, keys::T], // -ycast (raycast, skycast)
+            &[keys::O, keys::L, keys::O, keys::G, keys::Y], // -ology (ecology, lexicology, tropology)
         ];
 
         // Check 2-char suffix: -ed (without requiring trailing SPACE)
@@ -360,8 +396,58 @@ impl PhonotacticEngine {
             }
         }
 
+        // Instant-restore suffixes: return 95 so has_english_word_pattern() fires mid-word
+        // without waiting for SPACE (threshold in has_english_word_pattern >= 95).
+        const SUFFIXES_3_INSTANT: &[&[u16; 3]] = &[
+            &[keys::E, keys::T, keys::I], // -eti (spaghetti, confetti)
+            // KIE removed: fires for Vietnamese kiêm/kiên/kiêng/kiêu etc. (Telex: "kie" → "kiê")
+            &[keys::L, keys::E, keys::G], // -leg (bowleg, dogleg)
+            &[keys::A, keys::C, keys::K], // -ack (black, crack, attack, setback)
+        ];
+
+        const SUFFIXES_4_INSTANT: &[&[u16; 4]] = &[
+            &[keys::T, keys::I, keys::D, keys::A], // -tida (peptida)
+            &[keys::E, keys::M, keys::I, keys::C], // -emic (academic, systemic, endemic)
+            &[keys::E, keys::P, keys::S, keys::I], // -epsi (dyspepsia, Pepsi)
+            &[keys::W, keys::O, keys::O, keys::N], // -woon (swoon)
+            &[keys::C, keys::A, keys::S, keys::E], // -case (uppercase, lowercase, briefcase)
+            &[keys::K, keys::L, keys::E, keys::T], // -klet (booklet, droplet)
+            &[keys::L, keys::A, keys::C, keys::E], // -lace (replace, palace, necklace)
+            &[keys::Y, keys::O, keys::I, keys::D], // -yoid (thyroid-adjacent)
+        ];
+
+        const SUFFIXES_5_INSTANT: &[&[u16; 5]] = &[
+            &[keys::T, keys::O, keys::K, keys::E, keys::N], // -token (subtoken, multitoken)
+        ];
+
+        if keys.len() >= 3 {
+            for suffix in SUFFIXES_3_INSTANT {
+                let start = keys.len() - 3;
+                if &keys[start..start + 3]
+                    .iter()
+                    .map(|k| k.0)
+                    .collect::<Vec<_>>()[..]
+                    == &suffix[..]
+                {
+                    return 95;
+                }
+            }
+        }
+        if keys.len() >= 4 {
+            for suffix in SUFFIXES_4_INSTANT {
+                let start = keys.len() - 4;
+                if &keys[start..start + 4]
+                    .iter()
+                    .map(|k| k.0)
+                    .collect::<Vec<_>>()[..]
+                    == &suffix[..]
+                {
+                    return 95;
+                }
+            }
+        }
         if keys.len() >= 5 {
-            for suffix in SUFFIXES_5 {
+            for suffix in SUFFIXES_5_INSTANT {
                 let start = keys.len() - 5;
                 if &keys[start..start + 5]
                     .iter()
@@ -369,7 +455,7 @@ impl PhonotacticEngine {
                     .collect::<Vec<_>>()[..]
                     == &suffix[..]
                 {
-                    return 90;
+                    return 95;
                 }
             }
         }
@@ -441,6 +527,10 @@ impl PhonotacticEngine {
 
     /// L6: Check for English prefixes (un-, re-, pre-, dis-, imp-, rest-, etc.)
     fn check_prefixes(keys: &[(u16, bool)]) -> u8 {
+        const PREFIXES_2: &[&[u16; 2]] = &[
+            &[keys::A, keys::D], // ad- (add, address, admin, adjust, advent, adopt, ...)
+        ];
+
         const PREFIXES_3: &[&[u16; 3]] = &[
             &[keys::P, keys::R, keys::E], // pre-
             &[keys::D, keys::I, keys::S], // dis-
@@ -452,6 +542,41 @@ impl PhonotacticEngine {
             &[keys::A, keys::R, keys::C], // arc- (arch, arctic, archive)
             &[keys::A, keys::L, keys::N], // aln- (alignment, alnylam)
             &[keys::B, keys::I, keys::I], // bii- (double-i onset pattern)
+            &[keys::A, keys::W, keys::A], // awa- (await, awake, aware, award)
+            &[keys::A, keys::L, keys::I], // ali- (align, alien, alibi, alike, alive)
+            &[keys::A, keys::B, keys::A], // aba- (abandon, abacus, abate)
+            &[keys::A, keys::F, keys::G], // afg- (Afghanistan-related)
+            &[keys::A, keys::M, keys::Y], // amy- (amylase, amygdala)
+            // Double-consonant English prefixes (ass-, irr-, aff-, arr-, eff-, off-, err-, oss-)
+            &[keys::A, keys::S, keys::S], // ass- (assert, assess, assign, assist)
+            &[keys::I, keys::R, keys::R], // irr- (irrupt, irrigate, irrational)
+            &[keys::A, keys::F, keys::F], // aff- (affect, affair, affirm, afford)
+            &[keys::A, keys::R, keys::R], // arr- (arrange, arrest, arrive, array)
+            &[keys::E, keys::F, keys::F], // eff- (effect, effort, efficient)
+            &[keys::O, keys::F, keys::F], // off- (offer, office, offend, official)
+            &[keys::E, keys::R, keys::R], // err- (error, erratic, errand)
+            &[keys::O, keys::S, keys::S], // oss- (ossify, ossicle)
+            // Common English 3-letter prefixes
+            &[keys::M, keys::I, keys::S], // mis- (mistake, misuse, mislead)
+            &[keys::I, keys::N, keys::S], // ins- (install, instead, instance)
+            &[keys::I, keys::S, keys::O], // iso- (isolate, isotope)
+            &[keys::U, keys::N, keys::S], // uns- (unsure, unstable)
+            &[keys::I, keys::N, keys::F], // inf- (inform, inflate, infect)
+            &[keys::T, keys::E, keys::R], // ter- (terminal, terrain, territory)
+            &[keys::P, keys::A, keys::S], // pas- (passion, passive, passage)
+            &[keys::B, keys::A, keys::R], // bar- (barrier, barely, bargain)
+            &[keys::M, keys::O, keys::N], // mon- (monitor, monster, monkey)
+            // CHE removed: fires for Vietnamese chép/chét/chẹt/chết (Telex: "che" → "chê")
+            &[keys::H, keys::O, keys::M], // hom- (home, homage, hormone)
+            &[keys::M, keys::E, keys::S], // mes- (message, mess, messy)
+            &[keys::B, keys::A, keys::S], // bas- (basic, base, basin, basket)
+            &[keys::D, keys::E, keys::F], // def- (define, default, defend)
+            &[keys::P, keys::O, keys::S], // pos- (position, possible, post)
+            // RET removed: fires for Vietnamese rét/rẹt (Telex: "ret" → "rét"/"rẹt")
+            // TRI removed: fires for Vietnamese tríu/trít etc. (Telex: "tri" → "trí"/"trì" etc.)
+            &[keys::P, keys::E, keys::R], // per- (perform, perfect, person)
+            &[keys::P, keys::O, keys::R], // por- (portal, portion, portrait)
+            &[keys::P, keys::Y, keys::R], // pyr- (pyramid, pyrite, pyro)
         ];
 
         const PREFIXES_4: &[&[u16; 4]] = &[
@@ -459,9 +584,28 @@ impl PhonotacticEngine {
             &[keys::O, keys::V, keys::E, keys::R], // over- (overall, overcome)
             &[keys::U, keys::N, keys::D, keys::E], // unde- (under, understand)
             &[keys::A, keys::C, keys::H, keys::R], // achr- (achromatic, achromic)
+            &[keys::R, keys::E, keys::S, keys::U], // resu- (resume, result, resource)
+            &[keys::M, keys::E, keys::R, keys::G], // merg- (merge, merger, merging)
+            // Double-consonant 4-letter prefixes
+            &[keys::D, keys::I, keys::F, keys::F], // diff- (differ, different, difficult)
+            &[keys::S, keys::U, keys::F, keys::F], // suff- (suffer, sufficient, suffix)
+            &[keys::C, keys::O, keys::R, keys::R], // corr- (correct, corrupt, correspond)
+            &[keys::M, keys::I, keys::S, keys::S], // miss- (miss, mission, missile)
         ];
 
         const PREFIXES_4_CORE: &[u16; 4] = &[keys::C, keys::O, keys::R, keys::E]; // core- (core-dump, core-based)
+
+        const PREFIXES_5: &[&[u16; 5]] = &[
+            &[keys::P, keys::H, keys::O, keys::N, keys::O], // phono- (phonology, phonotype, ...)
+        ];
+
+        if keys.len() >= 3 {
+            for prefix in PREFIXES_2 {
+                if keys[0].0 == prefix[0] && keys[1].0 == prefix[1] {
+                    return 90;
+                }
+            }
+        }
 
         if keys.len() >= 3 {
             for prefix in PREFIXES_3 {
@@ -491,6 +635,14 @@ impl PhonotacticEngine {
             }
         }
 
+        if keys.len() >= 5 {
+            for prefix in PREFIXES_5 {
+                if prefix.iter().enumerate().all(|(i, &p)| keys[i].0 == p) {
+                    return 95;
+                }
+            }
+        }
+
         0
     }
 
@@ -498,8 +650,7 @@ impl PhonotacticEngine {
     fn check_vowel_patterns(keys: &[(u16, bool)]) -> u8 {
         const VOWEL_PATTERNS: &[&[u16; 2]] = &[
             &[keys::E, keys::A], // ea
-            &[keys::O, keys::U], // ou
-                                 // Removed: oo, ee, ai, oi, ue, au (Vietnamese/Telex ambiguity)
+                                 // OU removed: O,U adjacent fires for Vietnamese ươu family (rượu/phượu/mưỡu/tườu/khướu)
         ];
 
         for i in 0..keys.len().saturating_sub(1) {
@@ -515,9 +666,7 @@ impl PhonotacticEngine {
             // V+R rhotic pattern: vowel immediately followed by 'r'
             // Vietnamese 'r' is ONLY an initial consonant, never follows a vowel in same syllable.
             // English words like "are", "bar", "firm", "core", "burn" all have this pattern.
-            if next == keys::R
-                && matches!(curr, keys::A | keys::E | keys::I | keys::O | keys::U)
-            {
+            if next == keys::R && matches!(curr, keys::A | keys::E | keys::I | keys::O | keys::U) {
                 return 85;
             }
 
@@ -566,7 +715,9 @@ impl PhonotacticEngine {
 /// Auto-restore decision logic
 pub struct AutoRestoreDecider;
 
-pub use crate::infrastructure::adapters::validation::vietnamese_validator::{ValidationResult, VietnameseSyllableValidator};
+pub use crate::infrastructure::adapters::validation::vietnamese_validator::{
+    ValidationResult, VietnameseSyllableValidator,
+};
 
 impl AutoRestoreDecider {
     /// Decide whether to restore English word
@@ -686,5 +837,3 @@ mod tests {
         );
     }
 }
-
-
