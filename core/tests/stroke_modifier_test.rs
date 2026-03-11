@@ -217,3 +217,81 @@ fn test_assign_debug() {
         e.get_buffer()
     );
 }
+
+#[test]
+fn test_na_pac_open_only_vowel_cluster() {
+    // Test NA-PAC validation: ơi (NA.5) is open-only and should reject consonants
+    // Sequence: v + o + w (creates ơ) + i (creates ơi compound) + c (should restore to raw)
+    let mut e = Engine::new();
+    e.set_method(0); // Telex
+    e.set_enabled(true);
+
+    println!("\n=== Test NA-PAC: ơi (NA.5 open-only) + 'c' should restore to raw ===");
+
+    // Type 'v' + 'o' + 'w' + 'i' to build 'vơi' (o+w = ơ, forms NA.5)
+    e.on_key(keys::V, false, false);
+    println!("After 'v': buffer='{}'", e.get_buffer());
+
+    e.on_key(keys::O, false, false);
+    println!("After 'o': buffer='{}'", e.get_buffer());
+
+    e.on_key(keys::W, false, false);
+    println!("After 'w': buffer='{}' (ơ created)", e.get_buffer());
+
+    e.on_key(keys::I, false, false);
+    println!("After 'i': buffer='{}' (ơi compound)", e.get_buffer());
+
+    // Type 'c' - NA.5 (ơi) is open-only, should reject and restore to raw
+    let result = e.on_key(keys::C, false, false);
+    let buffer = e.get_buffer();
+    println!(
+        "After 'c': buffer='{}', backspace={}, count={}",
+        buffer, result.backspace, result.count
+    );
+
+    // CRITICAL: Should restore to raw "vowic" (includes the 'w' used to create ơ) because ơi allows no coda
+    assert_eq!(
+        buffer, "vowic",
+        "NA.5 (ơi) is open-only; 'vowic' should restore to raw, got '{}'",
+        buffer
+    );
+}
+
+#[test]
+fn test_na_pac_valid_digraph_coda() {
+    // Test NA-PAC validation: ươ (NA.2) allows PAC.1 (ch, ng, nh)
+    // Sequence: u + o + w (creates ươ, NA.2) + n + g (creates 'ng' digraph, valid)
+    let mut e = Engine::new();
+    e.set_method(0); // Telex
+    e.set_enabled(true);
+
+    println!("\n=== Test NA-PAC: ươ (NA.2) + 'ng' should accept digraph ===");
+
+    // Type 'u' + 'o' + 'w' to build 'ư' prefix + 'ô' = 'ươ' (NA.2)
+    e.on_key(keys::U, false, false);
+    println!("After 'u': buffer='{}'", e.get_buffer());
+
+    e.on_key(keys::O, false, false);
+    println!("After 'o': buffer='{}'", e.get_buffer());
+
+    e.on_key(keys::W, false, false);
+    println!("After 'w': buffer='{}' (ươ compound)", e.get_buffer());
+
+    e.on_key(keys::N, false, false);
+    println!("After 'n': buffer='{}'", e.get_buffer());
+
+    // Type 'g' to complete 'ng' digraph - should be valid for NA.2
+    let result = e.on_key(keys::G, false, false);
+    let buffer = e.get_buffer();
+    println!(
+        "After 'g': buffer='{}', backspace={}, count={}",
+        buffer, result.backspace, result.count
+    );
+
+    // NA.2 (ươ) allows PAC.1 (ng), so 'ương' should be valid Vietnamese
+    assert_eq!(
+        buffer, "ương",
+        "NA.2 (ươ) allows PAC.1 (ng); should produce 'ương', got '{}'",
+        buffer
+    );
+}

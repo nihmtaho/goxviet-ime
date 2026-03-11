@@ -18,7 +18,6 @@ The dictionaries are organized by word length:
 | `common_7chars.txt` | 7-character English words | 14,116 |
 | `common_8chars.txt` | 8-character English words | 13,074 |
 | `common_9chars.txt` | 9-character English words | 10,883 |
-| `common_10chars.txt` | 10-character English words | 8,403 |
 | `common_11chars.txt` | 11-character English words | 5,837 |
 | `common_12chars.txt` | 12-character English words | 3,762 |
 | `common_13chars.txt` | 13-character English words | 2,364 |
@@ -26,7 +25,7 @@ The dictionaries are organized by word length:
 | `common_15chars.txt` | 15-character English words | 721 |
 | `common_16chars.txt` | 16-character English words | 317 |
 
-**Total:** 93,666 English words
+**Total:** 85,263 English words
 
 ## Binary Format
 
