@@ -655,7 +655,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     
     // Code editors & terminals - higher delays for Monaco/Electron-based apps
     if BundleConstants.codeEditorsAndTerminals.contains(bundleId) {
-        return cached(.slow, (8000, 25000, 8000), "slow:code")
+        return cached(.slow, (4000, 15000, 4000), "slow:code")
     }
 
     // LaTeX editors (Qt-based) - charByChar for reliable Unicode
