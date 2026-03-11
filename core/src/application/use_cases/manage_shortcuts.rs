@@ -67,7 +67,7 @@ pub enum ShortcutResult {
 /// let mut use_case = ManageShortcutsUseCase::new();
 /// let shortcut = Shortcut::new("brb", "be right back");
 /// use_case.create(shortcut);
-/// 
+///
 /// let result = use_case.find("brb");
 /// assert_eq!(result.unwrap().expansion.as_str(), "be right back");
 /// ```
@@ -92,7 +92,7 @@ impl ManageShortcutsUseCase {
     /// - `AlreadyExists` if trigger already exists
     pub fn create(&mut self, shortcut: Shortcut) -> ShortcutResult {
         let key = shortcut.trigger.as_str().to_string();
-        
+
         if self.shortcuts.contains_key(&key) {
             return ShortcutResult::AlreadyExists;
         }
@@ -186,10 +186,10 @@ mod tests {
         let mut use_case = ManageShortcutsUseCase::new();
         let shortcut1 = Shortcut::new("brb", "be right back");
         let shortcut2 = Shortcut::new("brb", "bathroom break");
-        
+
         use_case.create(shortcut1);
         let result = use_case.create(shortcut2);
-        
+
         assert_eq!(result, ShortcutResult::AlreadyExists);
         assert_eq!(use_case.count(), 1);
     }

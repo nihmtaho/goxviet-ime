@@ -4,7 +4,9 @@
 //! This module re-exports and organizes the engine components following SOLID principles.
 
 // Re-export core engine implementation
-pub use crate::infrastructure::engine::{Action, Engine, EngineConfig, Result, Transform, WordHistory};
+pub use crate::infrastructure::engine::{
+    Action, Engine, EngineConfig, Result, Transform, WordHistory,
+};
 
 // Re-export InputMethod from features::shortcut
 pub use crate::infrastructure::engine::features::shortcut::InputMethod;
@@ -22,8 +24,7 @@ pub use crate::infrastructure::engine::features::{
 // Re-export validation from external infrastructure
 pub use crate::infrastructure::external::diacritical_validator::DiacriticalValidator;
 pub use crate::infrastructure::external::vietnamese_validator::{
-    ValidationResult as FsmValidationResult,
-    VietnameseSyllableValidator as FsmSyllableValidator,
+    ValidationResult as FsmValidationResult, VietnameseSyllableValidator as FsmSyllableValidator,
 };
 
 // Re-export english detection (uses infrastructure::external::english)

@@ -73,8 +73,6 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
     private var isUserCancelledDownload: Bool = false
     
     private let autoCheckInterval: TimeInterval = 6 * 60 * 60  // Every 6 hours
-    private let autoCheckKey = "com.goxviet.ime.lastUpdateCheck"
-    private let skipVersionKey = "com.goxviet.ime.skipVersion"
 
     nonisolated private override init() {
         super.init()
@@ -86,7 +84,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
     func start() {
         guard !isRunning else { return }
-        let timestamp = defaults.double(forKey: autoCheckKey)
+        let timestamp = defaults.double(forKey: SettingsKey.lastUpdateCheck)
         if timestamp > 0 {
             lastChecked = Date(timeIntervalSince1970: timestamp)
         }
@@ -176,11 +174,11 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
                 guard let self = self else { return }
 
                 self.lastChecked = Date()
-                self.defaults.set(self.lastChecked!.timeIntervalSince1970, forKey: self.autoCheckKey)
+                self.defaults.set(self.lastChecked!.timeIntervalSince1970, forKey: SettingsKey.lastUpdateCheck)
 
                 switch result {
                 case .available(let info):
-                    let skipped = self.defaults.string(forKey: self.skipVersionKey)
+                    let skipped = self.defaults.string(forKey: SettingsKey.skipVersion)
                     if !userInitiated && skipped == info.version {
                         // Silent check and version skipped -> ignore
                         self.state = .idle
@@ -212,7 +210,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
     }
     
     func skipVersion(_ version: String) {
-        defaults.set(version, forKey: skipVersionKey)
+        defaults.set(version, forKey: SettingsKey.skipVersion)
         state = .idle
     }
 
@@ -340,15 +338,41 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
         log() { echo "$1" >> "\(logFile)"; }
 
-        log "Replacing app bundle atomically..."
-        rm -rf "\(destApp)"
-        if mv "\(tempApp)" "\(destApp)" 2>/dev/null; then
-            log "Atomic move successful"
-        elif ditto "\(tempApp)" "\(destApp)" && rm -rf "\(tempApp)"; then
-            log "Ditto copy successful (cross-volume fallback)"
-        else
-            log "App replacement failed with code $?"
-            exit 1
+        log "Updating app bundle in-place to preserve TCC permissions..."
+        UPDATE_SUCCESS=0
+
+        # Strategy 1: rsync in-place (preserves dest directory inode — TCC-friendly)
+        if command -v rsync >/dev/null 2>&1; then
+            if rsync -a --delete "\(tempApp)/" "\(destApp)/" 2>>"\(logFile)"; then
+                rm -rf "\(tempApp)"
+                log "rsync in-place update successful (inode preserved)"
+                UPDATE_SUCCESS=1
+            else
+                log "rsync failed (exit $?), falling back..."
+            fi
+        fi
+
+        # Strategy 2: ditto WITHOUT prior rm -rf (preserves dest directory inode)
+        if [ $UPDATE_SUCCESS -eq 0 ]; then
+            if ditto "\(tempApp)" "\(destApp)" 2>>"\(logFile)"; then
+                rm -rf "\(tempApp)"
+                log "ditto in-place copy successful (inode preserved)"
+                UPDATE_SUCCESS=1
+            else
+                log "ditto failed, falling back to destructive replace..."
+            fi
+        fi
+
+        # Strategy 3: last-resort destructive replace (may revoke TCC permission)
+        if [ $UPDATE_SUCCESS -eq 0 ]; then
+            rm -rf "\(destApp)"
+            if mv "\(tempApp)" "\(destApp)" 2>/dev/null; then
+                log "Destructive mv replace succeeded (TCC may be revoked)"
+                UPDATE_SUCCESS=1
+            else
+                log "All update strategies failed"
+                exit 1
+            fi
         fi
 
         log "Relaunching app..."

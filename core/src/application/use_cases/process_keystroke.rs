@@ -15,7 +15,7 @@
 
 use crate::application::{
     dto::{EngineConfig, ProcessingContext},
-    services::{ProcessingOutput, ProcessorService, ProcessorError},
+    services::{ProcessingOutput, ProcessorError, ProcessorService},
 };
 
 /// Process keystroke use case
@@ -74,16 +74,20 @@ impl ProcessKeystrokeUseCase {
 mod tests {
     use super::*;
     use crate::domain::{
-        entities::{key_event::KeyEvent, buffer::InputBuffer, syllable::Syllable, key_event::Action},
+        entities::{
+            buffer::InputBuffer, key_event::Action, key_event::KeyEvent, syllable::Syllable,
+        },
         ports::{
             input::{InputMethod, InputMethodId},
             state::BufferManager,
-            transformation::{MarkTransformer, ToneTransformer, MarkType},
-            validation::{LanguageDetector, SyllableValidator, DetectionResult, DetectedLanguage, ConfidenceLevel},
+            transformation::{MarkTransformer, MarkType, ToneTransformer},
+            validation::{
+                ConfidenceLevel, DetectedLanguage, DetectionResult, LanguageDetector,
+                SyllableValidator,
+            },
         },
         value_objects::{
-            char_sequence::CharSequence,
-            transformation::TransformResult,
+            char_sequence::CharSequence, transformation::TransformResult,
             validation_result::ValidationResult,
         },
     };
@@ -94,10 +98,16 @@ mod tests {
         fn method_id(&self) -> InputMethodId {
             InputMethodId::Telex
         }
-        fn detect_tone(&self, _event: &KeyEvent) -> Option<crate::domain::entities::tone::ToneType> {
+        fn detect_tone(
+            &self,
+            _event: &KeyEvent,
+        ) -> Option<crate::domain::entities::tone::ToneType> {
             None
         }
-        fn detect_diacritic(&self, _event: &KeyEvent) -> Option<crate::domain::ports::input::DiacriticType> {
+        fn detect_diacritic(
+            &self,
+            _event: &KeyEvent,
+        ) -> Option<crate::domain::ports::input::DiacriticType> {
             None
         }
         fn is_remove_mark(&self, _event: &KeyEvent) -> bool {
@@ -147,7 +157,7 @@ mod tests {
     struct MockBufferManager {
         buffer: InputBuffer,
     }
-    
+
     impl MockBufferManager {
         fn new() -> Self {
             Self {
@@ -155,7 +165,7 @@ mod tests {
             }
         }
     }
-    
+
     impl BufferManager for MockBufferManager {
         fn current(&self) -> &InputBuffer {
             &self.buffer

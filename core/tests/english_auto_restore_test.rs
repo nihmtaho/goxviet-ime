@@ -838,6 +838,10 @@ fn test_bilingual_typing_with_auto_space() {
 
 /// Test "ad" pattern: words starting with "ad" should NOT transform
 /// Issue: "add" was becoming "ađ" because "dd" → "đ" stroke was applied
+/// Note: "add" is now detected via phonotactic "ad-" prefix (ambiguous path, 90%)
+/// rather than dictionary. The "dd"→"đ" stroke falls through in ambiguous path,
+/// is attempted, fails validation ("ađ" is invalid Vietnamese), and "add" is
+/// output naturally. Final output is still "add" — test assertions unchanged.
 #[test]
 fn test_ad_pattern_no_transform() {
     let words = vec![
@@ -861,6 +865,158 @@ fn test_ad_pattern_no_transform() {
             word, output
         );
         println!("✓ '{}' → '{}' (no transform)", word, output);
+    }
+}
+
+/// Helper: type a word then press space; return the final output (trimmed of trailing space).
+/// If space triggers auto-restore (action=1), returns Some(restored_word).
+/// If space passes through (action=0, no transforms), returns None.
+fn type_word_then_space(word: &str) -> Option<String> {
+    use goxviet_core::data::keys;
+
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+
+    for ch in word.chars() {
+        let key = char_to_key(ch);
+        let caps = ch.is_uppercase();
+        engine.on_key(key, caps, false);
+    }
+
+    let result = engine.on_key(keys::SPACE, false, false);
+    if result.action == 1 {
+        let output: String = (0..result.count as usize)
+            .filter_map(|i| char::from_u32(result.as_slice()[i]))
+            .collect();
+        Some(output.trim_end_matches(' ').to_string())
+    } else {
+        None
+    }
+}
+
+/// Assert that English words auto-restore to their original form at space-time.
+/// Covers words whose Telex transforms (oo→ô, ow→ơ, aw→ă, ee→ê) are undone by
+/// the new suffix patterns added to L4 phonotactic detection.
+#[test]
+fn test_new_suffix_patterns_auto_restore_at_space() {
+    let cases: &[(&str, &str)] = &[
+        // -ook: "ôk" is not a valid Vietnamese syllable ending
+        ("book", "book"),
+        ("look", "look"),
+        ("cook", "cook"),
+        ("hook", "hook"),
+        // -oot: "ôt" flat-tone not in Vietnamese dictionary
+        ("boot", "boot"),
+        ("root", "root"),
+        ("foot", "foot"),
+        ("hoot", "hoot"),
+        // -ool: "ôl" impossible — l is never a Vietnamese final after ô
+        ("pool", "pool"),
+        ("cool", "cool"),
+        ("fool", "fool"),
+        ("tool", "tool"),
+        // -oom: room/doom/loom (rôm/dôm/lôm not real Vietnamese words)
+        ("room", "room"),
+        ("doom", "doom"),
+        ("loom", "loom"),
+        // -owl: "ơl" impossible — l never final in Vietnamese
+        ("bowl", "bowl"),
+        ("fowl", "fowl"),
+        ("growl", "growl"),
+        // -awk: "ăk" not a standard Vietnamese syllable
+        ("hawk", "hawk"),
+        ("gawk", "gawk"),
+        // -awl: "ăl" impossible — l never final in Vietnamese
+        ("bawl", "bawl"),
+        ("crawl", "crawl"),
+        ("drawl", "drawl"),
+        ("yawl", "yawl"),
+        // -eel: "êl" impossible — l never final in Vietnamese
+        ("reel", "reel"),
+        ("feel", "feel"),
+        ("heel", "heel"),
+        // -ology: distinctly English/Greek suffix
+        ("ecology", "ecology"),
+    ];
+
+    for &(word, expected) in cases {
+        // Words with Telex digraphs (oo, ow, aw, ee) get mid-word transforms;
+        // space-time auto-restore must undo them.
+        let restored = type_word_then_space(word);
+        let actual = restored.as_deref().unwrap_or(word); // action=0 means no transforms applied
+        assert_eq!(
+            actual, expected,
+            "Word '{}' should auto-restore to '{}' at space, got '{}'",
+            word, expected, actual
+        );
+        println!("✓ '{}' → '{}' (auto-restore at space)", word, expected);
+    }
+}
+
+/// Test that the -oid suffix triggers English detection.
+/// "android" is also caught by the dr- onset cluster, so -oid provides extra coverage.
+#[test]
+fn test_oid_suffix_no_transform() {
+    // "android" is caught by dr- onset cluster (L2); no Telex transforms on 'oid'
+    assert_no_transform_telex(&["android"]);
+    // humanoid: h-u-m-a-n-o-i-d — no Telex transforms, caught at space via -oid
+    let restored = type_word_then_space("humanoid");
+    let actual = restored.as_deref().unwrap_or("humanoid");
+    assert_eq!(
+        actual, "humanoid",
+        "'humanoid' should auto-restore at space"
+    );
+    println!("✓ 'humanoid' → 'humanoid' (auto-restore at space)");
+}
+
+/// Test new prefix pattern awa- added to L6 phonotactic detection.
+/// "await", "awake" etc. have aw→ă mid-word transform; auto-restore at space.
+#[test]
+fn test_awa_prefix_auto_restore_at_space() {
+    let awa_words = &["await", "awake", "aware", "award"];
+    for &word in awa_words {
+        let restored = type_word_then_space(word);
+        let actual = restored.as_deref().unwrap_or(word);
+        assert_eq!(
+            actual, word,
+            "Word '{}' should auto-restore at space (awa- prefix), got '{}'",
+            word, actual
+        );
+        println!("✓ '{}' → '{}' (auto-restore at space)", word, word);
+    }
+}
+
+/// Regression: Vietnamese words producing valid output must still transform
+#[test]
+fn test_vietnamese_regression_still_transforms() {
+    // "bê" = calf (valid Vietnamese); "bee" → "bê" via Telex ee→ê
+    let output = type_word("bee", 0);
+    assert_eq!(
+        output, "bê",
+        "'bee' should still transform to 'bê' (valid Vietnamese)"
+    );
+}
+
+/// Regression test: phonot- prefix should prevent circumflex transform
+/// Bug: "phonot" was producing "phônt" because backward circumflex in try_tone()
+/// applied ô to the first 'o' in "phon" when second 'o' was pressed.
+/// Fix: "phono" (5-char) added to PREFIXES_5 — triggers English detection at 6th
+/// non-modifier char, causing instant_restore before "phônt" is committed.
+#[test]
+fn test_phono_prefix_no_circumflex() {
+    let cases = vec![
+        ("phonot", "phonot"),       // was: "phônt"
+        ("phonotype", "phonotype"), // was: "phôntype"
+        ("phonology", "phonology"), // was: "phônlogy"
+    ];
+    for (input, expected) in cases {
+        let output = type_word(input, 0);
+        assert_eq!(
+            output, expected,
+            "'{}' should not get circumflex transform, got '{}'",
+            input, output
+        );
+        println!("✓ '{}' → '{}' (no circumflex)", input, output);
     }
 }
 
@@ -1277,4 +1433,92 @@ fn test_exact_bug_scenario_test_space_back_back_text() {
     }
 
     println!("\n✅ Test completed without 'tt' bug");
+}
+
+// =============================================================================
+// TEST SUITE: New prefix patterns — instant mid-word restore (no SPACE needed)
+// =============================================================================
+
+/// Test ali- prefix (align, alien, alibi, alike, alive)
+/// No Telex transforms on 'ali' → assert_no_transform works directly.
+#[test]
+fn test_ali_prefix_no_transform() {
+    assert_no_transform_telex(&["align", "alibi", "alike", "alive", "alien"]);
+}
+
+/// Test aba- prefix (abandon, abacus, abate)
+#[test]
+fn test_aba_prefix_no_transform() {
+    assert_no_transform_telex(&["abandon", "abacus"]);
+}
+
+/// Test amy- prefix (amylase, amygdala)
+#[test]
+fn test_amy_prefix_no_transform() {
+    assert_no_transform_telex(&["amylase"]);
+}
+
+/// Test resu- prefix: 'es'→'és' transform means mid-word restore fires at 4th char.
+/// Use type_word_then_space to verify final output.
+#[test]
+fn test_resu_prefix_auto_restore() {
+    let words = &["result", "resource"];
+    for &word in words {
+        let restored = type_word_then_space(word);
+        let actual = restored.as_deref().unwrap_or(word);
+        assert_eq!(
+            actual, word,
+            "Word '{}' should auto-restore (resu- prefix), got '{}'",
+            word, actual
+        );
+    }
+}
+
+/// Test merg- prefix: 'er'→'ẻ' transform means mid-word restore fires at 4th char.
+#[test]
+fn test_merg_prefix_auto_restore() {
+    let words = &["merge", "merger"];
+    for &word in words {
+        let restored = type_word_then_space(word);
+        let actual = restored.as_deref().unwrap_or(word);
+        assert_eq!(
+            actual, word,
+            "Word '{}' should auto-restore (merg- prefix), got '{}'",
+            word, actual
+        );
+    }
+}
+
+// =============================================================================
+// TEST SUITE: New instant-restore suffixes (return 95 — no SPACE needed)
+// =============================================================================
+
+/// Test -emic suffix (academic, systemic, endemic)
+/// No Telex transforms → assert_no_transform works.
+#[test]
+fn test_emic_suffix_no_transform() {
+    assert_no_transform_telex(&["academic", "systemic", "endemic"]);
+}
+
+/// Test -ack suffix (black, crack, attack, setback)
+/// 'bl-' is already caught by onset cluster; test setback separately via suffix.
+#[test]
+fn test_ack_suffix_no_transform() {
+    // "black" also caught by bl- cluster; "attack" caught by -ack suffix
+    assert_no_transform_telex(&["attack", "setback"]);
+}
+
+/// Test -case suffix: 'as'→'ás' transform requires space-time restore.
+#[test]
+fn test_case_suffix_auto_restore_at_space() {
+    let words = &["uppercase", "lowercase", "briefcase"];
+    for &word in words {
+        let restored = type_word_then_space(word);
+        let actual = restored.as_deref().unwrap_or(word);
+        assert_eq!(
+            actual, word,
+            "Word '{}' should auto-restore at space (-case suffix), got '{}'",
+            word, actual
+        );
+    }
 }

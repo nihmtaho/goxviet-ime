@@ -145,10 +145,8 @@ struct RestoreShortcut: Codable, Equatable {
 
     // MARK: - Persistence
 
-    nonisolated private static let storageKey = "com.goxviet.ime.restoreShortcut"
-
-    nonisolated static func load() -> RestoreShortcut {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+    @MainActor static func load() -> RestoreShortcut {
+        guard let data = UserDefaults.standard.data(forKey: SettingsKey.restoreShortcut),
               let shortcut = try? JSONDecoder().decode(RestoreShortcut.self, from: data)
         else {
             return .default
@@ -158,7 +156,8 @@ struct RestoreShortcut: Codable, Equatable {
 
     func save() {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: RestoreShortcut.storageKey)
+            UserDefaults.standard.set(data, forKey: SettingsKey.restoreShortcut)
         }
     }
 }
+

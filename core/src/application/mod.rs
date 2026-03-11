@@ -8,6 +8,6 @@
 //! ## SOLID Principle: Single Responsibility
 //! Each use case has ONE responsibility - ONE business operation.
 
-pub mod use_cases;
-pub mod services;
 pub mod dto;
+pub mod services;
+pub mod use_cases;

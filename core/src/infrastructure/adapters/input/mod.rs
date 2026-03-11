@@ -8,4 +8,3 @@ pub mod vni_adapter;
 // Re-export
 pub use telex_adapter::TelexAdapter;
 pub use vni_adapter::VniAdapter;
-

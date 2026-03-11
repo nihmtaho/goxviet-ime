@@ -239,10 +239,8 @@ mod tests {
 
     #[test]
     fn test_history_entry_with_metadata() {
-        let entry = HistoryEntry::with_metadata(
-            CharSequence::from("hoa"),
-            "After Telex 's'".to_string(),
-        );
+        let entry =
+            HistoryEntry::with_metadata(CharSequence::from("hoa"), "After Telex 's'".to_string());
         assert_eq!(entry.content.as_str(), "hoa");
         assert_eq!(entry.metadata, Some("After Telex 's'".to_string()));
     }

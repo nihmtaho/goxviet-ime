@@ -29,9 +29,7 @@ pub struct ValidationRequest {
 impl ValidationRequest {
     /// Creates a new validation request
     pub fn new(text: impl Into<CharSequence>) -> Self {
-        Self {
-            text: text.into(),
-        }
+        Self { text: text.into() }
     }
 }
 
@@ -111,12 +109,10 @@ mod tests {
             if self.always_valid {
                 ValidationResult::valid()
             } else {
-                ValidationResult::invalid(
-                    ValidationError::InvalidStructure { 
-                        syllable: "test".to_string(), 
-                        reason: "Mock validation error".to_string() 
-                    }
-                )
+                ValidationResult::invalid(ValidationError::InvalidStructure {
+                    syllable: "test".to_string(),
+                    reason: "Mock validation error".to_string(),
+                })
             }
         }
     }

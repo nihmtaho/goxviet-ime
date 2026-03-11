@@ -138,7 +138,6 @@ pub trait ToneTransformer: Send + Sync {
 ///
 /// Utility functions for common tone operations.
 pub mod quick {
-    
 
     /// Finds main vowel position in vowel cluster
     ///

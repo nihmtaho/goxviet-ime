@@ -387,5 +387,8 @@ extension Notification.Name {
 
     // Debugging
     static let didSaveShortcuts = Notification.Name("com.goxviet.ime.didSaveShortcuts")
+
+    // Logging
+    static let loggingStateChanged = NSNotification.Name("com.goxviet.loggingStateChanged")
 }
 

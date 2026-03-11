@@ -8,8 +8,8 @@ use crate::data::{
     keys,
     vowel::Phonology,
 };
-use crate::shared::buffer::{Buffer, MAX};
 use crate::infrastructure::adapters::transformation::tone_positioning;
+use crate::shared::buffer::{Buffer, MAX};
 use crate::utils;
 
 /// Modifier type detected from key
@@ -57,7 +57,7 @@ impl TransformResult {
 /// Apply tone diacritic transformation (^, ơ, ư, ă)
 ///
 /// Pattern-based: scans buffer for matching vowels
-pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8) -> TransformResult {
+pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8, modern: bool) -> TransformResult {
     // Find target vowels based on key and method
     let targets = find_tone_targets(buf, key, tone_value, method);
 
@@ -80,7 +80,7 @@ pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8) -> Tra
         TransformResult::none()
     } else {
         // After adding tone, reposition mark if needed (Rule 1: diacritic priority)
-        if let Some((old_pos, new_pos)) = tone_positioning::reposition_mark(buf) {
+        if let Some((old_pos, new_pos)) = tone_positioning::reposition_mark(buf, modern) {
             // Mark moved: add both old and new positions to modified list
             // to ensure UI updates both characters
             if !positions.contains(&old_pos) {
@@ -188,10 +188,31 @@ fn find_tone_targets(buf: &Buffer, key: u16, tone_value: u8, method: u8) -> Vec<
 ///
 /// Uses tone_positioning module for accurate mark placement based on
 /// Vietnamese phonology rules (see tone_positioning.rs for details).
-pub fn apply_mark(buf: &mut Buffer, mark_value: u8, _modern: bool) -> TransformResult {
+pub fn apply_mark(buf: &mut Buffer, mark_value: u8, modern: bool) -> TransformResult {
     let vowels = utils::collect_vowels(buf);
     if vowels.is_empty() {
         return TransformResult::none();
+    }
+
+    // Validate vowel cluster against NA groups before applying tone mark.
+    // Build vowel cluster string with diacritics (ă, â, ô, ơ, ư) but without tone marks.
+    // Modifier as u8 matches tone::NONE/CIRCUMFLEX/HORN constants (0/1/2).
+    {
+        use crate::data::chars as char_data;
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        let vowel_cluster: String = vowels
+            .iter()
+            .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))
+            .collect();
+        // Only reject definitively invalid clusters: 'y' followed by a non-'ê' vowel.
+        // e.g. "ya", "yo" are not valid Vietnamese nuclei. Do NOT reject "ie" which is a
+        // valid intermediate state that normalizes to "iê" when a coda consonant follows.
+        let has_invalid_y_prefix = vowel_cluster.len() > 1
+            && vowel_cluster.starts_with('y')
+            && !vowel_cluster.starts_with("yê");
+        if has_invalid_y_prefix {
+            return TransformResult::none();
+        }
     }
 
     // Find position using phonology rules
@@ -201,7 +222,7 @@ pub fn apply_mark(buf: &mut Buffer, mark_value: u8, _modern: bool) -> TransformR
     let has_final = utils::has_final_consonant(buf, last_vowel_pos);
 
     // Use simplified positioning that prioritizes diacritics (Rule 1)
-    let pos = tone_positioning::find_mark_position(&vowels, has_final);
+    let pos = tone_positioning::find_mark_position(&vowels, has_final, modern);
 
     // Clear any existing mark first
     for v in &vowels {
@@ -362,7 +383,7 @@ mod tests {
     #[test]
     fn test_uo_compound() {
         let mut buf = setup_buffer("duoc");
-        let result = apply_tone(&mut buf, keys::W, tone::HORN, 0);
+        let result = apply_tone(&mut buf, keys::W, tone::HORN, 0, true);
         assert!(result.applied);
         // Both u and o should have horn
         assert_eq!(buf.get(1).unwrap().tone, tone::HORN); // u
@@ -398,14 +419,28 @@ mod tests {
 
     #[test]
     fn test_mark_on_second_vowel_no_diacritic() {
-        // Test: hoa + s → hoá (mark on 'a', Rule 2)
+        // Test: hoa + s → hoá (mark on 'a', Rule 2, modern)
         let mut buf = setup_buffer("hoa");
         let result = apply_mark(&mut buf, mark::SAC, true);
         assert!(result.applied);
         assert_eq!(
             buf.get(2).unwrap().mark,
             mark::SAC,
-            "Mark on 'a' (second vowel)"
+            "Mark on 'a' (second vowel, modern)"
+        );
+    }
+
+    #[test]
+    fn test_mark_oa_traditional_style() {
+        // Kiểu cũ: hoa + s → hòa (mark on 'o', first vowel)
+        let mut buf = setup_buffer("hoa");
+        let result = apply_mark(&mut buf, mark::SAC, false);
+        assert!(result.applied);
+        // In traditional style, oa → mark on 'o' (buf pos 1 after 'h')
+        assert_eq!(
+            buf.get(1).unwrap().mark,
+            mark::SAC,
+            "Mark on 'o' (oa traditional: Kiểu cũ)"
         );
     }
 
@@ -451,7 +486,7 @@ mod tests {
         assert_eq!(buf.get(1).unwrap().mark, mark::SAC, "Mark on 'e'");
 
         // Step 2: Try circumflex - BLOCKED by safety check (mark exists)
-        let result = apply_tone(&mut buf, keys::E, tone::CIRCUMFLEX, 0);
+        let result = apply_tone(&mut buf, keys::E, tone::CIRCUMFLEX, 0, true);
         assert!(!result.applied, "Circumflex blocked");
         assert_eq!(buf.get(1).unwrap().tone, tone::NONE, "No circumflex");
         assert_eq!(buf.get(1).unwrap().mark, mark::SAC, "Mark remains");
@@ -474,7 +509,7 @@ mod tests {
         assert_eq!(marked_before, Some(1), "Mark should be on 'o' initially");
 
         // Add horn (w) - both u and o should get horn
-        let result = apply_tone(&mut buf, keys::W, tone::HORN, 0);
+        let result = apply_tone(&mut buf, keys::W, tone::HORN, 0, true);
         assert!(result.applied);
 
         // Verify both u and o have horn

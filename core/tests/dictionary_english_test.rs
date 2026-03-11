@@ -37,8 +37,7 @@ fn type_word(container: &mut Container, input: &str) -> String {
                 let backspace = result.backspace_count();
                 let new_text = result.new_text().as_str();
                 let action = result.action();
-                let has_transformation =
-                    matches!(action, Action::Replace { .. } | Action::Insert);
+                let has_transformation = matches!(action, Action::Replace { .. } | Action::Insert);
 
                 for _ in 0..backspace {
                     screen.pop();
@@ -224,7 +223,10 @@ fn print_report(method: &str, category_stats: &HashMap<String, CategoryStats>, t
             };
 
             println!("\n┌────────────────────────────────────────────────────────────────┐");
-            println!("│ Category: {}                                    │", category_name);
+            println!(
+                "│ Category: {}                                    │",
+                category_name
+            );
             println!("├────────────────────────────────────────────────────────────────┤");
             println!(
                 "│  Total: {:>5}  │  Passed: {:>5}  │  Failed: {:>5}  │  Rate: {:>5.1}% │",
@@ -235,12 +237,7 @@ fn print_report(method: &str, category_stats: &HashMap<String, CategoryStats>, t
             if !stats.failures.is_empty() {
                 println!("  Sample failures:");
                 for (i, f) in stats.failures.iter().take(5).enumerate() {
-                    println!(
-                        "    {}. '{}' → got '{}'",
-                        i + 1,
-                        f.word,
-                        f.actual
-                    );
+                    println!("    {}. '{}' → got '{}'", i + 1, f.word, f.actual);
                 }
                 if stats.failures.len() > 5 {
                     println!("    ... and {} more failures", stats.failures.len() - 5);
@@ -262,10 +259,22 @@ fn print_report(method: &str, category_stats: &HashMap<String, CategoryStats>, t
     println!("\n╔════════════════════════════════════════════════════════════════╗");
     println!("║                      OVERALL SUMMARY                           ║");
     println!("╠════════════════════════════════════════════════════════════════╣");
-    println!("║  Total Words: {:>6}                                         ║", total_words);
-    println!("║  Passed:      {:>6}  ({:>6.2}%)                              ║", total_passed, overall_rate);
-    println!("║  Failed:      {:>6}                                         ║", total_failed);
-    println!("║  Time:        {:>6.2}s                                       ║", total_time);
+    println!(
+        "║  Total Words: {:>6}                                         ║",
+        total_words
+    );
+    println!(
+        "║  Passed:      {:>6}  ({:>6.2}%)                              ║",
+        total_passed, overall_rate
+    );
+    println!(
+        "║  Failed:      {:>6}                                         ║",
+        total_failed
+    );
+    println!(
+        "║  Time:        {:>6.2}s                                       ║",
+        total_time
+    );
     println!("╚════════════════════════════════════════════════════════════════╝");
 }
 
@@ -273,7 +282,7 @@ fn print_report(method: &str, category_stats: &HashMap<String, CategoryStats>, t
 
 #[test]
 fn english_100k_auto_restore() {
-    let content = match fs::read_to_string("tests/data/english_100k_failures_words.txt") {
+    let content = match fs::read_to_string("tests/data/english_words.txt") {
         Ok(c) => c,
         Err(_) => {
             println!("SKIP: tests/data/english_100k_failures_words.txt not found (failure-tracking file removed)");
@@ -317,7 +326,12 @@ fn english_100k_auto_restore() {
             entry.passed += chunk_total - chunk_failed;
             entry.failed += chunk_failed;
             entry.failures.extend(failures);
-            print!("  Chunk {}: {}/{} passed  \r", chunk_idx + 1, entry.passed, entry.total);
+            print!(
+                "  Chunk {}: {}/{} passed  \r",
+                chunk_idx + 1,
+                entry.passed,
+                entry.total
+            );
         }
         println!();
     }
@@ -346,7 +360,12 @@ fn english_100k_auto_restore() {
             entry.passed += chunk_total - chunk_failed;
             entry.failed += chunk_failed;
             entry.failures.extend(failures);
-            print!("  Chunk {}: {}/{} passed  \r", chunk_idx + 1, entry.passed, entry.total);
+            print!(
+                "  Chunk {}: {}/{} passed  \r",
+                chunk_idx + 1,
+                entry.passed,
+                entry.total
+            );
         }
         println!();
     }
@@ -367,8 +386,14 @@ fn english_100k_auto_restore() {
     println!("\n═══════════════════════════════════════════════════════════════════");
     println!("                        FINAL RESULTS");
     println!("═══════════════════════════════════════════════════════════════════");
-    println!("Telex: {:.2}% ({} / {})", telex_pass_rate, total_telex_passed, total_telex_words);
-    println!("VNI:   {:.2}% ({} / {})", vni_pass_rate, total_vni_passed, total_vni_words);
+    println!(
+        "Telex: {:.2}% ({} / {})",
+        telex_pass_rate, total_telex_passed, total_telex_words
+    );
+    println!(
+        "VNI:   {:.2}% ({} / {})",
+        vni_pass_rate, total_vni_passed, total_vni_words
+    );
     println!("═══════════════════════════════════════════════════════════════════");
 
     assert!(
@@ -384,4 +409,3 @@ fn english_100k_auto_restore() {
         MIN_PASS_RATE
     );
 }
-

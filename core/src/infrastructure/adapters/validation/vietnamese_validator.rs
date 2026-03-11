@@ -1,5 +1,7 @@
 use crate::data::keys;
-use crate::infrastructure::adapters::validation::fsm::tables::{CHAR_PROPS, PROP_VOWEL, VIETNAMESE_BIGRAMS};
+use crate::infrastructure::adapters::validation::fsm::tables::{
+    CHAR_PROPS, PROP_VOWEL, VIETNAMESE_BIGRAMS,
+};
 
 pub struct ValidationResult {
     pub is_valid: bool,
@@ -81,7 +83,9 @@ impl VietnameseSyllableValidator {
         // Rule 5: Coda validation
         let last = keys[len - 1];
         if len > 1
-            && (CHAR_PROPS[last as usize] & crate::infrastructure::adapters::validation::fsm::tables::PROP_CODA_INVALID) != 0
+            && (CHAR_PROPS[last as usize]
+                & crate::infrastructure::adapters::validation::fsm::tables::PROP_CODA_INVALID)
+                != 0
         {
             // Allow 'k' as a final consonant for names like "Đăk Lăk"
             if last == keys::K {
@@ -172,6 +176,7 @@ impl VietnameseSyllableValidator {
     /// - "eu" without circumflex (should be "êu")
     /// - "ăi" (breve + vowel - invalid)
     /// - "ieư" (should be "iêu")
+    /// - "êng" (standalone ê before -ng is invalid; valid: "ênh", "eng", "iêng")
     pub fn validate_with_tones(keys: &[u16], tones: &[u8]) -> ValidationResult {
         // First validate structure
         let struct_result = Self::validate(keys);
@@ -181,6 +186,16 @@ impl VietnameseSyllableValidator {
 
         // Then validate tone placement
         if !Self::is_valid_tone_placement(keys, tones) {
+            return ValidationResult {
+                is_valid: false,
+                confidence: 0,
+            };
+        }
+
+        // Extra: reject ê (E+circumflex) before -ng.
+        // validate() is permissive here because raw E = "e or ê" without modifier info.
+        // Now that we have `tones`, we can distinguish: ê before -ng → invalid.
+        if !Self::is_valid_e_before_ng(keys, tones) {
             return ValidationResult {
                 is_valid: false,
                 confidence: 0,
@@ -760,13 +775,54 @@ impl VietnameseSyllableValidator {
     }
 
     /// Check for vowels before -ng
-    /// Invalid: e, ê (eng, êng should use -nh instead)
-    /// Valid: a, o, u, i, y
+    /// Permissive because raw E = "e or ê" — can't distinguish without modifier info.
+    /// "eng" is valid (xà beng, leng keng); "êng" is invalid (should be "ênh").
+    /// Use `is_valid_e_before_ng` in `validate_with_tones` to enforce the ê+ng rule.
     #[inline]
     fn is_valid_vowel_before_ng(_keys: &[u16], _len: usize) -> bool {
-        // Relaxed rule: Allow E before NG (e.g., "xà beng", "leng keng", "cà mèng")
-        // While "êng" is technically invalid (should be "ênh"), "eng" is valid.
-        // Since we check raw keys here (E = e or ê), we must be permissive.
+        // Relaxed: "eng" is valid Vietnamese. "êng" is rejected in validate_with_tones
+        // where we have modifier info to distinguish e from ê.
+        true
+    }
+
+    /// Reject ê (E + circumflex modifier) before -ng ending.
+    ///
+    /// Vietnamese rule: standalone ê cannot precede -ng; must use -nh instead.
+    /// - "êng" → invalid (should be "ênh")
+    /// - "eng" → valid (xà beng, cà mèng)
+    /// - "iêng" / "yêng" → valid (tiếng, riêng) — ê here is part of the iê/yê compound
+    ///
+    /// Called only from `validate_with_tones` which provides modifier info.
+    fn is_valid_e_before_ng(keys: &[u16], tones: &[u8]) -> bool {
+        use crate::data::chars::tone;
+
+        let len = keys.len();
+        if len < 3 {
+            return true;
+        }
+
+        // Check if syllable ends with -ng
+        if keys[len - 1] != keys::G || keys[len - 2] != keys::N {
+            return true;
+        }
+
+        // Scan vowels before the -ng ending.
+        // Reject only if E+CIRCUMFLEX is a STANDALONE ê (not part of iê/yê compound).
+        // "iê+ng" and "yê+ng" are valid (tiếng, riêng).
+        if keys.len() != tones.len() {
+            return true; // Can't check without complete tone info
+        }
+        for i in 0..len.saturating_sub(2) {
+            if keys[i] == keys::E && tones[i] == tone::CIRCUMFLEX {
+                // Check if preceded by I or Y → part of iê/yê compound → valid
+                let preceded_by_glide = i > 0
+                    && matches!(keys[i - 1], keys::I | keys::Y);
+                if !preceded_by_glide {
+                    return false; // standalone ê before -ng is invalid
+                }
+            }
+        }
+
         true
     }
 }

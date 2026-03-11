@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## [2.0.13] - DRAFT
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.13.md](.release-notes/release_note_2.0.13.md)
+
+### 🐛 Bug Fixes
+
+- **Telex/VNI: Invalid vowel cluster + tone mark** (`yas` → `yas` thay vì `yá`): Từ chối áp dụng dấu thanh khi cụm nguyên âm bắt đầu bằng `y` và theo sau là nguyên âm không phải `ê` — cụm đó không hợp lệ trong tiếng Việt
+- **Telex/VNI: Horn/Breve bỏ qua nguyên âm đệm** (`hoacwj` → `hoặc` thay vì `hơacj`): Sửa `find_horn_positions` để bỏ qua `o` khi `o` đóng vai trò glide (âm đệm) trước `a`/`e`
+- **Telex/VNI: Khôi phục raw khi NA-PAC không hợp lệ** (`hoawjch` → `hoawjch` thay vì `hoặch`): Kiểm tra tính hợp lệ NA-PAC trước khi mở rộng phụ âm cuối thành digraph — `oă` (NA.3) không cho phép kết hợp với `ch` (PAC.0)
+- **Telex/VNI: Digraph coda guard** (`rích`, `huỵch`, `cõng` gõ đúng): Bỏ qua English detection khi phím mới hoàn thành digraph coda `ch`/`ng`/`nh` trên buffer đã có Vietnamese transform — trạng thái buffer trung gian (kết thúc bằng `c`/`n`) trông giống phonotactic invalid nhưng digraph đầy đủ là hợp lệ
+- **English detection: Diacritical modifier guard mở rộng**: Cũng tính tone marks (`s`/`f`/`r`/`x`/`j`) vào guard không-restore, không chỉ circumflex/horn/breve — ngăn restore sai trên từ có dấu thanh
+- **Accessibility retry cải thiện**: Tăng retry 3→8 lần, interval 0.5s→0.75s; retry patiently khi `hadPermissionBefore` (không chỉ post-update) — xử lý macOS thu hồi permission thủ công hoặc TCC reset chậm; lưu `permissionGranted` vào UserDefaults khi quyền được cấp
+- **Swift 6 Concurrency Warnings (130 → 1)**: Bọc notification/timer/DispatchSource observer closures trong `Task { @MainActor }` hoặc `MainActor.assumeIsolated {}` trên 17 files; thêm `@Sendable` vào `TypedNotifications` handler parameters; xóa `nonisolated(unsafe)` thừa khỏi singleton `static let`
+- **FFI Constants Isolation**: Đổi `telex`/`vni`/`traditional`/`modern` thành `nonisolated static var` (computed) để truy cập từ `nonisolated init`
+- **UpdateSimulator Timer Race**: Kiểm tra `self != nil` ngoài `Task`, dùng `self.progressTimer` để invalidate đúng
+- **Deprecated `.onChange`**: Sửa `.onChange(of:perform:)` → two-parameter form (`AdvancedSettingsView`, `ShortcutEditorSheet`)
+
+### ✨ Features
+
+- **Compact Settings UI**: Giảm row padding (`8→5pt`), icon size (`24→20pt`), section spacing (`20→14`), thêm `.controlSize(.small)` toàn bộ Toggle/Switch trong General và Per-App tabs
+- **Per-App Settings Density**: App row padding giảm, icon `32→28pt`, list spacing `8→4`, toolbar `24/12→16/8`
+- **General Settings Reorder**: Keyboard Shortcut lên đầu → Input Method → Tone Settings → Smart Features (+ Instant Auto-Restore) → Editing (đổi tên từ Auto-Restore)
+
+### 🔧 CI/Chores
+
+- **SettingsKey Enum**: Tập trung tất cả `UserDefaults` key strings vào `SettingsKeys.swift` (`SettingsKey` enum, namespace `com.goxviet.ime.*`) — xóa `Keys` inner struct trong `SettingsManager` và string literals rải rác
+- **Test Data Cleanup**: Xóa 162 dòng symbol/garbage khỏi `english_words.txt`; sửa `vietnamese_69k_pure.txt` (lôgic, mô đéc/môbilet, sâmbanh)
+- **Artifact Cleanup**: Xóa binary artifacts, temp docs, và test data thừa
+
+---
+
 ## [2.0.12] - 2026-03-01
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.12.md](.release-notes/release_note_2.0.12.md)

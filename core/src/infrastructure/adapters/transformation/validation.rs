@@ -8,7 +8,9 @@
 //! - Thread-local buffer for key simulation (avoids allocation)
 //! - Inlined functions for hot path performance
 
-use crate::infrastructure::external::vietnamese_validator::{ValidationResult, VietnameseSyllableValidator};
+use crate::infrastructure::external::vietnamese_validator::{
+    ValidationResult, VietnameseSyllableValidator,
+};
 use std::cell::RefCell;
 
 /// Maximum number of keys per syllable (Vietnamese syllables are typically 1-8 keys)

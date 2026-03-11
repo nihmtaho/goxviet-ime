@@ -166,12 +166,12 @@ impl ProcessorService {
     ) -> Self {
         // Create legacy engine based on input method
         let mut engine = crate::infrastructure::engine::Engine::new();
-        
+
         // Configure legacy engine from EngineConfig
         engine.set_modern_tone(config.use_modern_tone_placement);
         engine.set_english_auto_restore(config.instant_restore_enabled);
         engine.set_esc_restore(config.esc_restore_enabled);
-        
+
         // Set method based on input_method trait
         match input_method.method_id() {
             crate::domain::ports::input::InputMethodId::Telex => {
@@ -184,7 +184,7 @@ impl ProcessorService {
                 engine.set_method(0); // Default to Telex
             }
         }
-        
+
         Self {
             input_method,
             validator,
@@ -223,7 +223,10 @@ impl ProcessorService {
     }
 
     /// Process a backspace key
-    fn process_backspace(&self, context: &ProcessingContext) -> Result<ProcessingOutput, ProcessorError> {
+    fn process_backspace(
+        &self,
+        context: &ProcessingContext,
+    ) -> Result<ProcessingOutput, ProcessorError> {
         // If buffer is empty, just clear
         if context.buffer_content().is_empty() {
             return Ok(ProcessingOutput::noop());
@@ -241,7 +244,7 @@ impl ProcessorService {
         context: &ProcessingContext,
     ) -> Result<ProcessingOutput, ProcessorError> {
         let key_event = context.key_event();
-        
+
         // Get character from key event
         let ch = match key_event.as_char() {
             Some(c) => c,
@@ -289,7 +292,10 @@ impl ProcessorService {
     ///
     /// # Returns
     /// Transform result for the keystroke
-     pub fn process_key(&mut self, key_event: crate::domain::entities::key_event::KeyEvent) -> Result<TransformResult, ProcessorError> {
+    pub fn process_key(
+        &mut self,
+        key_event: crate::domain::entities::key_event::KeyEvent,
+    ) -> Result<TransformResult, ProcessorError> {
         // Use legacy engine with correct parameter mapping:
         // Legacy engine: on_key_ext(key, caps, ctrl, shift)
         let result = self.engine.on_key_ext(
@@ -298,7 +304,7 @@ impl ProcessorService {
             key_event.ctrl,
             key_event.shift,
         );
-        
+
         // Build output text from legacy result
         let output_text = if result.count > 0 {
             let mut text = String::new();
@@ -313,7 +319,7 @@ impl ProcessorService {
         } else {
             CharSequence::empty()
         };
-        
+
         // Determine action based on legacy result
         let action = if result.backspace > 0 {
             // Has backspace: Replace action
@@ -327,7 +333,7 @@ impl ProcessorService {
             // No action
             Action::None
         };
-        
+
         Ok(TransformResult::new(action, output_text))
     }
 
@@ -337,10 +343,9 @@ impl ProcessorService {
         // Temporarily enable ESC restore, send ESC key, then restore the setting
         let was_enabled = self.engine.esc_restore_enabled;
         self.engine.set_esc_restore(true);
-        let result = self.engine.on_key_ext(
-            crate::data::keys::ESC,
-            false, false, false,
-        );
+        let result = self
+            .engine
+            .on_key_ext(crate::data::keys::ESC, false, false, false);
         self.engine.set_esc_restore(was_enabled);
 
         let output_text = if result.count > 0 {
@@ -358,7 +363,9 @@ impl ProcessorService {
         };
 
         let action = if result.backspace > 0 {
-            Action::Replace { backspace_count: result.backspace }
+            Action::Replace {
+                backspace_count: result.backspace,
+            }
         } else {
             Action::None
         };
@@ -369,7 +376,9 @@ impl ProcessorService {
     /// Add a text expansion shortcut to the engine
     pub fn add_shortcut(&mut self, trigger: &str, expansion: &str) -> bool {
         use crate::features::shortcut::Shortcut;
-        self.engine.shortcuts_mut().add(Shortcut::new(trigger, expansion))
+        self.engine
+            .shortcuts_mut()
+            .add(Shortcut::new(trigger, expansion))
     }
 
     /// Remove a text expansion shortcut from the engine
@@ -418,10 +427,16 @@ mod tests {
         fn method_id(&self) -> InputMethodId {
             InputMethodId::Telex
         }
-        fn detect_tone(&self, _event: &KeyEvent) -> Option<crate::domain::entities::tone::ToneType> {
+        fn detect_tone(
+            &self,
+            _event: &KeyEvent,
+        ) -> Option<crate::domain::entities::tone::ToneType> {
             None
         }
-        fn detect_diacritic(&self, _event: &KeyEvent) -> Option<crate::domain::ports::input::DiacriticType> {
+        fn detect_diacritic(
+            &self,
+            _event: &KeyEvent,
+        ) -> Option<crate::domain::ports::input::DiacriticType> {
             None
         }
         fn is_remove_mark(&self, _event: &KeyEvent) -> bool {
@@ -471,7 +486,7 @@ mod tests {
     struct MockBufferManager {
         buffer: InputBuffer,
     }
-    
+
     impl MockBufferManager {
         fn new() -> Self {
             Self {
@@ -479,7 +494,7 @@ mod tests {
             }
         }
     }
-    
+
     impl BufferManager for MockBufferManager {
         fn current(&self) -> &InputBuffer {
             &self.buffer
@@ -499,8 +514,11 @@ mod tests {
 
     struct MockLanguageDetector;
     impl LanguageDetector for MockLanguageDetector {
-        fn detect(&self, _text: &CharSequence) -> crate::domain::ports::validation::DetectionResult {
-            use crate::domain::ports::validation::{DetectedLanguage, ConfidenceLevel};
+        fn detect(
+            &self,
+            _text: &CharSequence,
+        ) -> crate::domain::ports::validation::DetectionResult {
+            use crate::domain::ports::validation::{ConfidenceLevel, DetectedLanguage};
             crate::domain::ports::validation::DetectionResult::vietnamese(ConfidenceLevel::High)
         }
         fn is_vietnamese(&self, _text: &CharSequence) -> bool {
@@ -606,7 +624,10 @@ mod tests {
     #[test]
     fn test_processing_output_replace() {
         let output = ProcessingOutput::replace(1, "á");
-        assert!(matches!(output.action, Action::Replace { backspace_count: 1 }));
+        assert!(matches!(
+            output.action,
+            Action::Replace { backspace_count: 1 }
+        ));
         assert_eq!(output.text.unwrap().as_str(), "á");
         assert!(output.transformed);
     }

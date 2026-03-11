@@ -332,7 +332,11 @@ mod tests {
 
     #[test]
     fn test_input_method_id_round_trip() {
-        for id in [InputMethodId::Telex, InputMethodId::Vni, InputMethodId::Plain] {
+        for id in [
+            InputMethodId::Telex,
+            InputMethodId::Vni,
+            InputMethodId::Plain,
+        ] {
             let numeric = id.to_id();
             let restored = InputMethodId::from_id(numeric);
             assert_eq!(id, restored);

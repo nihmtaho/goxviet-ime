@@ -18,10 +18,7 @@
 //! MemoryBufferAdapter, PersistentBufferAdapter
 //! ```
 
-use crate::domain::{
-    entities::buffer::InputBuffer,
-    value_objects::char_sequence::CharSequence,
-};
+use crate::domain::{entities::buffer::InputBuffer, value_objects::char_sequence::CharSequence};
 
 /// Buffer manager port (interface)
 ///

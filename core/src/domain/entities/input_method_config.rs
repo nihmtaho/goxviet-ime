@@ -102,7 +102,10 @@ impl InputMethodConfig {
         // Smart compound
         m.insert("uow".into(), InputAction::CompoundUOA);
 
-        Self { name: "telex".into(), mappings: m }
+        Self {
+            name: "telex".into(),
+            mappings: m,
+        }
     }
 
     /// Built-in VNI configuration (mirrors existing `Vni` Method impl)
@@ -125,14 +128,17 @@ impl InputMethodConfig {
         m.insert("0".into(), InputAction::XoaDau);
         // Circumflex (applied to last a/e/o in buffer): 6
         m.insert("6".into(), InputAction::ModA); // â/ê/ô — engine decides target
-        // Horn: 7 → ơ / ư
+                                                 // Horn: 7 → ơ / ư
         m.insert("7".into(), InputAction::ModOW); // engine resolves ơ vs ư context
-        // Breve: 8 → ă
+                                                  // Breve: 8 → ă
         m.insert("8".into(), InputAction::ModAW);
         // Stroke: 9 → đ
         m.insert("9".into(), InputAction::StrokeD);
 
-        Self { name: "vni".into(), mappings: m }
+        Self {
+            name: "vni".into(),
+            mappings: m,
+        }
     }
 
     /// Serialize to JSON string for FFI transfer

@@ -34,7 +34,7 @@ impl TransformResult {
     pub fn new(action: Action, new_text: impl Into<CharSequence>) -> Self {
         let new_text = new_text.into();
         let modified = action.is_modifying() || !new_text.is_empty();
-        
+
         Self {
             action,
             new_text,
@@ -301,7 +301,7 @@ mod tests {
     fn test_transform_result_chain_with_none() {
         let t1 = TransformResult::none();
         let t2 = TransformResult::insert("test");
-        
+
         let combined = t1.chain(t2.clone());
         assert_eq!(combined.new_text().as_str(), "test");
 
@@ -342,10 +342,7 @@ mod tests {
 
     #[test]
     fn test_transform_builder_insert() {
-        let result = TransformBuilder::new()
-            .insert()
-            .with_text("world")
-            .build();
+        let result = TransformBuilder::new().insert().with_text("world").build();
 
         assert_eq!(result.action(), Action::Insert);
         assert_eq!(result.new_text().as_str(), "world");
@@ -364,10 +361,7 @@ mod tests {
 
     #[test]
     fn test_transform_builder_commit() {
-        let result = TransformBuilder::new()
-            .commit()
-            .with_text("done")
-            .build();
+        let result = TransformBuilder::new().commit().with_text("done").build();
 
         assert_eq!(result.action(), Action::Commit);
         assert_eq!(result.new_text().as_str(), "done");

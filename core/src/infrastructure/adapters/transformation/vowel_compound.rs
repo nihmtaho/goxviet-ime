@@ -155,12 +155,8 @@ pub fn normalize_ie_compound(buf: &mut Buffer) -> Option<usize> {
 
         // Also check uye pattern (u + y + e)
         let has_uye_pattern = i >= 2
-            && buf
-                .get(i - 2)
-                .map_or(false, |p| p.key == keys::U)
-            && buf
-                .get(i - 1)
-                .map_or(false, |p| p.key == keys::Y);
+            && buf.get(i - 2).map_or(false, |p| p.key == keys::U)
+            && buf.get(i - 1).map_or(false, |p| p.key == keys::Y);
 
         if !(has_ie_pattern || has_uye_pattern) {
             continue;

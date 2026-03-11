@@ -483,7 +483,7 @@ struct GeneralSettingsView: View {
             isRecordingShortcut = false
             showLegacyEncodingWarning = false
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("com.goxviet.loggingStateChanged"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .loggingStateChanged)) { notification in
             if let enabled = notification.object as? Bool {
                 loggingEnabled = enabled
             }

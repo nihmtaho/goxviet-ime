@@ -468,11 +468,20 @@ impl Phonology {
         }
 
         // Default: find last u or o (single vowel case)
+        // Skip 'o' if it is a glide vowel (o followed by 'a' or 'e' means o is the medial)
+        // NOTE: Use Option::map to check the next key; do NOT use unwrap_or(0) because keys::A == 0,
+        // which would cause false glide detection when there is no next character.
         for &pos in vowel_positions.iter().rev() {
             let k = buffer_keys.get(pos).copied().unwrap_or(0);
             if k == keys::U || k == keys::O {
-                result.push(pos);
-                return result;
+                let is_glide = k == keys::O
+                    && buffer_keys
+                        .get(pos + 1)
+                        .map_or(false, |&nk| nk == keys::A || nk == keys::E);
+                if !is_glide {
+                    result.push(pos);
+                    return result;
+                }
             }
         }
 

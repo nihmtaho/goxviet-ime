@@ -181,8 +181,7 @@ pub mod quick {
             // Single consonants
             "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "q", "r", "s", "t", "v", "x",
             // Digraphs
-            "ch", "gh", "gi", "kh", "ng", "nh", "ph", "qu", "th", "tr",
-            // Trigraph
+            "ch", "gh", "gi", "kh", "ng", "nh", "ph", "qu", "th", "tr", // Trigraph
             "ngh",
         ];
 
