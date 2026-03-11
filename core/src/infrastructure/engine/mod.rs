@@ -3484,9 +3484,21 @@ impl Engine {
         let keys: Vec<u16> = self.raw_input.iter().map(|(k, _)| k).collect();
 
         // Priority 1: Vietnamese syllable check — if the current buffer renders to a valid
-        // Vietnamese syllable, keep it as Vietnamese.
+        // Vietnamese syllable (dictionary lookup), keep it as Vietnamese.
         let output = self.buf.to_full_string();
         if crate::data::viet_syllables::is_valid_vietnamese_syllable(&output) {
+            return false;
+        }
+
+        // Priority 1b: Structural Vietnamese validity check using buf_keys + buf_tones.
+        // This catches valid Vietnamese syllables that are NOT in the TuDien dictionary,
+        // e.g. "dỉ" (dir), "sủ" (sur), "quỉ" (quir), "mỉu" (miur), etc.
+        // Without this, the VR rhotic pattern fires on raw keys like [i,r] or [u,r]
+        // with 85% confidence, causing false English detection for valid Telex input.
+        let buf_keys: Vec<u16> = self.buf.iter().map(|c| c.key).collect();
+        let buf_tones: Vec<u8> = self.buf.iter().map(|c| c.tone).collect();
+        let viet_struct = crate::infrastructure::external::vietnamese_validator::VietnameseSyllableValidator::validate_with_tones(&buf_keys, &buf_tones);
+        if viet_struct.is_valid {
             return false;
         }
 
