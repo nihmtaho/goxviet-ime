@@ -3499,30 +3499,14 @@ impl Engine {
             }
         }
 
-        // Phonotactic analysis on raw key sequence.
-        // In Telex, when tone modifiers were KEPT (raw longer than rendered AND transforms exist),
-        // filter them out so patterns like SP in "tieesp" don't falsely fire.
-        // If raw > output but NO transforms remain (double-key undo, e.g. "ff" in "affair"),
-        // keep ALL raw keys so double-consonant evidence is preserved.
+        // Phonotactic analysis on raw key sequence (without filtering).
+        // Use FULL raw keys to catch all English patterns, including V+R rhotic in words
+        // like "bierer" where the final 'R' is consumed as a tone modifier but is actually
+        // a critical English detection signal.
+        // The filtering of tone modifiers is better applied at the word boundary check
+        // to avoid false positives, not in this early detection path.
         let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
-        let filtered_keys_owned: Vec<(u16, bool)>;
-        let filtered_keys: &[(u16, bool)] = if self.method == 0
-            && raw_keys.len() > output.chars().count()
-            && self.has_vietnamese_transforms()
-        {
-            use crate::data::keys as k;
-            const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
-            filtered_keys_owned = raw_keys
-                .iter()
-                .enumerate()
-                .filter(|&(i, &(key, _))| i == 0 || !TELEX_TONE_MODIFIERS.contains(&key))
-                .map(|(_, &kv)| kv)
-                .collect();
-            &filtered_keys_owned
-        } else {
-            &raw_keys
-        };
-        let phonotactic = PhonotacticEngine::analyze(filtered_keys);
+        let phonotactic = PhonotacticEngine::analyze(&raw_keys);
         phonotactic.english_confidence >= 80
     }
 
@@ -3747,26 +3731,42 @@ impl Engine {
                 //
                 // When the last key is NOT a modifier (e.g. "core", "restore"), any marks
                 // in buf came from mid-word absorption, not explicit user intent.
-                let has_explicit_viet_tone = if self.method == 0 {
-                    use crate::data::keys as k;
-                    const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
-                    if let Some((last_raw_key, _)) = self.raw_input.iter().last() {
-                        if TELEX_TONE_MODIFIERS.contains(&last_raw_key) {
-                            // The modifier was CONSUMED (applied to a vowel) only when the
-                            // last buf key differs from the last raw key. If equal, the
-                            // modifier became a literal character after undo (e.g. "affair":
-                            // last raw='r', last buf='r' → r was NOT consumed as hỏi tone).
-                            let last_buf_key = self.buf.iter().last().map(|c| c.key);
-                            last_buf_key.map_or(true, |bk| bk != last_raw_key)
+                //
+                // HOWEVER: Only skip restoration if the rendered output is an actual
+                // Vietnamese word in the dictionary. If the output is NOT in TuDien
+                // (e.g. "biể", "bió"), then it's not really Vietnamese and we should
+                // restore to English anyway. This fixes false positives like "bierer"
+                // where the 'r' is consumed as a tone modifier but the result isn't
+                // a real Vietnamese word.
+                let output = self.buf.to_full_string();
+                let is_real_vietnamese = crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
+
+                let has_explicit_viet_tone = if is_real_vietnamese {
+                    // Only check for explicit tone if the result IS a real Vietnamese word
+                    if self.method == 0 {
+                        use crate::data::keys as k;
+                        const TELEX_TONE_MODIFIERS: &[u16] = &[k::R, k::S, k::F, k::X, k::J];
+                        if let Some((last_raw_key, _)) = self.raw_input.iter().last() {
+                            if TELEX_TONE_MODIFIERS.contains(&last_raw_key) {
+                                // The modifier was CONSUMED (applied to a vowel) only when the
+                                // last buf key differs from the last raw key. If equal, the
+                                // modifier became a literal character after undo (e.g. "affair":
+                                // last raw='r', last buf='r' → r was NOT consumed as hỏi tone).
+                                let last_buf_key = self.buf.iter().last().map(|c| c.key);
+                                last_buf_key.map_or(true, |bk| bk != last_raw_key)
+                            } else {
+                                false
+                            }
                         } else {
                             false
                         }
                     } else {
-                        false
+                        // VNI: number keys are always explicit tone intent
+                        self.buf.iter().any(|c| c.mark != 0)
                     }
                 } else {
-                    // VNI: number keys are always explicit tone intent
-                    self.buf.iter().any(|c| c.mark != 0)
+                    // Not a real Vietnamese word, so no need to respect "explicit tone" intent
+                    false
                 };
                 if has_explicit_viet_tone {
                     return None;
@@ -3833,14 +3833,21 @@ impl Engine {
             return None;
         }
 
-        let should_restore = if viet_validation.is_valid {
-            // Valid Vietnamese collision: require confidence > 97 to override.
+        // Check if the rendered output is an actual Vietnamese word in the dictionary.
+        // This is more reliable than structure-based validation, which accepts many
+        // non-words like "biể", "bió" that pass FSM rules but aren't real Vietnamese.
+        let output = self.buf.to_full_string();
+        let is_real_vietnamese = crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
+
+        let should_restore = if is_real_vietnamese {
+            // Real Vietnamese word collision: require high confidence to override.
             // L6 prefixes return 95 (e.g. "con-", "dis-") which is NOT enough —
             // those fire false positives on valid Vietnamese words like "cong", "con".
             // Only L2 onset clusters (98) and L1 invalid initials (100) are strong enough.
             phonotactic.english_confidence >= 97
         } else {
-            // Invalid Vietnamese output: lower threshold — almost certainly English
+            // NOT a real Vietnamese word (even if structurally valid): lower threshold
+            // Examples: "biể", "bió", "bios", "bise" pass FSM validation but aren't in TuDien
             phonotactic.english_confidence >= 60
         };
 
