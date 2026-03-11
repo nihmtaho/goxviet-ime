@@ -295,3 +295,65 @@ fn test_na_pac_valid_digraph_coda() {
         buffer
     );
 }
+
+#[test]
+fn test_digraph_guard_with_vietnamese_transforms() {
+    // Test that the just_completed_digraph guard prevents false English restoration
+    // when Vietnamese tone transforms are active.
+    //
+    // Scenario: "rích" (rich with hỏi tone on í)
+    // - 'r' (key for hỏi tone) on 'i' creates 'í' with Vietnamese transform
+    // - 'c' extends buffer to "rích" (incomplete digraph, last char is consonant)
+    // - 'h' completes the 'ch' digraph
+    // - Without guard: instant_restore_english() might see "ríh" (3 chars) and falsely restore
+    // - With guard: just_completed_digraph detects we just made "ch" digraph, skips restore
+
+    let mut e = Engine::new();
+    e.set_method(0); // Telex
+    e.set_enabled(true);
+
+    println!("\n=== Test digraph guard: Vietnamese tone + digraph completion ===");
+
+    // Type 'i' → 'i' (vowel)
+    e.on_key(keys::I, false, false);
+    println!("After 'i': buffer='{}'", e.get_buffer());
+
+    // Type 'r' → 'ỉ' (r is grave/huyền tone modifier in Telex, transforms i to ỉ)
+    let result = e.on_key(keys::R, false, false);
+    println!(
+        "After 'r': buffer='{}', has transform={}",
+        e.get_buffer(),
+        result.backspace > 0
+    );
+    assert_eq!(e.get_buffer(), "ỉ", "Expected 'ỉ' with huyền tone");
+
+    // Type 'c' → 'íc' (now ends with consonant, incomplete coda)
+    e.on_key(keys::C, false, false);
+    println!("After 'c': buffer='{}'", e.get_buffer());
+
+    // CRITICAL: Type 'h' to complete 'ch' digraph
+    // Without digraph guard: instant_restore_english() might falsely restore
+    // because the buffer looks like it could be English (vowel + consonant + 'h').
+    // With guard: just_completed_digraph=true prevents the restore since we
+    // just completed a Vietnamese digraph coda.
+    let result = e.on_key(keys::H, false, false);
+    let buffer = e.get_buffer();
+    println!(
+        "After 'h': buffer='{}', backspace={}, count={}",
+        buffer, result.backspace, result.count
+    );
+
+    // Should produce "ỉch" (Vietnamese word with huyền tone + ch digraph)
+    // NOT restore to raw "ich"
+    assert_eq!(
+        buffer, "ỉch",
+        "Digraph 'ch' completion with Vietnamese tone should produce 'ỉch', not restore to 'ich', got '{}'",
+        buffer
+    );
+    // Verify no raw restore happened
+    assert!(
+        result.count <= 1,
+        "Should not restore to raw when Vietnamese tone + digraph is detected; count should be <= 1, got {}",
+        result.count
+    );
+}
