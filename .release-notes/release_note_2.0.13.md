@@ -2,11 +2,51 @@
 
 **Ngày phát hành:** TBD
 **Phiên bản:** 2.0.13
-**PR:** [#64 – fix(macos): resolve Swift 6 concurrency warnings and compact settings UI](https://github.com/nihmtaho/goxviet-ime/pull/64)
+**PRs:**
+- [#65 – fix(core): handle invalid Vietnamese combos with stroke restore & NA-PAC validation](https://github.com/nihmtaho/goxviet-ime/pull/65)
+- [#64 – fix(macos): resolve Swift 6 concurrency warnings and compact settings UI](https://github.com/nihmtaho/goxviet-ime/pull/64)
 
 ---
 
 ## 🐛 Sửa lỗi
+
+### Core Engine: Xử lý Stroke Invalid Combo và NA-PAC Validation
+
+Sửa lỗi đơn giản nhưng quan trọng trong xử lý phụ âm với stroke (đặc biệt `đ`):
+
+#### `ddd` → `ddd` (không phải `dd` toggle)
+
+- **Vấn đề:** Khi gõ ba lần `d`, engine sẽ:
+  - Lần 1: `d` → `d`
+  - Lần 2: `dd` → `đ` (stroke applied)
+  - Lần 3: `đd` → `dd` (toggle back sai, vì `đd` không hợp lệ tiếng Việt)
+- **Nguyên nhân:** Đ là phụ âm bắt đầu âm tiết (initial consonant), **không bao giờ** có thể đứng trước một phụ âm khác. Trạng thái `đd` là tổ hợp không hợp lệ.
+- **Giải pháp:** Thêm phương thức `restore_stroke_to_raw()` — khi phát hiện stroke không hợp lệ (buffer chỉ chứa stroked-d), lập tức khôi phục thành raw keystrokes: `đd` → `ddd`
+- **Không ảnh hưởng:** Multi-syllable contexts như `xôđa`, `đumđum` vẫn hoạt động bình thường (buffer có ký tự khác sau `đ`)
+
+#### NA-PAC Validity: Kiểm tra coda digraph hợp lệ
+
+- **Vấn đề:** Engine không xác thực tính hợp lệ NA (nucleus-aperture / cụm nguyên âm) + PAC (phonetic coda / phụ âm cuối) khi hoàn thành digraph coda
+- **Ví dụ:** `ơi` (NA.5, open-only — không cho phép phụ âm cuối) + `c` → không nên tạo `ơic`
+- **Giải pháp:** Thêm hai hàm kiểm tra trước khi thêm phụ âm vào buffer:
+  1. **`check_coda_extension_validity()`** — Khi mở rộng phụ âm cuối thành digraph (`ch`, `ng`, `nh`), kiểm tra xem NA hiện tại có cho phép PAC đó không
+  2. **`check_first_coda_validity()`** — Khi thêm phụ âm đầu tiên vào buffer kết thúc bằng nguyên âm, kiểm tra xem NA có open-only không
+- **Hành động:** Nếu tổ hợp NA-PAC không hợp lệ, lập tức khôi phục buffer thành raw input
+- **Không ảnh hưởng:** Các tổ hợp NA-PAC hợp lệ vẫn hoạt động (ví dụ: `ương` = `ươ` NA.2 + `ng` PAC.1 ✓)
+
+#### Digraph Coda Guard: Vietnamese Transforms Prevent English Restoration
+
+- **Vấn đề:** Khi hoàn thành digraph coda (`ch`, `ng`, `nh`), nếu buffer có Vietnamese transforms (tone marks, diacritical marks), engine vẫn có thể sai nhầm là English và restore sai
+- **Ví dụ:** `ích` (từ Việt có dấu) + 'c' → `ích` → 'h' hoàn thành `ch`, nhưng intermediate state trông phonotactically invalid
+- **Giải pháp:** Thêm guard `just_completed_digraph` — nếu phím mới sẽ hoàn thành digraph hợp lệ và buffer đã có Vietnamese transforms, bỏ qua English restoration
+- **Không ảnh hưởng:** English words thực sự (`rich` không có dấu) vẫn khôi phục bình thường
+
+#### Dictionary Cleanup: Xóa Obsolete English Dictionary Files
+
+- **Vấn đề:** Sau refactor sang phonotactic-only English detection (v2.0.11), dictionary files (`common_2chars.txt` đến `common_16chars.txt`) không còn được dùng
+- **Giải pháp:** Xóa 15 text dictionary files (~93,666 words, ~85k lines), 15 binary `.bin` files, và source file `EnglishWords.txt`
+- **Tác động:** Giảm repository size ~106k lines, tăng clarity (tránh confusion về engine internals)
+- **Không ảnh hưởng:** English detection logic (phonotactic patterns) vẫn hoạt động 100%, không có thay đổi behavior
 
 ### Telex/VNI: Xử lý tổ hợp phím không hợp lệ trong tiếng Việt
 
