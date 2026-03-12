@@ -57,5 +57,11 @@ fn debug_assset() {
 
 #[test]
 fn debug_passed() {
-    trace_typing("passssed");
+    // p-a-s-s-s-e-d (3 s's = triple-tone)
+    trace_typing("passsed");
+}
+
+#[test]
+fn debug_assset_full() {
+    trace_typing("assset");
 }

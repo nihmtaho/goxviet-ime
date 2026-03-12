@@ -2977,28 +2977,11 @@ impl Engine {
                     )
                 }
                 && self.has_vietnamese_transforms();
-            // Check if we should skip the sync due to triple-tone suppression.
-            // If the extra character in raw_input is a suppressed triple tone (s/f/r/x/j),
-            // don't sync it back - keep it suppressed.
-            let should_skip_sync_for_triple = {
-                use crate::data::keys as k;
-                const TELEX_TONE_MARKERS: &[u16] = &[k::S, k::F, k::R, k::X, k::J];
-                if self.triple_tone_suppressed && self.buf.len() >= 1 && self.raw_input.len() == self.buf.len() + 1 {
-                    let raw_slice = self.raw_input.as_slice();
-                    raw_slice
-                        .last()
-                        .map(|(k, _)| TELEX_TONE_MARKERS.contains(&k))
-                        .unwrap_or(false)
-                } else {
-                    false
-                }
-            };
-
             if self.is_english_word
                 && self.raw_input.len() > self.buf.len()
                 && !has_active_diacritical
                 && !just_completed_digraph
-                && !should_skip_sync_for_triple
+                && !self.triple_tone_suppressed
             {
                 // displayed = chars on screen BEFORE this keystroke (buf.len after push - 1)
                 let displayed = (self.buf.len() - 1).min(u8::MAX as usize) as u8;
@@ -3010,16 +2993,6 @@ impl Engine {
                 self.sync_buffer_with_raw_input();
                 self.last_transform = None;
                 return Result::send(displayed, &raw_chars);
-            }
-
-            // Reset triple-tone suppression flag only when the suppressed character is no longer
-            // the last character in raw_input (i.e., a new character has been added after it)
-            if self.triple_tone_suppressed && self.buf.len() >= 2 {
-                // If raw_input has more than buffer length + 1, the suppressed char is no longer
-                // at the end, so reset the flag
-                if self.raw_input.len() > self.buf.len() + 1 {
-                    self.triple_tone_suppressed = false;
-                }
             }
 
             // Normalize ưo → ươ immediately when 'o' is typed after 'ư'
