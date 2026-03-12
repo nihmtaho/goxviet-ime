@@ -140,9 +140,7 @@ pub struct Engine {
     /// Track number of non-space break characters types (e.g. numbers)
     /// Used to restore word history when backspacing over them
     break_after_commit: u8,
-    /// Track if the last keystroke was a suppressed triple-tone marker.
-    /// Used to prevent sync expansion when the next key arrives.
-    /// When true, handle_normal_letter should skip the sync logic.
+    /// True if the last keystroke was a suppressed triple-tone marker
     triple_tone_suppressed: bool,
 }
 
@@ -1072,11 +1070,12 @@ impl Engine {
                 // we need to prevent creating a triple in the display.
                 if let Some(last_char) = self.buf.last() {
                     if last_char.key == key {
-                        // Triple tone detected! Mark this state so handle_normal_letter
-                        // won't sync raw_input back into the buffer when the next key arrives.
-                        // We keep raw_input intact for SPACE boundary detection later.
-                        self.triple_tone_suppressed = true;
+                        // Triple tone detected! Add to buffer but return no output.
+                        // The character is in both raw_input and buf, but we suppress the keystroke
+                        // output to prevent "asss" from displaying (user sees "ass" instead).
+                        // Both raw_input and buf have the triple for SPACE boundary correction later.
                         self.buf.push(Char::new(key, caps));
+                        self.triple_tone_suppressed = true;
                         // Return no output - the character was added to buffer but not displayed
                         return Result::none();
                     }
@@ -2978,11 +2977,28 @@ impl Engine {
                     )
                 }
                 && self.has_vietnamese_transforms();
+            // Check if we should skip the sync due to triple-tone suppression.
+            // If the extra character in raw_input is a suppressed triple tone (s/f/r/x/j),
+            // don't sync it back - keep it suppressed.
+            let should_skip_sync_for_triple = {
+                use crate::data::keys as k;
+                const TELEX_TONE_MARKERS: &[u16] = &[k::S, k::F, k::R, k::X, k::J];
+                if self.triple_tone_suppressed && self.buf.len() >= 1 && self.raw_input.len() == self.buf.len() + 1 {
+                    let raw_slice = self.raw_input.as_slice();
+                    raw_slice
+                        .last()
+                        .map(|(k, _)| TELEX_TONE_MARKERS.contains(&k))
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            };
+
             if self.is_english_word
                 && self.raw_input.len() > self.buf.len()
                 && !has_active_diacritical
                 && !just_completed_digraph
-                && !self.triple_tone_suppressed
+                && !should_skip_sync_for_triple
             {
                 // displayed = chars on screen BEFORE this keystroke (buf.len after push - 1)
                 let displayed = (self.buf.len() - 1).min(u8::MAX as usize) as u8;
@@ -2996,8 +3012,15 @@ impl Engine {
                 return Result::send(displayed, &raw_chars);
             }
 
-            // Reset triple-tone suppression flag after this keystroke
-            self.triple_tone_suppressed = false;
+            // Reset triple-tone suppression flag only when the suppressed character is no longer
+            // the last character in raw_input (i.e., a new character has been added after it)
+            if self.triple_tone_suppressed && self.buf.len() >= 2 {
+                // If raw_input has more than buffer length + 1, the suppressed char is no longer
+                // at the end, so reset the flag
+                if self.raw_input.len() > self.buf.len() + 1 {
+                    self.triple_tone_suppressed = false;
+                }
+            }
 
             // Normalize ưo → ươ immediately when 'o' is typed after 'ư'
             // This ensures "dduwo" → "đươ" (Telex) and "u7o" → "ươ" (VNI)
