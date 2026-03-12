@@ -3792,6 +3792,15 @@ impl Engine {
                 .filter_map(|(k, caps)| utils::key_to_char(k, caps))
                 .collect();
             if let Some(corrected) = try_correct_triple_consonant(&raw_str) {
+                // Check if the buffer already shows the corrected word.
+                // This happens when triple-tone was suppressed during typing:
+                // the display already shows "asset" so we only need to add SPACE.
+                let buf_rendered = self.buf.to_full_string();
+                if corrected == buf_rendered {
+                    // Already correct — just commit with SPACE, no backspace/rewrite needed
+                    self.clear();
+                    return Some(Result::send(0, &[' ']));
+                }
                 let backspace = self.buf.len().min(u8::MAX as usize) as u8;
                 let mut chars: Vec<char> = corrected.chars().collect();
                 chars.push(' ');

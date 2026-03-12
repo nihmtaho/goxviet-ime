@@ -1,4 +1,4 @@
-//! Debug test to see what SPACE outputs after "assset"
+//! Debug test to trace SPACE behavior after English words
 
 use goxviet_core::data::keys;
 use goxviet_core::engine::Engine;
@@ -12,28 +12,47 @@ fn char_to_key(c: char) -> u16 {
     }
 }
 
-#[test]
-fn debug_space_output() {
+fn trace_word_then_space(word: &str) {
     let mut engine = Engine::new();
-    engine.set_method(0); // Telex
+    engine.set_method(0);
+    let mut display = String::new();
 
-    println!("\nTyping 'assset'...");
-    for ch in "assset".chars() {
+    println!("\n=== Typing '{}' + SPACE ===", word);
+    for ch in word.chars() {
         let key = char_to_key(ch);
         let result = engine.on_key_ext(key, ch.is_ascii_uppercase(), false, false);
-        println!("  After '{}': action={}, backspace={}, count={}", ch, result.action, result.backspace, result.count);
+        if result.action == 1 {
+            let bs = result.backspace as usize;
+            for _ in 0..bs.min(display.len()) { display.pop(); }
+            for i in 0..result.count as usize {
+                if let Some(c) = char::from_u32(result.as_slice()[i]) { display.push(c); }
+            }
+        } else {
+            display.push(ch);
+        }
     }
+    println!("  Display before SPACE: '{}'", display);
+    println!("  Buffer: '{}'", engine.get_buffer());
 
-    println!("\nNow pressing SPACE...");
-    let result = engine.on_key_ext(keys::SPACE, false, false, false);
-    println!("SPACE result: action={}, backspace={}, count={}", result.action, result.backspace, result.count);
-
-    if result.action == 1 {
-        let output: String = (0..result.count as usize)
-            .filter_map(|i| char::from_u32(result.as_slice()[i]))
+    let r = engine.on_key_ext(keys::SPACE, false, false, false);
+    println!("  SPACE: action={}, backspace={}, count={}", r.action, r.backspace, r.count);
+    if r.action == 1 {
+        let out: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
             .collect();
-        println!("SPACE output: {:?}", output);
+        println!("  SPACE output: {:?}", out);
+        for _ in 0..r.backspace as usize { if !display.is_empty() { display.pop(); } }
+        for c in out.chars() { display.push(c); }
     } else {
-        println!("SPACE output: None (action != 1)");
+        display.push(' ');
     }
+    println!("  Final display: '{}'", display);
+}
+
+#[test]
+fn debug_space_scenarios() {
+    trace_word_then_space("asset");   // normal (a-s-s-e-t)
+    trace_word_then_space("assset");  // triple (a-s-s-s-e-t)
+    trace_word_then_space("offer");   // normal
+    trace_word_then_space("offfer");  // triple
 }

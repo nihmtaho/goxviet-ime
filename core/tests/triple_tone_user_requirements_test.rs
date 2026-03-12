@@ -48,18 +48,30 @@ fn get_display_at_keystroke(keystrokes: &str, stop_at_pos: usize) -> String {
 fn type_then_space(keystrokes: &str) -> Option<String> {
     let mut engine = Engine::new();
     engine.set_method(0); // Telex
+    let mut display = String::new();
 
     for ch in keystrokes.chars() {
         let key = char_to_key(ch);
-        engine.on_key_ext(key, ch.is_ascii_uppercase(), false, false);
+        let result = engine.on_key_ext(key, ch.is_ascii_uppercase(), false, false);
+        if result.action == 1 {
+            let bs = result.backspace as usize;
+            for _ in 0..bs.min(display.len()) { display.pop(); }
+            for i in 0..result.count as usize {
+                if let Some(c) = char::from_u32(result.as_slice()[i]) { display.push(c); }
+            }
+        } else {
+            display.push(ch);
+        }
     }
 
     let r = engine.on_key_ext(keys::SPACE, false, false, false);
     if r.action == 1 {
-        let output: String = (0..r.count as usize)
-            .filter_map(|i| char::from_u32(r.as_slice()[i]))
-            .collect();
-        Some(output)
+        let bs = r.backspace as usize;
+        for _ in 0..bs.min(display.len()) { display.pop(); }
+        for i in 0..r.count as usize {
+            if let Some(c) = char::from_u32(r.as_slice()[i]) { display.push(c); }
+        }
+        Some(display)
     } else {
         None
     }

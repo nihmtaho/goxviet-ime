@@ -59,23 +59,35 @@ fn char_to_key(c: char) -> u16 {
 }
 
 /// Helper: type a sequence of raw keystrokes, then press SPACE.
-/// Returns the text from the SPACE result (if action==1), which should be
-/// "corrected_word " when triple-tone correction fires.
+/// Returns the final display string after applying all engine results,
+/// simulating what the user actually sees on screen.
 fn type_then_space(keystrokes: &str) -> Option<String> {
     let mut engine = Engine::new();
     engine.set_method(0); // Telex
+    let mut display = String::new();
 
     for ch in keystrokes.chars() {
         let key = char_to_key(ch);
-        engine.on_key_ext(key, ch.is_ascii_uppercase(), false, false);
+        let result = engine.on_key_ext(key, ch.is_ascii_uppercase(), false, false);
+        if result.action == 1 {
+            let bs = result.backspace as usize;
+            for _ in 0..bs.min(display.len()) { display.pop(); }
+            for i in 0..result.count as usize {
+                if let Some(c) = char::from_u32(result.as_slice()[i]) { display.push(c); }
+            }
+        } else {
+            display.push(ch);
+        }
     }
 
     let r = engine.on_key_ext(keys::SPACE, false, false, false);
     if r.action == 1 {
-        let output: String = (0..r.count as usize)
-            .filter_map(|i| char::from_u32(r.as_slice()[i]))
-            .collect();
-        Some(output)
+        let bs = r.backspace as usize;
+        for _ in 0..bs.min(display.len()) { display.pop(); }
+        for i in 0..r.count as usize {
+            if let Some(c) = char::from_u32(r.as_slice()[i]) { display.push(c); }
+        }
+        Some(display)
     } else {
         None
     }
