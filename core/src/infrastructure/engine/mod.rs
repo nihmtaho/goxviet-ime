@@ -1054,6 +1054,31 @@ impl Engine {
             }
         }
 
+        // TRIPLE-TONE GUARD: After double-key revert (e.g. "a-s-s" → "as"), if a 3rd identical
+        // Telex tone-marker (s/f/r/x/j) arrives, prevent it from expanding the buffer display.
+        // Keep the extra key in raw_input for SPACE boundary correction to detect later.
+        // This ensures display shows "ass" (not "asss"), while raw_input retains "assset" for correction.
+        if self.is_english_word && self.method == 0 {
+            use crate::data::keys as k;
+            const TELEX_TONE_MARKERS: &[u16] = &[k::S, k::F, k::R, k::X, k::J];
+            if TELEX_TONE_MARKERS.contains(&key) {
+                // Check if buf ends with key being typed (last char matches current key).
+                // For example, after "a-s-s" → "as", if 's' is pressed again,
+                // we need to prevent creating "asss" in the display.
+                if let Some(last_char) = self.buf.last() {
+                    if last_char.key == key {
+                        // Triple tone detected! Append to buffer but don't output anything.
+                        // This prevents the display from showing the extra character.
+                        // The key is already in raw_input (added before process()), so it will be
+                        // available for SPACE boundary correction to detect the triple pattern.
+                        self.buf.push(Char::new(key, caps));
+                        // Return no output - the character was added to buffer but not displayed
+                        return Result::none();
+                    }
+                }
+            }
+        }
+
         // ENGLISH BYPASS: Once a word is identified as English, skip all Vietnamese
         // transforms and treat every subsequent key as raw input.
         // This prevents re-stroking after a revert (e.g., "ddd"→"dd" + 'd'→"ddd" not "dddd")
