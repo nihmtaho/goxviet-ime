@@ -3810,6 +3810,15 @@ impl Engine {
                 self.last_transform = None;
                 return Some(result);
             }
+
+            // If a triple tone was suppressed during typing but the corrected word wasn't in
+            // the dictionary (e.g. "offfet" → "offet" is not a known word), the word is still
+            // definitely English — the user would only type a triple tone-marker while typing
+            // English. Skip all further Vietnamese detection and just commit with SPACE.
+            if self.triple_tone_suppressed {
+                self.clear();
+                return Some(Result::send(0, &[' ']));
+            }
         }
 
         let raw_len = self.raw_input.iter().count();

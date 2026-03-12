@@ -56,3 +56,10 @@ fn debug_space_scenarios() {
     trace_word_then_space("offer");   // normal
     trace_word_then_space("offfer");  // triple
 }
+
+#[test]
+fn debug_offfet() {
+    // "o-f-f-f-e-t" not in dict but triple-f means definitely English
+    trace_word_then_space("offfet");
+    trace_word_then_space("offet");  // normal double-f (not in dict either)
+}
