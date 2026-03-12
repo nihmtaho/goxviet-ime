@@ -140,6 +140,10 @@ pub struct Engine {
     /// Track number of non-space break characters types (e.g. numbers)
     /// Used to restore word history when backspacing over them
     break_after_commit: u8,
+    /// Track if the last keystroke was a suppressed triple-tone marker.
+    /// Used to prevent sync expansion when the next key arrives.
+    /// When true, handle_normal_letter should skip the sync logic.
+    triple_tone_suppressed: bool,
 }
 
 impl Default for Engine {
@@ -200,6 +204,7 @@ impl Engine {
             break_after_commit: 0,
             cached_syllable_boundary: None,
             is_english_word: false,
+            triple_tone_suppressed: false,
         }
     }
 
@@ -1055,22 +1060,22 @@ impl Engine {
         }
 
         // TRIPLE-TONE GUARD: After double-key revert (e.g. "a-s-s" → "as"), if a 3rd identical
-        // Telex tone-marker (s/f/r/x/j) arrives, prevent it from expanding the buffer display.
-        // Keep the extra key in raw_input for SPACE boundary correction to detect later.
-        // This ensures display shows "ass" (not "asss"), while raw_input retains "assset" for correction.
+        // Telex tone-marker (s/f/r/x/j) arrives, prevent it from appearing in the display.
+        // This ensures "a-s-s-s" displays as "ass" (not "asss"), and subsequent keys like "e"
+        // produce the correct display ("asse" then "asset") instead of expanding ("asssse").
         if self.is_english_word && self.method == 0 {
             use crate::data::keys as k;
             const TELEX_TONE_MARKERS: &[u16] = &[k::S, k::F, k::R, k::X, k::J];
             if TELEX_TONE_MARKERS.contains(&key) {
                 // Check if buf ends with key being typed (last char matches current key).
                 // For example, after "a-s-s" → "as", if 's' is pressed again,
-                // we need to prevent creating "asss" in the display.
+                // we need to prevent creating a triple in the display.
                 if let Some(last_char) = self.buf.last() {
                     if last_char.key == key {
-                        // Triple tone detected! Append to buffer but don't output anything.
-                        // This prevents the display from showing the extra character.
-                        // The key is already in raw_input (added before process()), so it will be
-                        // available for SPACE boundary correction to detect the triple pattern.
+                        // Triple tone detected! Mark this state so handle_normal_letter
+                        // won't sync raw_input back into the buffer when the next key arrives.
+                        // We keep raw_input intact for SPACE boundary detection later.
+                        self.triple_tone_suppressed = true;
                         self.buf.push(Char::new(key, caps));
                         // Return no output - the character was added to buffer but not displayed
                         return Result::none();
@@ -2977,6 +2982,7 @@ impl Engine {
                 && self.raw_input.len() > self.buf.len()
                 && !has_active_diacritical
                 && !just_completed_digraph
+                && !self.triple_tone_suppressed
             {
                 // displayed = chars on screen BEFORE this keystroke (buf.len after push - 1)
                 let displayed = (self.buf.len() - 1).min(u8::MAX as usize) as u8;
@@ -2989,6 +2995,9 @@ impl Engine {
                 self.last_transform = None;
                 return Result::send(displayed, &raw_chars);
             }
+
+            // Reset triple-tone suppression flag after this keystroke
+            self.triple_tone_suppressed = false;
 
             // Normalize ưo → ươ immediately when 'o' is typed after 'ư'
             // This ensures "dduwo" → "đươ" (Telex) and "u7o" → "ươ" (VNI)
@@ -3350,6 +3359,7 @@ impl Engine {
         self.last_transform = None;
         self.cached_syllable_boundary = None;
         self.is_english_word = false;
+        self.triple_tone_suppressed = false;
         // Note: Do NOT reset skip_w_shortcut here - it's a user config, not state
         // Note: Do NOT reset spaces_after_commit here - managed by on_key_ext
     }
