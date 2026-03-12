@@ -148,6 +148,36 @@ impl Default for Engine {
     }
 }
 
+/// Checks if `word` (built from raw keystrokes) contains a triple Telex tone-marker consonant
+/// (sss/fff/rrr/xxx/jjj). If so, reduces the first occurrence to the double consonant and checks
+/// whether the result is a known English word with that double consonant.
+///
+/// Returns the corrected word if found, or `None` otherwise.
+///
+/// # Examples
+/// - "assset" (raw of a-s-s-s-e-t) → contains "sss" → "asset" → in dict → Some("asset")
+/// - "offfer" (raw of o-f-f-f-e-r) → contains "fff" → "offer" → in dict → Some("offer")
+/// - "corrrect" (raw of c-o-r-r-r-e-c-t) → contains "rrr" → "correct" → in dict → Some("correct")
+fn try_correct_triple_consonant(word: &str) -> Option<String> {
+    // Telex tone-marker consonants: s=sắc, f=huyền, r=hỏi, x=ngã, j=nặng
+    const TRIPLE_PATTERNS: &[(&str, &str)] = &[
+        ("sss", "ss"),
+        ("fff", "ff"),
+        ("rrr", "rr"),
+        ("xxx", "xx"),
+        ("jjj", "jj"),
+    ];
+    for &(triple, double) in TRIPLE_PATTERNS {
+        if word.contains(triple) {
+            let corrected = word.replacen(triple, double, 1);
+            if crate::data::is_double_consonant_word(&corrected) {
+                return Some(corrected);
+            }
+        }
+    }
+    None
+}
+
 impl Engine {
     pub fn new() -> Self {
         Self {
@@ -3717,6 +3747,31 @@ impl Engine {
     /// Returns `Some(result)` with trailing space included, or `None` to let SPACE
     /// fall through to normal shortcut / commit handling.
     fn check_and_restore_english_at_boundary(&mut self) -> Option<Result> {
+        // --- Triple-tone Telex correction ---
+        // When the user accidentally types a triple tone-marker consonant (e.g. a-s-s-s-e-t),
+        // the raw input contains "assset" but the display shows "asset" (after double-key revert).
+        // At SPACE, auto_restore_english_with_space() would output "assset " from raw_input.
+        // We detect this pattern and output the corrected word instead.
+        //
+        // Only runs in Telex mode (method == 0) since tone markers are s/f/r/x/j in Telex only.
+        if self.instant_restore_enabled && self.method == 0 {
+            let raw_str: String = self
+                .raw_input
+                .iter()
+                .filter_map(|(k, caps)| utils::key_to_char(k, caps))
+                .collect();
+            if let Some(corrected) = try_correct_triple_consonant(&raw_str) {
+                let backspace = self.buf.len().min(u8::MAX as usize) as u8;
+                let mut chars: Vec<char> = corrected.chars().collect();
+                chars.push(' ');
+                let result = Result::send(backspace, &chars);
+                self.is_english_word = true;
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+        }
+
         let raw_len = self.raw_input.iter().count();
         let buf_len = self.buf.iter().count();
         // raw_len > buf_len means a Telex modifier was consumed (tone/mark/revert) but the
