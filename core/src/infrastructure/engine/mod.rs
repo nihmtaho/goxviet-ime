@@ -1642,6 +1642,13 @@ impl Engine {
             if !has_initial_consonant {
                 return None;
             }
+            // Only allow dd→đ in multi-syllable context when the buffer already carries
+            // Vietnamese transforms (circumflex, horn, tone marks, or prior stroke).
+            // Without transforms, "dd" after a vowel is almost certainly English
+            // (e.g., "trodden", "baddie", "buddy") and must not be stroked.
+            if !self.has_vietnamese_transforms() {
+                return None;
+            }
             // Multi-syllable context: allow stroke
             if let Some(c) = self.buf.get_mut(target_pos) {
                 c.stroke = true;
@@ -2927,6 +2934,15 @@ impl Engine {
                 }
             }
 
+            // Check vowel cluster validity when adding a new vowel to a transformed buffer.
+            // Example: buffer=[v, ơ] (ow→ơ) + 'e' → cluster "ơe" → not in any NA group → restore.
+            // Example: buffer=[v, í] (sắc on 'i') + 'o' → cluster "io" → not in any NA group → restore.
+            if keys::is_vowel(key) {
+                if let Some(restore) = self.check_vowel_cluster_validity(key) {
+                    return restore;
+                }
+            }
+
             // Check NA-PAC compatibility before adding a consonant.
             // Two checks: (1) extending existing coda to digraph, (2) adding first coda to vowel-ending buffer.
             // Example: "hoặc" + 'h' → proposed coda "ch", NA.3 (oă) + PAC.0 (ch) → invalid → restore.
@@ -3651,6 +3667,70 @@ impl Engine {
         Result::send(backspace, &output)
     }
 
+    /// Check if adding `new_key` as a vowel would create an invalid vowel cluster.
+    ///
+    /// Only fires when the LAST BUFFER VOWEL has either:
+    /// - A tone accent mark (sắc/huyền/hỏi/ngã/nặng): `mark != 0`, OR
+    /// - A horn modifier (ow→ơ, uw→ư, aw→ă): `tone == HORN`
+    ///
+    /// Circumflex-modified vowels (ê/ô/â) are intentionally excluded because they
+    /// can appear in multi-syllable Vietnamese compounds where the next vowel carries
+    /// its own modifier (e.g., "nêông" typed as "neeoong").
+    ///
+    /// After checking the rendered pair `(last_vowel + new_vowel)` against the NA groups,
+    /// restores to raw if invalid.
+    ///
+    /// Special case: `ư` + `o` is allowed to pass through as an intermediate state
+    /// that the engine normalises to `ươ` compound later.
+    ///
+    /// Examples that trigger restore:
+    /// - buffer=[v, ơ] (ow→ơ) + 'e' → pair "ơe" → not in any NA group → restore → "voe"
+    /// - buffer=[v, í] (sắc on 'i') + 'o' → pair "io" → not in any NA group → restore → "viso"
+    ///
+    /// Examples that are allowed (not restored):
+    /// - buffer=[c, h, ơ] + 'i' → pair "ơi" → in NA.5 → valid ("chơi")
+    /// - buffer=[v, ư] + 'o' → ư+o whitelist → allowed ("vươ…")
+    /// - buffer=[n, ê] + 'o' → ê has circumflex (not horn, no mark) → skipped ("nêông")
+    fn check_vowel_cluster_validity(&mut self, new_key: u16) -> Option<Result> {
+        if !self.has_vietnamese_transforms() {
+            return None;
+        }
+
+        // Find the last vowel in buffer
+        let last_vowel = self.buf.iter().rev().find(|c| keys::is_vowel(c.key))?;
+
+        let has_mark = last_vowel.mark != 0;
+        let has_horn = last_vowel.tone == tone::HORN;
+
+        // Only fire for tone-accented or horn-modified vowels.
+        // Circumflex (ê/ô/â) is excluded — its vowels can legitimately precede another
+        // modified vowel in multi-syllable Vietnamese words.
+        if !has_mark && !has_horn {
+            return None;
+        }
+
+        // Render the last vowel's base character (diacritic modifier only, no tone accent)
+        let last_char =
+            chars::to_char(last_vowel.key, false, last_vowel.tone, 0)?;
+        let new_char = crate::utils::key_to_char(new_key, false)?;
+
+        // Special case: ư + o is the intermediate state for the ươ compound.
+        // The engine normalises it later; do not restore here.
+        if last_char == 'ư' && new_char == 'o' {
+            return None;
+        }
+
+        let pair = format!("{}{}", last_char, new_char);
+
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        if !syllable_structure_validator::is_valid_vowel_cluster(&pair) {
+            let result = self.instant_restore_to_raw_with_char();
+            return Some(result);
+        }
+
+        None
+    }
+
     /// Check if adding `new_key` as a coda consonant would create an invalid NA-PAC combination.
     ///
     /// Only fires when: the buffer already has Vietnamese transforms, the last buffer character
@@ -3672,9 +3752,11 @@ impl Engine {
         let new_char = crate::utils::key_to_char(new_key, false)?;
         let proposed_coda = format!("{}{}", last_char, new_char);
 
-        // Only validate digraph codas (ch, ng, nh); single-char additions are checked elsewhere
+        // Only Vietnamese digraph codas (ch, ng, nh) are valid two-consonant endings.
+        // Any other two-consonant sequence (pp, pb, nt, lt, etc.) is never valid Vietnamese.
         if !matches!(proposed_coda.as_str(), "ch" | "ng" | "nh") {
-            return None;
+            let result = self.instant_restore_to_raw_with_char();
+            return Some(result);
         }
 
         // Build vowel cluster string for NA-PAC validation (excludes gi/qu glides)

@@ -158,3 +158,33 @@ fn test_uowc_valid_uo_compound() {
     // The engine normalizes "uow" to "ươ" (NA.2), NOT "uơ" (NA.4 open-only)
     telex(&[("uowc", "ươc")]);
 }
+
+// ── Sub-F: User reported failure cases from failures_english_telex.txt ────────
+
+// Fix 2 (vowel cluster check): horn/marked vowel followed by incompatible vowel
+#[test]
+fn test_vowel_stays_raw() {
+    // "vowel": v + o + w(horn → ơ) + e → "ơe" is NOT in any NA group → restore immediately
+    // Result: "voe" at that point, then 'l' appended → "vowel" (or restore to full raw)
+    telex(&[("vowel", "vowel")]);
+}
+
+#[test]
+fn test_vison_stays_raw() {
+    // "vison": v + i + s(sắc on i → í) + o → "io" is NOT in any NA group → restore immediately
+    telex(&[("vison", "vison")]);
+}
+
+// Fix 1 (coda extension check): invalid 2-char coda with pp / dd / etc.
+#[test]
+fn test_tropophyte_stays_raw() {
+    // "tropophyte": trô (oo→ô) + p + p → "pp" is NOT a Vietnamese digraph coda → restore
+    telex(&[("tropophyte", "tropophyte")]);
+}
+
+// Fix 3 (dd-stroke guard): 'dd' in English context without prior transforms
+#[test]
+fn test_trodden_stays_raw() {
+    // "trodden": t + r + o + d + d → no Vietnamese transforms when second 'd' typed → no đ stroke
+    telex(&[("trodden", "trodden")]);
+}
