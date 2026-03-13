@@ -188,3 +188,29 @@ fn test_trodden_stays_raw() {
     // "trodden": t + r + o + d + d → no Vietnamese transforms when second 'd' typed → no đ stroke
     telex(&[("trodden", "trodden")]);
 }
+
+// ── Sub-G: ươu triphthong (ơ + u whitelist) ──────────────────────────────────
+
+#[test]
+fn test_ruowuj_ruou_nang() {
+    // r + ươ (uow) + u + j(nặng) → rượu
+    telex(&[("ruowuj", "rượu")]);
+}
+
+#[test]
+fn test_huowu_ruou_open() {
+    // h + ươ (uow) + u → hươu
+    telex(&[("huowu", "hươu")]);
+}
+
+#[test]
+fn test_ruo7u5_vni_ruou_nang() {
+    // VNI: r + u + o + 7(horn) + u + 5(nặng) → rượu
+    vni(&[("ruo7u5", "rượu")]);
+}
+
+#[test]
+fn test_huo7u_vni_ruou_open() {
+    // VNI: h + u + o + 7(horn) + u → hươu
+    vni(&[("huo7u", "hươu")]);
+}

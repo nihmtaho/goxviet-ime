@@ -3719,6 +3719,11 @@ impl Engine {
         if last_char == 'ư' && new_char == 'o' {
             return None;
         }
+        // Special case: ơ + u completes the ươu triphthong (rượu, hươu, bướu…).
+        // "ơu" alone is not in any NA group, but "ươu" is valid Vietnamese.
+        if last_char == 'ơ' && new_char == 'u' {
+            return None;
+        }
 
         let pair = format!("{}{}", last_char, new_char);
 
