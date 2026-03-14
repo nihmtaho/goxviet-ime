@@ -140,12 +140,44 @@ pub struct Engine {
     /// Track number of non-space break characters types (e.g. numbers)
     /// Used to restore word history when backspacing over them
     break_after_commit: u8,
+    /// True if the last keystroke was a suppressed triple-tone marker
+    triple_tone_suppressed: bool,
 }
 
 impl Default for Engine {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Checks if `word` (built from raw keystrokes) contains a triple Telex tone-marker consonant
+/// (sss/fff/rrr/xxx/jjj). If so, reduces the first occurrence to the double consonant and checks
+/// whether the result is a known English word with that double consonant.
+///
+/// Returns the corrected word if found, or `None` otherwise.
+///
+/// # Examples
+/// - "assset" (raw of a-s-s-s-e-t) → contains "sss" → "asset" → in dict → Some("asset")
+/// - "offfer" (raw of o-f-f-f-e-r) → contains "fff" → "offer" → in dict → Some("offer")
+/// - "corrrect" (raw of c-o-r-r-r-e-c-t) → contains "rrr" → "correct" → in dict → Some("correct")
+fn try_correct_triple_consonant(word: &str) -> Option<String> {
+    // Telex tone-marker consonants: s=sắc, f=huyền, r=hỏi, x=ngã, j=nặng
+    const TRIPLE_PATTERNS: &[(&str, &str)] = &[
+        ("sss", "ss"),
+        ("fff", "ff"),
+        ("rrr", "rr"),
+        ("xxx", "xx"),
+        ("jjj", "jj"),
+    ];
+    for &(triple, double) in TRIPLE_PATTERNS {
+        if word.contains(triple) {
+            let corrected = word.replacen(triple, double, 1);
+            if crate::data::is_double_consonant_word(&corrected) {
+                return Some(corrected);
+            }
+        }
+    }
+    None
 }
 
 impl Engine {
@@ -170,6 +202,7 @@ impl Engine {
             break_after_commit: 0,
             cached_syllable_boundary: None,
             is_english_word: false,
+            triple_tone_suppressed: false,
         }
     }
 
@@ -1024,6 +1057,32 @@ impl Engine {
             }
         }
 
+        // TRIPLE-TONE GUARD: After double-key revert (e.g. "a-s-s" → "as"), if a 3rd identical
+        // Telex tone-marker (s/f/r/x/j) arrives, prevent it from appearing in the display.
+        // This ensures "a-s-s-s" displays as "ass" (not "asss"), and subsequent keys like "e"
+        // produce the correct display ("asse" then "asset") instead of expanding ("asssse").
+        if self.is_english_word && self.method == 0 {
+            use crate::data::keys as k;
+            const TELEX_TONE_MARKERS: &[u16] = &[k::S, k::F, k::R, k::X, k::J];
+            if TELEX_TONE_MARKERS.contains(&key) {
+                // Check if buf ends with key being typed (last char matches current key).
+                // For example, after "a-s-s" → "as", if 's' is pressed again,
+                // we need to prevent creating a triple in the display.
+                if let Some(last_char) = self.buf.last() {
+                    if last_char.key == key {
+                        // Triple tone detected! Add to buffer but return no output.
+                        // The character is in both raw_input and buf, but we suppress the keystroke
+                        // output to prevent "asss" from displaying (user sees "ass" instead).
+                        // Both raw_input and buf have the triple for SPACE boundary correction later.
+                        self.buf.push(Char::new(key, caps));
+                        self.triple_tone_suppressed = true;
+                        // Return no output - the character was added to buffer but not displayed
+                        return Result::none();
+                    }
+                }
+            }
+        }
+
         // ENGLISH BYPASS: Once a word is identified as English, skip all Vietnamese
         // transforms and treat every subsequent key as raw input.
         // This prevents re-stroking after a revert (e.g., "ddd"→"dd" + 'd'→"ddd" not "dddd")
@@ -1581,6 +1640,13 @@ impl Engine {
                 .unwrap_or(false);
 
             if !has_initial_consonant {
+                return None;
+            }
+            // Only allow dd→đ in multi-syllable context when the buffer already carries
+            // Vietnamese transforms (circumflex, horn, tone marks, or prior stroke).
+            // Without transforms, "dd" after a vowel is almost certainly English
+            // (e.g., "trodden", "baddie", "buddy") and must not be stroked.
+            if !self.has_vietnamese_transforms() {
                 return None;
             }
             // Multi-syllable context: allow stroke
@@ -2868,6 +2934,15 @@ impl Engine {
                 }
             }
 
+            // Check vowel cluster validity when adding a new vowel to a transformed buffer.
+            // Example: buffer=[v, ơ] (ow→ơ) + 'e' → cluster "ơe" → not in any NA group → restore.
+            // Example: buffer=[v, í] (sắc on 'i') + 'o' → cluster "io" → not in any NA group → restore.
+            if keys::is_vowel(key) {
+                if let Some(restore) = self.check_vowel_cluster_validity(key) {
+                    return restore;
+                }
+            }
+
             // Check NA-PAC compatibility before adding a consonant.
             // Two checks: (1) extending existing coda to digraph, (2) adding first coda to vowel-ending buffer.
             // Example: "hoặc" + 'h' → proposed coda "ch", NA.3 (oă) + PAC.0 (ch) → invalid → restore.
@@ -2922,6 +2997,7 @@ impl Engine {
                 && self.raw_input.len() > self.buf.len()
                 && !has_active_diacritical
                 && !just_completed_digraph
+                && !self.triple_tone_suppressed
             {
                 // displayed = chars on screen BEFORE this keystroke (buf.len after push - 1)
                 let displayed = (self.buf.len() - 1).min(u8::MAX as usize) as u8;
@@ -3295,6 +3371,7 @@ impl Engine {
         self.last_transform = None;
         self.cached_syllable_boundary = None;
         self.is_english_word = false;
+        self.triple_tone_suppressed = false;
         // Note: Do NOT reset skip_w_shortcut here - it's a user config, not state
         // Note: Do NOT reset spaces_after_commit here - managed by on_key_ext
     }
@@ -3590,6 +3667,75 @@ impl Engine {
         Result::send(backspace, &output)
     }
 
+    /// Check if adding `new_key` as a vowel would create an invalid vowel cluster.
+    ///
+    /// Only fires when the LAST BUFFER VOWEL has either:
+    /// - A tone accent mark (sắc/huyền/hỏi/ngã/nặng): `mark != 0`, OR
+    /// - A horn modifier (ow→ơ, uw→ư, aw→ă): `tone == HORN`
+    ///
+    /// Circumflex-modified vowels (ê/ô/â) are intentionally excluded because they
+    /// can appear in multi-syllable Vietnamese compounds where the next vowel carries
+    /// its own modifier (e.g., "nêông" typed as "neeoong").
+    ///
+    /// After checking the rendered pair `(last_vowel + new_vowel)` against the NA groups,
+    /// restores to raw if invalid.
+    ///
+    /// Special case: `ư` + `o` is allowed to pass through as an intermediate state
+    /// that the engine normalises to `ươ` compound later.
+    ///
+    /// Examples that trigger restore:
+    /// - buffer=[v, ơ] (ow→ơ) + 'e' → pair "ơe" → not in any NA group → restore → "voe"
+    /// - buffer=[v, í] (sắc on 'i') + 'o' → pair "io" → not in any NA group → restore → "viso"
+    ///
+    /// Examples that are allowed (not restored):
+    /// - buffer=[c, h, ơ] + 'i' → pair "ơi" → in NA.5 → valid ("chơi")
+    /// - buffer=[v, ư] + 'o' → ư+o whitelist → allowed ("vươ…")
+    /// - buffer=[n, ê] + 'o' → ê has circumflex (not horn, no mark) → skipped ("nêông")
+    fn check_vowel_cluster_validity(&mut self, new_key: u16) -> Option<Result> {
+        if !self.has_vietnamese_transforms() {
+            return None;
+        }
+
+        // Find the last vowel in buffer
+        let last_vowel = self.buf.iter().rev().find(|c| keys::is_vowel(c.key))?;
+
+        let has_mark = last_vowel.mark != 0;
+        let has_horn = last_vowel.tone == tone::HORN;
+
+        // Only fire for tone-accented or horn-modified vowels.
+        // Circumflex (ê/ô/â) is excluded — its vowels can legitimately precede another
+        // modified vowel in multi-syllable Vietnamese words.
+        if !has_mark && !has_horn {
+            return None;
+        }
+
+        // Render the last vowel's base character (diacritic modifier only, no tone accent)
+        let last_char =
+            chars::to_char(last_vowel.key, false, last_vowel.tone, 0)?;
+        let new_char = crate::utils::key_to_char(new_key, false)?;
+
+        // Special case: ư + o is the intermediate state for the ươ compound.
+        // The engine normalises it later; do not restore here.
+        if last_char == 'ư' && new_char == 'o' {
+            return None;
+        }
+        // Special case: ơ + u completes the ươu triphthong (rượu, hươu, bướu…).
+        // "ơu" alone is not in any NA group, but "ươu" is valid Vietnamese.
+        if last_char == 'ơ' && new_char == 'u' {
+            return None;
+        }
+
+        let pair = format!("{}{}", last_char, new_char);
+
+        use crate::infrastructure::adapters::validation::syllable_structure_validator;
+        if !syllable_structure_validator::is_valid_vowel_cluster(&pair) {
+            let result = self.instant_restore_to_raw_with_char();
+            return Some(result);
+        }
+
+        None
+    }
+
     /// Check if adding `new_key` as a coda consonant would create an invalid NA-PAC combination.
     ///
     /// Only fires when: the buffer already has Vietnamese transforms, the last buffer character
@@ -3611,9 +3757,11 @@ impl Engine {
         let new_char = crate::utils::key_to_char(new_key, false)?;
         let proposed_coda = format!("{}{}", last_char, new_char);
 
-        // Only validate digraph codas (ch, ng, nh); single-char additions are checked elsewhere
+        // Only Vietnamese digraph codas (ch, ng, nh) are valid two-consonant endings.
+        // Any other two-consonant sequence (pp, pb, nt, lt, etc.) is never valid Vietnamese.
         if !matches!(proposed_coda.as_str(), "ch" | "ng" | "nh") {
-            return None;
+            let result = self.instant_restore_to_raw_with_char();
+            return Some(result);
         }
 
         // Build vowel cluster string for NA-PAC validation (excludes gi/qu glides)
@@ -3717,6 +3865,49 @@ impl Engine {
     /// Returns `Some(result)` with trailing space included, or `None` to let SPACE
     /// fall through to normal shortcut / commit handling.
     fn check_and_restore_english_at_boundary(&mut self) -> Option<Result> {
+        // --- Triple-tone Telex correction ---
+        // When the user accidentally types a triple tone-marker consonant (e.g. a-s-s-s-e-t),
+        // the raw input contains "assset" but the display shows "asset" (after double-key revert).
+        // At SPACE, auto_restore_english_with_space() would output "assset " from raw_input.
+        // We detect this pattern and output the corrected word instead.
+        //
+        // Only runs in Telex mode (method == 0) since tone markers are s/f/r/x/j in Telex only.
+        if self.instant_restore_enabled && self.method == 0 {
+            let raw_str: String = self
+                .raw_input
+                .iter()
+                .filter_map(|(k, caps)| utils::key_to_char(k, caps))
+                .collect();
+            if let Some(corrected) = try_correct_triple_consonant(&raw_str) {
+                // Check if the buffer already shows the corrected word.
+                // This happens when triple-tone was suppressed during typing:
+                // the display already shows "asset" so we only need to add SPACE.
+                let buf_rendered = self.buf.to_full_string();
+                if corrected == buf_rendered {
+                    // Already correct — just commit with SPACE, no backspace/rewrite needed
+                    self.clear();
+                    return Some(Result::send(0, &[' ']));
+                }
+                let backspace = self.buf.len().min(u8::MAX as usize) as u8;
+                let mut chars: Vec<char> = corrected.chars().collect();
+                chars.push(' ');
+                let result = Result::send(backspace, &chars);
+                self.is_english_word = true;
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+
+            // If a triple tone was suppressed during typing but the corrected word wasn't in
+            // the dictionary (e.g. "offfet" → "offet" is not a known word), the word is still
+            // definitely English — the user would only type a triple tone-marker while typing
+            // English. Skip all further Vietnamese detection and just commit with SPACE.
+            if self.triple_tone_suppressed {
+                self.clear();
+                return Some(Result::send(0, &[' ']));
+            }
+        }
+
         let raw_len = self.raw_input.iter().count();
         let buf_len = self.buf.iter().count();
         // raw_len > buf_len means a Telex modifier was consumed (tone/mark/revert) but the

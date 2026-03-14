@@ -6,6 +6,10 @@
 
 ### 🐛 Bug Fixes
 
+- **Core Engine: Stroke Invalid Combo Handling** (`ddd` → `ddd` thay vì `dd` toggle): Khi gõ ba lần `d`, phát hiện invalid combo (`đd` không hợp lệ vì `đ` là initial-only consonant), lập tức khôi phục thành raw keystrokes thay vì toggle. Thêm `restore_stroke_to_raw()` method.
+- **Core Engine: NA-PAC Validity Check** (coda digraph validation): Kiểm tra tính hợp lệ NA (nucleus-aperture) + PAC (phonetic coda) trước khi hoàn thành digraph — ngăn tổ hợp NA-PAC không hợp lệ (ví dụ: NA.5 open-only + consonant coda). Thêm `check_coda_extension_validity()` và `check_first_coda_validity()` methods.
+- **Core Engine: Digraph Coda Guard** (`ích` + 'h' gõ đúng không restore sai): Khi phím mới hoàn thành digraph `ch`/`ng`/`nh` và buffer đã có Vietnamese transforms, bỏ qua English restoration để tránh false negative.
+- **Dictionary Cleanup**: Xóa 15 obsolete English dictionary text files (`common_2chars.txt` ~ `common_16chars.txt`), 15 `.bin` files, và source file `EnglishWords.txt` — không ảnh hưởng English detection (đã chuyển sang phonotactic-only v2.0.11).
 - **Telex/VNI: Invalid vowel cluster + tone mark** (`yas` → `yas` thay vì `yá`): Từ chối áp dụng dấu thanh khi cụm nguyên âm bắt đầu bằng `y` và theo sau là nguyên âm không phải `ê` — cụm đó không hợp lệ trong tiếng Việt
 - **Telex/VNI: Horn/Breve bỏ qua nguyên âm đệm** (`hoacwj` → `hoặc` thay vì `hơacj`): Sửa `find_horn_positions` để bỏ qua `o` khi `o` đóng vai trò glide (âm đệm) trước `a`/`e`
 - **Telex/VNI: Khôi phục raw khi NA-PAC không hợp lệ** (`hoawjch` → `hoawjch` thay vì `hoặch`): Kiểm tra tính hợp lệ NA-PAC trước khi mở rộng phụ âm cuối thành digraph — `oă` (NA.3) không cho phép kết hợp với `ch` (PAC.0)
