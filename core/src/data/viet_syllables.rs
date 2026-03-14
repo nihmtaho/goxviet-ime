@@ -37,35 +37,65 @@ mod tests {
 
         // Common Vietnamese syllables
         assert!(is_valid_vietnamese_syllable("anh"), "'anh' should be valid");
-        assert!(is_valid_vietnamese_syllable("không"), "'không' should be valid");
-        assert!(is_valid_vietnamese_syllable("bình"), "'bình' should be valid");
-        assert!(is_valid_vietnamese_syllable("đường"), "'đường' should be valid");
-        assert!(is_valid_vietnamese_syllable("người"), "'người' should be valid");
+        assert!(
+            is_valid_vietnamese_syllable("không"),
+            "'không' should be valid"
+        );
+        assert!(
+            is_valid_vietnamese_syllable("bình"),
+            "'bình' should be valid"
+        );
+        assert!(
+            is_valid_vietnamese_syllable("đường"),
+            "'đường' should be valid"
+        );
+        assert!(
+            is_valid_vietnamese_syllable("người"),
+            "'người' should be valid"
+        );
         assert!(is_valid_vietnamese_syllable("ăn"), "'ăn' should be valid");
-        assert!(is_valid_vietnamese_syllable("uống"), "'uống' should be valid");
+        assert!(
+            is_valid_vietnamese_syllable("uống"),
+            "'uống' should be valid"
+        );
     }
 
     #[test]
     fn test_english_words_absent() {
-        assert!(!is_valid_vietnamese_syllable("array"), "'array' should NOT be valid Vietnamese");
-        assert!(!is_valid_vietnamese_syllable("windows"), "'windows' should NOT be valid Vietnamese");
-        assert!(!is_valid_vietnamese_syllable("restore"), "'restore' should NOT be valid Vietnamese");
-        assert!(!is_valid_vietnamese_syllable("print"), "'print' should NOT be valid Vietnamese");
-        assert!(!is_valid_vietnamese_syllable("enter"), "'enter' should NOT be valid Vietnamese");
+        assert!(
+            !is_valid_vietnamese_syllable("array"),
+            "'array' should NOT be valid Vietnamese"
+        );
+        assert!(
+            !is_valid_vietnamese_syllable("windows"),
+            "'windows' should NOT be valid Vietnamese"
+        );
+        assert!(
+            !is_valid_vietnamese_syllable("restore"),
+            "'restore' should NOT be valid Vietnamese"
+        );
+        assert!(
+            !is_valid_vietnamese_syllable("print"),
+            "'print' should NOT be valid Vietnamese"
+        );
+        assert!(
+            !is_valid_vietnamese_syllable("enter"),
+            "'enter' should NOT be valid Vietnamese"
+        );
     }
 
     #[test]
     fn test_empty_string() {
-        assert!(!is_valid_vietnamese_syllable(""), "Empty string should not be valid");
+        assert!(
+            !is_valid_vietnamese_syllable(""),
+            "Empty string should not be valid"
+        );
     }
 
     #[test]
     fn test_lookup_all_tu_dien_entries() {
         // Verify the set was built correctly — all TuDien entries must be present
-        let tu_dien = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/data/TuDien.txt"
-        ));
+        let tu_dien = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/TuDien.txt"));
         let mut missing = 0usize;
         for line in tu_dien.lines() {
             let word = line.trim();
@@ -74,6 +104,10 @@ mod tests {
                 missing += 1;
             }
         }
-        assert_eq!(missing, 0, "{} entries from TuDien.txt not found in VIET_SYLLABLES", missing);
+        assert_eq!(
+            missing, 0,
+            "{} entries from TuDien.txt not found in VIET_SYLLABLES",
+            missing
+        );
     }
 }

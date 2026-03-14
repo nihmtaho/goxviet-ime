@@ -91,12 +91,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         isPostUpdateLaunch = CommandLine.arguments.contains("--post-update")
         if !isPostUpdateLaunch {
             let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-            let lastVersion = UserDefaults.standard.string(forKey: "GoxViet.lastKnownVersion") ?? ""
+            let lastVersion = UserDefaults.standard.string(forKey: SettingsKey.lastKnownVersion) ?? ""
             if !lastVersion.isEmpty && lastVersion != currentVersion {
                 isPostUpdateLaunch = true
                 Log.info("Version changed \(lastVersion) → \(currentVersion): treating as post-update launch")
             }
-            UserDefaults.standard.set(currentVersion, forKey: "GoxViet.lastKnownVersion")
+            UserDefaults.standard.set(currentVersion, forKey: SettingsKey.lastKnownVersion)
         }
         if isPostUpdateLaunch {
             Log.info("Post-update launch detected")
@@ -105,7 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Check and request Accessibility Permission
         // InputManager will only start if permission is granted
         // Delay slightly on post-update launches to let macOS TCC settle
-        let delay: TimeInterval = isPostUpdateLaunch ? 0.8 : 0.0
+        let delay: TimeInterval = (isPostUpdateLaunch || UserDefaults.standard.bool(forKey: SettingsKey.permissionGranted)) ? 1.5 : 0.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.checkAccessibilityPermission()
         }
@@ -127,12 +127,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !accessEnabled {
             // On post-update launches macOS TCC may need a moment to recognise the
-            // new binary as the previously-trusted app. Retry up to 3 times (1.5 s
-            // total) before surfacing the alert to the user.
-            let maxRetries = isPostUpdateLaunch ? 3 : 0
+            // new binary as the previously-trusted app. Also retry patiently if the
+            // user previously had permission (hadPermissionBefore) — covers manual
+            // revocation/re-grant and update-triggered TCC resets.
+            let hadPermissionBefore = UserDefaults.standard.bool(forKey: SettingsKey.permissionGranted)
+            let shouldRetryPatiently = isPostUpdateLaunch || hadPermissionBefore
+            let maxRetries = shouldRetryPatiently ? 8 : 0
+            let retryInterval: TimeInterval = 0.75
             if retryCount < maxRetries {
                 Log.info("Accessibility not yet granted, retrying (\(retryCount + 1)/\(maxRetries))…")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + retryInterval) { [weak self] in
                     self?.checkAccessibilityPermission(retryCount: retryCount + 1)
                 }
                 return
@@ -147,6 +151,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             Log.info("Accessibility permission granted")
             stopAccessibilityPollTimer()
+
+            UserDefaults.standard.set(true, forKey: SettingsKey.permissionGranted)
 
             // Start InputManager only after permission is confirmed
             InputManager.shared.start()
@@ -169,19 +175,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Poll every 1 second to check if permission was granted
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
             let accessEnabled = AXIsProcessTrusted()
             if accessEnabled {
-                Log.info("Accessibility permission detected via auto-polling")
-                ResourceManager.shared.unregister(timerIdentifier: "AppDelegate.accessibilityPollTimer")
-                self.accessibilityPollTimer = nil
-                
-                // If modal is active, just set the flag - don't try to manipulate UI
-                if self.isModalAlertActive {
-                    self.permissionGrantedWhileModalActive = true
-                    Log.info("Permission granted while modal active - will handle after modal closes")
-                } else {
-                    self.onAccessibilityGranted()
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    Log.info("Accessibility permission detected via auto-polling")
+                    ResourceManager.shared.unregister(timerIdentifier: "AppDelegate.accessibilityPollTimer")
+                    self.accessibilityPollTimer = nil
+
+                    // If modal is active, just set the flag - don't try to manipulate UI
+                    if self.isModalAlertActive {
+                        self.permissionGrantedWhileModalActive = true
+                        Log.info("Permission granted while modal active - will handle after modal closes")
+                    } else {
+                        self.onAccessibilityGranted()
+                    }
                 }
             }
         }
@@ -213,8 +221,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         stopAccessibilityPollTimer()
-        
+
         Log.info("Accessibility permission granted - starting InputManager")
+        UserDefaults.standard.set(true, forKey: SettingsKey.permissionGranted)
         InputManager.shared.start()
     }
     
@@ -470,10 +479,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            guard let self = self else { return }
-            // Restore Dock policy whenever any window closes; we will check if a Settings window remains.
-            self.restoreDockPolicyIfNoSettingsWindow()
-            ResourceManager.shared.unregister(observerIdentifier: ObserverKey.settingsClose, center: self.notificationCenter)
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // Restore Dock policy whenever any window closes; we will check if a Settings window remains.
+                self.restoreDockPolicyIfNoSettingsWindow()
+                ResourceManager.shared.unregister(observerIdentifier: ObserverKey.settingsClose, center: self.notificationCenter)
+            }
         }
 
         ResourceManager.shared.register(observer: observer, identifier: ObserverKey.settingsClose, center: notificationCenter)
@@ -512,7 +523,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if notification.object as? Bool != nil {
+            guard notification.object as? Bool != nil else { return }
+            Task { @MainActor [weak self] in
                 self?.updateStatusIcon()
                 self?.updateMenuStates()
             }
@@ -525,7 +537,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if notification.object as? Bool != nil {
+            guard notification.object as? Bool != nil else { return }
+            Task { @MainActor [weak self] in
                 self?.updateStatusIcon()
                 self?.updateMenuStates()
             }
@@ -538,8 +551,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { _ in
-            // Shortcut display is only in Settings, no menu update needed
-            Log.info("Shortcut changed")
+            Task { @MainActor in
+                // Shortcut display is only in Settings, no menu update needed
+                Log.info("Shortcut changed")
+            }
         }
         ResourceManager.shared.register(observer: shortcutToken, identifier: ObserverKey.shortcutChanged, center: notificationCenter)
 
@@ -549,7 +564,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateMenuStates()
+            Task { @MainActor [weak self] in
+                self?.updateMenuStates()
+            }
         }
         ResourceManager.shared.register(observer: inputMethodToken, identifier: ObserverKey.inputMethod, center: notificationCenter)
         
@@ -559,7 +576,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.checkPermissionOnActivate()
+            Task { @MainActor [weak self] in
+                self?.checkPermissionOnActivate()
+            }
         }
         ResourceManager.shared.register(observer: activateToken, identifier: ObserverKey.appActivation, center: notificationCenter)
         
@@ -569,7 +588,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleSettingsWindowCleanup()
+            Task { @MainActor [weak self] in
+                self?.handleSettingsWindowCleanup()
+            }
         }
         ResourceManager.shared.register(observer: cleanupToken, identifier: ObserverKey.settingsCleanup, center: notificationCenter)
 
@@ -579,11 +600,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self else { return }
-            Log.warning("Accessibility permission revoked — prompting user to re-grant")
-            // Mark as post-update so the alert message instructs toggle OFF/ON
-            self.isPostUpdateLaunch = true
-            self.checkAccessibilityPermission()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                Log.warning("Accessibility permission revoked — prompting user to re-grant")
+                // Mark as post-update so the alert message instructs toggle OFF/ON
+                self.isPostUpdateLaunch = true
+                self.checkAccessibilityPermission()
+            }
         }
         ResourceManager.shared.register(observer: revokedToken, identifier: ObserverKey.accessibilityRevoked, center: notificationCenter)
 
@@ -726,19 +749,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        Log.info("Application requesting termination...")
-        
-        // Check if we should allow termination
-        // Ensure all critical operations are complete
-        let shouldTerminate = true
-        
-        if shouldTerminate {
-            Log.info("Termination approved")
-            return .terminateNow
-        } else {
-            Log.info("Termination delayed - operations in progress")
-            return .terminateLater
-        }
+        Log.info("Termination approved")
+        return .terminateNow
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {

@@ -23,7 +23,7 @@ enum UpdateState: Equatable {
 }
 
 final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchecked Sendable {
-    nonisolated(unsafe) static let shared = UpdateManager()
+    static let shared = UpdateManager()
 
     @Published private(set) var state: UpdateState = .idle {
         didSet {
@@ -64,17 +64,15 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
     @Published private(set) var lastChecked: Date?
     
-    nonisolated(unsafe) private var downloadSession: URLSession?
-    nonisolated(unsafe) private var downloadTask: URLSessionDownloadTask?
-    nonisolated(unsafe) private var downloadingVersion: String?
+    private var downloadSession: URLSession?
+    private var downloadTask: URLSessionDownloadTask?
+    private var downloadingVersion: String?
     private var timer: Timer?
     private(set) var isRunning: Bool = false
-    nonisolated(unsafe) private let defaults = UserDefaults.standard
-    nonisolated(unsafe) private var isUserCancelledDownload: Bool = false
+    private let defaults = UserDefaults.standard
+    private var isUserCancelledDownload: Bool = false
     
     private let autoCheckInterval: TimeInterval = 6 * 60 * 60  // Every 6 hours
-    private let autoCheckKey = "com.goxviet.ime.lastUpdateCheck"
-    private let skipVersionKey = "com.goxviet.ime.skipVersion"
 
     nonisolated private override init() {
         super.init()
@@ -86,7 +84,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
     func start() {
         guard !isRunning else { return }
-        let timestamp = defaults.double(forKey: autoCheckKey)
+        let timestamp = defaults.double(forKey: SettingsKey.lastUpdateCheck)
         if timestamp > 0 {
             lastChecked = Date(timeIntervalSince1970: timestamp)
         }
@@ -104,7 +102,9 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
             // Create new timer
             let newTimer = Timer.scheduledTimer(withTimeInterval: self.autoCheckInterval, repeats: true) { [weak self] _ in
-                self?.checkForUpdatesSilently()
+                Task { @MainActor [weak self] in
+                    self?.checkForUpdatesSilently()
+                }
             }
             
             ResourceManager.shared.register(timer: newTimer, identifier: "UpdateManager.checkTimer")
@@ -174,11 +174,11 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
                 guard let self = self else { return }
 
                 self.lastChecked = Date()
-                self.defaults.set(self.lastChecked!.timeIntervalSince1970, forKey: self.autoCheckKey)
+                self.defaults.set(self.lastChecked!.timeIntervalSince1970, forKey: SettingsKey.lastUpdateCheck)
 
                 switch result {
                 case .available(let info):
-                    let skipped = self.defaults.string(forKey: self.skipVersionKey)
+                    let skipped = self.defaults.string(forKey: SettingsKey.skipVersion)
                     if !userInitiated && skipped == info.version {
                         // Silent check and version skipped -> ignore
                         self.state = .idle
@@ -210,7 +210,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
     }
     
     func skipVersion(_ version: String) {
-        defaults.set(version, forKey: skipVersionKey)
+        defaults.set(version, forKey: SettingsKey.skipVersion)
         state = .idle
     }
 
@@ -277,7 +277,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
         }
     }
 
-    private func findAppBundle(in mountPoint: URL) -> URL? {
+    nonisolated private func findAppBundle(in mountPoint: URL) -> URL? {
         let enumerator = FileManager.default.enumerator(at: mountPoint, includingPropertiesForKeys: nil)
         while let item = enumerator?.nextObject() as? URL {
             if item.pathExtension.lowercased() == "app" { return item }
@@ -300,13 +300,11 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 #endif
     
     // Kept robust implementation
-    private func relaunchWithNewApp(tempApp: String) {
+    nonisolated private func relaunchWithNewApp(tempApp: String) {
         DispatchQueue.main.async {
             self.state = .installing
+            InputManager.shared.stop()
         }
-        
-        // Stop InputManager explicitly to release resources immediately
-        InputManager.shared.stop()
 
         let destApp = Bundle.main.bundlePath
         let logFile = "/tmp/goxviet_update.log"
@@ -340,15 +338,41 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
 
         log() { echo "$1" >> "\(logFile)"; }
 
-        log "Replacing app bundle atomically..."
-        rm -rf "\(destApp)"
-        if mv "\(tempApp)" "\(destApp)" 2>/dev/null; then
-            log "Atomic move successful"
-        elif ditto "\(tempApp)" "\(destApp)" && rm -rf "\(tempApp)"; then
-            log "Ditto copy successful (cross-volume fallback)"
-        else
-            log "App replacement failed with code $?"
-            exit 1
+        log "Updating app bundle in-place to preserve TCC permissions..."
+        UPDATE_SUCCESS=0
+
+        # Strategy 1: rsync in-place (preserves dest directory inode — TCC-friendly)
+        if command -v rsync >/dev/null 2>&1; then
+            if rsync -a --delete "\(tempApp)/" "\(destApp)/" 2>>"\(logFile)"; then
+                rm -rf "\(tempApp)"
+                log "rsync in-place update successful (inode preserved)"
+                UPDATE_SUCCESS=1
+            else
+                log "rsync failed (exit $?), falling back..."
+            fi
+        fi
+
+        # Strategy 2: ditto WITHOUT prior rm -rf (preserves dest directory inode)
+        if [ $UPDATE_SUCCESS -eq 0 ]; then
+            if ditto "\(tempApp)" "\(destApp)" 2>>"\(logFile)"; then
+                rm -rf "\(tempApp)"
+                log "ditto in-place copy successful (inode preserved)"
+                UPDATE_SUCCESS=1
+            else
+                log "ditto failed, falling back to destructive replace..."
+            fi
+        fi
+
+        # Strategy 3: last-resort destructive replace (may revoke TCC permission)
+        if [ $UPDATE_SUCCESS -eq 0 ]; then
+            rm -rf "\(destApp)"
+            if mv "\(tempApp)" "\(destApp)" 2>/dev/null; then
+                log "Destructive mv replace succeeded (TCC may be revoked)"
+                UPDATE_SUCCESS=1
+            else
+                log "All update strategies failed"
+                exit 1
+            fi
         fi
 
         log "Relaunching app..."
@@ -364,7 +388,7 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
             try debugScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
         } catch {
-            Log.error("Failed to create update script: \(error)")
+            DispatchQueue.main.async { Log.error("Failed to create update script: \(error)") }
             return
         }
         
@@ -374,11 +398,11 @@ final class UpdateManager: NSObject, ObservableObject, LifecycleManaged, @unchec
         task.arguments = ["-c", command]
         try? task.run()
 
-        NSApp.terminate(nil)
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 
     @discardableResult
-    private func runShell(_ command: String) -> (output: String, ok: Bool) {
+    nonisolated private func runShell(_ command: String) -> (output: String, ok: Bool) {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")

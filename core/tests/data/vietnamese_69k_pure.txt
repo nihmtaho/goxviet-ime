@@ -29578,7 +29578,6 @@ leo nheo
 leo teo
 leo thang
 leo trèo
-leone
 leu
 lev
 li
@@ -30974,7 +30973,6 @@ lô mét
 lô nhô
 lô xô
 lô xô như bát úp
-lôgic
 lôi
 lôi bè kéo cánh
 lôi cuốn
@@ -33990,8 +33988,7 @@ mô típ
 mô tô
 mô tả
 mô đun
-mô đéc
-môbilet
+mô đé
 môi
 môi giới
 môi hóa
@@ -47271,7 +47268,6 @@ sâm si
 sâm sẩm
 sâm thương
 sâm thương cách trở
-sâmbanh
 sân
 sân bay
 sân bãi
@@ -47448,7 +47444,6 @@ sóng điện từ
 sóng đào
 sóng đôi
 sóng địa chấn
-sóoc
 sót
 sót lọt
 sót nhau
@@ -47485,7 +47480,6 @@ sông sâu nước cả
 sông sâu sào ngắn
 sông sống
 sông đào
-sôvanh
 sõi
 sõi đời
 sõng
@@ -53252,7 +53246,6 @@ tong tả
 tong tỏng
 top
 top ten
-topo
 topo học
 totem
 totem giáo
@@ -55515,8 +55508,6 @@ tuân
 tuân hành
 tuân lệnh
 tuân thủ
-tuôcbin
-tuôcnăng
 tuôn
 tuôn lệ
 tuông
@@ -58553,7 +58544,6 @@ ung thư hoá
 ung thư học
 ung độc
 ung ủng
-urê
 uy
 uy danh
 uy hiếp
@@ -60834,7 +60824,6 @@ xanh xanh
 xanh xao
 xanh xao hốc hác
 xanh xám
-xanhđica
 xao
 xao lãng
 xao nhãng
@@ -64124,8 +64113,6 @@ yểu điệu thục nữ
 đi ở
 điezen
 đin
-đinamit
-đinamo
 đinh
 đinh ba
 đinh bạ

@@ -73,9 +73,8 @@ fn bench_load_input_config(c: &mut Criterion) {
     group.bench_function("telex_load", |b| {
         b.iter(|| {
             let mut container = Container::new();
-            let config =
-                InputMethodConfig::from_json_bytes(black_box(telex_json.as_bytes()))
-                    .expect("deserialize");
+            let config = InputMethodConfig::from_json_bytes(black_box(telex_json.as_bytes()))
+                .expect("deserialize");
             container.load_input_config(black_box(config));
         })
     });
@@ -83,9 +82,8 @@ fn bench_load_input_config(c: &mut Criterion) {
     group.bench_function("vni_load", |b| {
         b.iter(|| {
             let mut container = Container::new();
-            let config =
-                InputMethodConfig::from_json_bytes(black_box(vni_json.as_bytes()))
-                    .expect("deserialize");
+            let config = InputMethodConfig::from_json_bytes(black_box(vni_json.as_bytes()))
+                .expect("deserialize");
             container.load_input_config(black_box(config));
         })
     });
@@ -108,18 +106,14 @@ fn bench_keystroke_with_config(c: &mut Criterion) {
     let processor = container.processor_service();
 
     for key_char in ['a', 's', 'e', 'w', 'd'] {
-        group.bench_with_input(
-            BenchmarkId::new("key", key_char),
-            &key_char,
-            |b, &ch| {
-                let keycode = goxviet_core::utils::char_to_key(ch) as u16;
-                let event = KeyEvent::new(keycode, false, false, false, false);
-                b.iter(|| {
-                    let result = processor.lock().unwrap().process_key(black_box(event));
-                    black_box(result)
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("key", key_char), &key_char, |b, &ch| {
+            let keycode = goxviet_core::utils::char_to_key(ch) as u16;
+            let event = KeyEvent::new(keycode, false, false, false, false);
+            b.iter(|| {
+                let result = processor.lock().unwrap().process_key(black_box(event));
+                black_box(result)
+            })
+        });
     }
 
     group.finish();

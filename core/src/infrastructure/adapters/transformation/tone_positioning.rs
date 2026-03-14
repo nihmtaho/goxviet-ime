@@ -17,10 +17,15 @@
 //! - `lưỡng` → mark on `ơ` (not `u` or `ng`)
 //!
 //! ### Rule 2: Second Vowel Rule
-//! If no diacritics present → place mark on SECOND vowel
+//! If no diacritics present → place mark on SECOND vowel (Kiểu mới / default)
 //! - `hoá` → mark on `a` (not `o`)
 //! - `loé` → mark on `e` (not `o`)
 //! - `tuý` → mark on `y` (not `u`)
+//!
+//! **Kiểu cũ (traditional style)**: Only `oa`, `oe`, `uy` differ — mark on FIRST vowel:
+//! - `hòa` → mark on `o`
+//! - `hòe` → mark on `o`
+//! - `thùy` → mark on `u`
 //!
 //! ### Rule 3: Final Consonant Context
 //! With final consonants, mark stays on main vowel even with diacritics
@@ -51,6 +56,9 @@ use crate::utils;
 /// # Arguments
 /// * `vowels` - Vowel cluster with positional information
 /// * `has_final_consonant` - Whether syllable has final consonant
+/// * `modern` - Use modern tone placement style (Kiểu mới):
+///   - `true` (Kiểu mới): oa→a, oe→e, uy→y  (mark on second vowel)
+///   - `false` (Kiểu cũ): oa→o, oe→o, uy→u  (mark on first vowel)
 ///
 /// # Returns
 /// Buffer position where tone mark should be placed
@@ -58,8 +66,9 @@ use crate::utils;
 /// # Algorithm
 /// 1. Check for diacritic vowels (â/ê/ô/ơ/ư) - Rule 1
 /// 2. If none, use second vowel if available - Rule 2
+///    Exception for Kiểu cũ: oa/oe/uy use first vowel
 /// 3. Handle special cases with final consonants - Rule 3
-pub fn find_mark_position(vowels: &[Vowel], _has_final_consonant: bool) -> usize {
+pub fn find_mark_position(vowels: &[Vowel], _has_final_consonant: bool, modern: bool) -> usize {
     if vowels.is_empty() {
         return 0;
     }
@@ -102,12 +111,22 @@ pub fn find_mark_position(vowels: &[Vowel], _has_final_consonant: bool) -> usize
     // ═════════════════════════════════════════════════════════════════════
     // RULE 2: SECOND VOWEL RULE
     // ═════════════════════════════════════════════════════════════════════
-    // No diacritics present → mark on second vowel
-    // Applies to: ai, ao, ay, eo, oa, oe, oi, ui, uy, etc.
+    // No diacritics present → mark on second vowel (Kiểu mới / modern style)
+    // Kiểu cũ exception: oa, oe, uy → mark on FIRST vowel
 
     if vowels.len() >= 2 {
         // For diphthongs (2 vowels)
         if vowels.len() == 2 {
+            // Kiểu cũ: oa, oe, uy use first vowel
+            if !modern {
+                let is_old_style_pattern = matches!(
+                    (vowels[0].key, vowels[1].key),
+                    (keys::O, keys::A) | (keys::O, keys::E) | (keys::U, keys::Y)
+                );
+                if is_old_style_pattern {
+                    return vowels[0].pos;
+                }
+            }
             return vowels[1].pos;
         }
 
@@ -163,10 +182,11 @@ fn is_diacritic_vowel(key: u16, modifier: &Modifier) -> bool {
 ///
 /// # Arguments
 /// * `buf` - Mutable buffer to update
+/// * `modern` - Use modern tone placement style (see `find_mark_position`)
 ///
 /// # Returns
 /// `(old_pos, new_pos)` if mark was moved, `None` if no change
-pub fn reposition_mark(buf: &mut Buffer) -> Option<(usize, usize)> {
+pub fn reposition_mark(buf: &mut Buffer, modern: bool) -> Option<(usize, usize)> {
     // Find current mark position and value
     let mark_info: Option<(usize, u8)> = buf
         .iter()
@@ -185,7 +205,7 @@ pub fn reposition_mark(buf: &mut Buffer) -> Option<(usize, usize)> {
     // Calculate correct position using phonology rules
     let last_vowel_pos = vowels.last().map(|v| v.pos).unwrap_or(0);
     let has_final = utils::has_final_consonant(buf, last_vowel_pos);
-    let new_pos = find_mark_position(&vowels, has_final);
+    let new_pos = find_mark_position(&vowels, has_final, modern);
 
     // Move mark if position changed
     if new_pos != old_pos {
@@ -264,7 +284,7 @@ mod tests {
             vowel_with_modifier(keys::E, tone::CIRCUMFLEX, 2),
         ];
 
-        let pos = find_mark_position(&vowels, false);
+        let pos = find_mark_position(&vowels, false, true);
         assert_eq!(pos, 2, "Mark should be on ê (Rule 1: diacritic priority)");
     }
 
@@ -277,7 +297,7 @@ mod tests {
             vowel_with_modifier(keys::O, tone::CIRCUMFLEX, 2),
         ];
 
-        let pos = find_mark_position(&vowels, false);
+        let pos = find_mark_position(&vowels, false, true);
         assert_eq!(pos, 2, "Mark should be on ô (Rule 1: diacritic priority)");
     }
 
@@ -292,7 +312,7 @@ mod tests {
             vowel_with_modifier(keys::I, tone::NONE, 2),
         ];
 
-        let pos = find_mark_position(&vowels, false);
+        let pos = find_mark_position(&vowels, false, true);
         assert_eq!(
             pos, 1,
             "Mark should be on ơ (middle diacritic in triphthong)"
@@ -308,7 +328,7 @@ mod tests {
             vowel_with_modifier(keys::A, tone::NONE, 2),
         ];
 
-        let pos = find_mark_position(&vowels, false);
+        let pos = find_mark_position(&vowels, false, true);
         assert_eq!(pos, 2, "Mark should be on a (Rule 2: second vowel)");
     }
 
@@ -321,21 +341,81 @@ mod tests {
             vowel_with_modifier(keys::I, tone::NONE, 1),
         ];
 
-        let pos = find_mark_position(&vowels, false);
+        let pos = find_mark_position(&vowels, false, true);
         assert_eq!(pos, 1, "Mark should be on i (Rule 2: second vowel)");
     }
 
     #[test]
     fn test_rule2_uy_cluster() {
         use crate::data::chars::tone;
-        // Test: uy cluster → mark on y
+        // Test: uy cluster → mark on y (modern)
         let vowels = vec![
             vowel_with_modifier(keys::U, tone::NONE, 0),
             vowel_with_modifier(keys::Y, tone::NONE, 1),
         ];
 
-        let pos = find_mark_position(&vowels, false);
-        assert_eq!(pos, 1, "Mark should be on y (Rule 2: second vowel)");
+        let pos = find_mark_position(&vowels, false, true);
+        assert_eq!(pos, 1, "Mark should be on y (Rule 2: second vowel, modern)");
+    }
+
+    #[test]
+    fn test_rule2_oa_modern() {
+        use crate::data::chars::tone;
+        // Kiểu mới: oa → mark on a (second vowel)
+        let vowels = vec![
+            vowel_with_modifier(keys::O, tone::NONE, 0),
+            vowel_with_modifier(keys::A, tone::NONE, 1),
+        ];
+        let pos = find_mark_position(&vowels, false, true);
+        assert_eq!(pos, 1, "oa Kiểu mới: mark on a");
+    }
+
+    #[test]
+    fn test_rule2_oa_traditional() {
+        use crate::data::chars::tone;
+        // Kiểu cũ: oa → mark on o (first vowel)
+        let vowels = vec![
+            vowel_with_modifier(keys::O, tone::NONE, 0),
+            vowel_with_modifier(keys::A, tone::NONE, 1),
+        ];
+        let pos = find_mark_position(&vowels, false, false);
+        assert_eq!(pos, 0, "oa Kiểu cũ: mark on o");
+    }
+
+    #[test]
+    fn test_rule2_oe_traditional() {
+        use crate::data::chars::tone;
+        // Kiểu cũ: oe → mark on o (first vowel)
+        let vowels = vec![
+            vowel_with_modifier(keys::O, tone::NONE, 0),
+            vowel_with_modifier(keys::E, tone::NONE, 1),
+        ];
+        let pos = find_mark_position(&vowels, false, false);
+        assert_eq!(pos, 0, "oe Kiểu cũ: mark on o");
+    }
+
+    #[test]
+    fn test_rule2_uy_traditional() {
+        use crate::data::chars::tone;
+        // Kiểu cũ: uy → mark on u (first vowel)
+        let vowels = vec![
+            vowel_with_modifier(keys::U, tone::NONE, 0),
+            vowel_with_modifier(keys::Y, tone::NONE, 1),
+        ];
+        let pos = find_mark_position(&vowels, false, false);
+        assert_eq!(pos, 0, "uy Kiểu cũ: mark on u");
+    }
+
+    #[test]
+    fn test_rule2_other_patterns_unaffected_by_style() {
+        use crate::data::chars::tone;
+        // ai, ao, etc. — same result for both styles
+        let vowels_ai = vec![
+            vowel_with_modifier(keys::A, tone::NONE, 0),
+            vowel_with_modifier(keys::I, tone::NONE, 1),
+        ];
+        assert_eq!(find_mark_position(&vowels_ai, false, false), 1, "ai old: mark on i");
+        assert_eq!(find_mark_position(&vowels_ai, false, true), 1, "ai new: mark on i");
     }
 
     #[test]
@@ -344,7 +424,7 @@ mod tests {
         // Test: single vowel → mark on it
         let vowels = vec![vowel_with_modifier(keys::A, tone::NONE, 0)];
 
-        let pos = find_mark_position(&vowels, false);
+        let pos = find_mark_position(&vowels, false, true);
         assert_eq!(pos, 0, "Mark should be on single vowel");
     }
 
@@ -410,7 +490,7 @@ mod tests {
         }
 
         // Reposition should move mark from 'i' to 'ê'
-        let result = reposition_mark(&mut buf);
+        let result = reposition_mark(&mut buf, true);
         assert!(result.is_some(), "Mark should be repositioned");
 
         let (old_pos, new_pos) = result.unwrap();
@@ -432,7 +512,7 @@ mod tests {
             c.mark = mark::SAC;
         }
 
-        let result = reposition_mark(&mut buf);
+        let result = reposition_mark(&mut buf, true);
         assert!(
             result.is_none(),
             "No repositioning needed when already correct"

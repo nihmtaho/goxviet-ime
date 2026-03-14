@@ -95,7 +95,7 @@ struct PerAppSettingsView: View {
                     )
                 }
             }
-            .padding(24)
+            .padding(16)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
             
             Divider()
@@ -173,8 +173,8 @@ struct PerAppSettingsView: View {
                         )
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
                 .background(Color(NSColor.controlBackgroundColor).opacity(0.2))
             }
             
@@ -196,7 +196,7 @@ struct PerAppSettingsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: 4) {
                             ForEach(filteredAndSortedApps, id: \.0) { bundleId, enabled in
                                 AppRow(
                                     bundleId: bundleId,
@@ -215,7 +215,7 @@ struct PerAppSettingsView: View {
                                 )
                             }
                         }
-                        .padding(24)
+                        .padding(16)
                     }
                 }
             } else {
@@ -264,7 +264,7 @@ struct AppRow: View {
     @State private var appName: String = ""
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             // Selection checkbox
             Button {
                 onSelect()
@@ -273,49 +273,49 @@ struct AppRow: View {
                     .foregroundColor(isSelected ? .accentColor : .secondary)
             }
             .buttonStyle(.plain)
-            
+
             // App Icon
             if let icon = appIcon {
                 Image(nsImage: icon)
                     .resizable()
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 28)
             } else {
                 Image(systemName: "app")
-                    .font(.system(size: 24))
+                    .font(.system(size: 20))
                     .foregroundColor(.secondary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 28)
             }
-            
+
             // App Info
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(appName.isEmpty ? bundleId : appName)
                     .font(.system(size: 13, weight: .medium))
-                
+
                 if !appName.isEmpty {
                     Text(bundleId)
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
             }
-            
+
             Spacer()
-            
+
             // Status Badge
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Circle()
                     .fill(enabled ? Color.green : Color.gray)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 7, height: 7)
                 Text(enabled ? "Enabled" : "Disabled")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
             .background(
                 Capsule()
                     .fill(Color(NSColor.controlBackgroundColor))
             )
-            
+
             // Toggle
             Toggle("", isOn: Binding(
                 get: { enabled },
@@ -323,8 +323,10 @@ struct AppRow: View {
             ))
             .labelsHidden()
             .toggleStyle(.switch)
+            .controlSize(.small)
         }
-        .padding(12)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor).opacity(0.5))

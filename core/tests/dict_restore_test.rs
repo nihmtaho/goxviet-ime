@@ -162,7 +162,13 @@ fn test_safari_raycast_instant_restore() {
     let keys_safari = [keys::S, keys::A, keys::F, keys::A, keys::R, keys::I];
     for k in &keys_safari {
         let r = engine.on_key(*k, false, false);
-        println!("key={}, buf='{}', action={}, is_english={}", k, engine.get_buffer(), r.action, engine.is_english_word);
+        println!(
+            "key={}, buf='{}', action={}, is_english={}",
+            k,
+            engine.get_buffer(),
+            r.action,
+            engine.is_english_word
+        );
     }
     let buf = engine.get_buffer();
     println!("Final safari buffer: '{}'", buf);
@@ -171,10 +177,24 @@ fn test_safari_raycast_instant_restore() {
 
     println!("=== Test: 'raycast' instant restore ===");
     // r,a,y,c,a,s,t - 's' becomes sắc on 'a'
-    let keys_raycast = [keys::R, keys::A, keys::Y, keys::C, keys::A, keys::S, keys::T];
+    let keys_raycast = [
+        keys::R,
+        keys::A,
+        keys::Y,
+        keys::C,
+        keys::A,
+        keys::S,
+        keys::T,
+    ];
     for k in &keys_raycast {
         let r = engine.on_key(*k, false, false);
-        println!("key={}, buf='{}', action={}, is_english={}", k, engine.get_buffer(), r.action, engine.is_english_word);
+        println!(
+            "key={}, buf='{}', action={}, is_english={}",
+            k,
+            engine.get_buffer(),
+            r.action,
+            engine.is_english_word
+        );
     }
     let buf2 = engine.get_buffer();
     println!("Final raycast buffer: '{}'", buf2);

@@ -59,7 +59,7 @@ pub struct EngineConfig {
 
     /// Modern vs Traditional tone placement
     pub use_modern_tone_placement: bool,
-    
+
     /// Enable text expansion shortcuts
     pub enable_shortcuts: bool,
 

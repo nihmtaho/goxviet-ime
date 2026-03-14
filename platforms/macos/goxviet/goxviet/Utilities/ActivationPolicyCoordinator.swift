@@ -8,7 +8,7 @@
 import AppKit
 
 final class ActivationPolicyCoordinator {
-    nonisolated(unsafe) static let shared = ActivationPolicyCoordinator()
+    static let shared = ActivationPolicyCoordinator()
 
     private var pendingPolicy: NSApplication.ActivationPolicy?
     private var scheduled = false

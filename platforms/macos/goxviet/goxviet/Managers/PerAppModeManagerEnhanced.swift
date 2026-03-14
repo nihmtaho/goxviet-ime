@@ -12,7 +12,7 @@ import Cocoa
 /// Enhanced per-app mode manager with caching and performance optimizations
 final class PerAppModeManagerEnhanced: LifecycleManaged {
     
-    nonisolated(unsafe) static let shared = PerAppModeManagerEnhanced()
+    static let shared = PerAppModeManagerEnhanced()
     
     // MARK: - Properties
     
@@ -85,7 +85,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            self?.handleActivationNotification(notification)
+            MainActor.assumeIsolated {
+                self?.handleActivationNotification(notification)
+            }
         }
         
         ResourceManager.shared.register(
@@ -336,8 +338,8 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     func refresh() {
         if let frontmostApp = NSWorkspace.shared.frontmostApplication,
-           let bundleId = frontmostApp.bundleIdentifier {
-            
+           frontmostApp.bundleIdentifier != nil {
+
             let previousId = currentBundleId
             currentBundleId = nil
             
@@ -361,7 +363,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         stopPollingTimer()
         
         let timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            self?.checkForSpecialPanelApp()
+            Task { @MainActor [weak self] in
+                self?.checkForSpecialPanelApp()
+            }
         }
         
         ResourceManager.shared.register(timer: timer, identifier: "PerAppModeManagerEnhanced.pollingTimer")
@@ -378,7 +382,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     }
     
     private func checkForSpecialPanelApp() {
-        let (appChanged, newBundleId, isSpecialPanel) = SpecialPanelAppDetector.checkForAppChange()
+        let (appChanged, newBundleId, _) = SpecialPanelAppDetector.checkForAppChange()
         
         guard appChanged, let bundleId = newBundleId else { return }
         

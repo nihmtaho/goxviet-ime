@@ -82,8 +82,14 @@ fn test_dict_lookup_syntax() {
     // Words without strong phoneme patterns are detected via output_str TuDien lookup.
     let keys = make_key_tuple_from_str("syntax");
     let result = PhonotacticEngine::analyze(&keys);
-    println!("Phonotactic detection 'syntax': confidence={}", result.english_confidence);
-    assert_eq!(result.english_confidence, 0, "syntax has no phonotactic English signal");
+    println!(
+        "Phonotactic detection 'syntax': confidence={}",
+        result.english_confidence
+    );
+    assert_eq!(
+        result.english_confidence, 0,
+        "syntax has no phonotactic English signal"
+    );
 }
 
 #[test]
@@ -91,7 +97,10 @@ fn test_dict_lookup_parse() {
     // Sprint C: "parse" has strong phonotactic signal via '-ar-se' pattern
     let keys = make_key_tuple_from_str("parse");
     let result = PhonotacticEngine::analyze(&keys);
-    println!("Phonotactic detection 'parse': confidence={}", result.english_confidence);
+    println!(
+        "Phonotactic detection 'parse': confidence={}",
+        result.english_confidence
+    );
     assert!(
         result.english_confidence >= 60,
         "parse should be detected via phonotactics (confidence >= 60)"
@@ -103,8 +112,14 @@ fn test_dict_lookup_merge() {
     // Sprint C: "merge" has 0 phonotactic confidence without the dictionary.
     let keys = make_key_tuple_from_str("merge");
     let result = PhonotacticEngine::analyze(&keys);
-    println!("Phonotactic detection 'merge': confidence={}", result.english_confidence);
-    assert_eq!(result.english_confidence, 0, "merge has no phonotactic English signal");
+    println!(
+        "Phonotactic detection 'merge': confidence={}",
+        result.english_confidence
+    );
+    assert_eq!(
+        result.english_confidence, 0,
+        "merge has no phonotactic English signal"
+    );
 }
 
 #[test]
@@ -194,8 +209,12 @@ fn test_language_decision_syntax() {
     let is_valid = vietnamese_validation.is_valid;
     let viet_confidence = vietnamese_validation.confidence;
 
-    let decision =
-        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation), None);
+    let decision = LanguageDecisionEngine::decide_with_validation(
+        &keys,
+        false,
+        Some(vietnamese_validation),
+        None,
+    );
     println!(
         "Language decision 'syntax': is_english={}, confidence={}",
         decision.is_english, decision.confidence
@@ -215,8 +234,12 @@ fn test_language_decision_parse() {
     let is_valid = vietnamese_validation.is_valid;
     let viet_confidence = vietnamese_validation.confidence;
 
-    let decision =
-        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation), None);
+    let decision = LanguageDecisionEngine::decide_with_validation(
+        &keys,
+        false,
+        Some(vietnamese_validation),
+        None,
+    );
     println!(
         "Language decision 'parse': is_english={}, confidence={}",
         decision.is_english, decision.confidence
@@ -236,8 +259,12 @@ fn test_language_decision_merge() {
     let is_valid = vietnamese_validation.is_valid;
     let viet_confidence = vietnamese_validation.confidence;
 
-    let decision =
-        LanguageDecisionEngine::decide_with_validation(&keys, false, Some(vietnamese_validation), None);
+    let decision = LanguageDecisionEngine::decide_with_validation(
+        &keys,
+        false,
+        Some(vietnamese_validation),
+        None,
+    );
     println!(
         "Language decision 'merge': is_english={}, confidence={}",
         decision.is_english, decision.confidence

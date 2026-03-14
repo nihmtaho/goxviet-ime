@@ -9,5 +9,5 @@
 //! Add new features by registering new implementations in DI container,
 //! without modifying existing code.
 
-pub mod ffi;
 pub mod di;
+pub mod ffi;

@@ -123,12 +123,7 @@ impl CharSequence {
             return None;
         }
 
-        let chars: String = self
-            .chars
-            .chars()
-            .skip(start)
-            .take(end - start)
-            .collect();
+        let chars: String = self.chars.chars().skip(start).take(end - start).collect();
 
         Some(Self { chars })
     }
@@ -329,7 +324,7 @@ mod tests {
         let seq = CharSequence::new("Hello");
         let lower = seq.to_lowercase();
         let upper = seq.to_uppercase();
-        
+
         assert_eq!(seq.as_str(), "Hello"); // Original unchanged
         assert_eq!(lower.as_str(), "hello");
         assert_eq!(upper.as_str(), "HELLO");

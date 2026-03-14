@@ -46,7 +46,14 @@ impl KeyEvent {
     }
 
     /// Create a key event with all modifiers including caps
-    pub fn with_caps(keycode: u16, caps: bool, shift: bool, ctrl: bool, alt: bool, meta: bool) -> Self {
+    pub fn with_caps(
+        keycode: u16,
+        caps: bool,
+        shift: bool,
+        ctrl: bool,
+        alt: bool,
+        meta: bool,
+    ) -> Self {
         Self {
             keycode,
             caps,

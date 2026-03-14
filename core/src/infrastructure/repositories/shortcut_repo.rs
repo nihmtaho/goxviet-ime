@@ -3,7 +3,9 @@
 //! Wrapper around the engine's shortcut table for domain layer access.
 
 use crate::domain::ports::input::input_method::InputMethodId;
-use crate::infrastructure::engine::features::shortcut::{InputMethod, Shortcut, ShortcutMatch, ShortcutTable};
+use crate::infrastructure::engine::features::shortcut::{
+    InputMethod, Shortcut, ShortcutMatch, ShortcutTable,
+};
 
 /// Repository for shortcut management
 pub struct ShortcutRepo {
@@ -128,7 +130,7 @@ mod tests {
     fn test_add_and_lookup() {
         let mut repo = ShortcutRepo::new();
         assert!(repo.add("tks", "thanks"));
-        
+
         let result = repo.lookup("tks");
         assert!(result.is_some());
         let (matched, shortcut) = result.unwrap();
@@ -141,11 +143,11 @@ mod tests {
         let mut repo = ShortcutRepo::new();
         let shortcut = Shortcut::telex("tks", "thanks");
         assert!(repo.add_shortcut(shortcut));
-        
+
         // Should match with Telex
         let result = repo.try_match_for_method("tks", Some(' '), true, InputMethodId::Telex);
         assert!(result.is_some());
-        
+
         // Should not match with VNI (Telex-specific shortcut)
         let result = repo.try_match_for_method("tks", Some(' '), true, InputMethodId::Vni);
         assert!(result.is_none());
@@ -156,13 +158,13 @@ mod tests {
         let mut repo = ShortcutRepo::new();
         repo.add("tks", "thanks");
         repo.add("brb", "be right back");
-        
+
         assert_eq!(repo.len(), 2);
-        
+
         let removed = repo.remove("tks");
         assert!(removed.is_some());
         assert_eq!(repo.len(), 1);
-        
+
         repo.clear();
         assert!(repo.is_empty());
         assert_eq!(repo.len(), 0);

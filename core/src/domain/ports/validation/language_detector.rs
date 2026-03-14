@@ -294,20 +294,11 @@ mod tests {
         assert_eq!(ConfidenceLevel::from_percent(24), ConfidenceLevel::VeryLow);
         assert_eq!(ConfidenceLevel::from_percent(25), ConfidenceLevel::Low);
         assert_eq!(ConfidenceLevel::from_percent(49), ConfidenceLevel::Low);
-        assert_eq!(
-            ConfidenceLevel::from_percent(50),
-            ConfidenceLevel::Medium
-        );
-        assert_eq!(
-            ConfidenceLevel::from_percent(74),
-            ConfidenceLevel::Medium
-        );
+        assert_eq!(ConfidenceLevel::from_percent(50), ConfidenceLevel::Medium);
+        assert_eq!(ConfidenceLevel::from_percent(74), ConfidenceLevel::Medium);
         assert_eq!(ConfidenceLevel::from_percent(75), ConfidenceLevel::High);
         assert_eq!(ConfidenceLevel::from_percent(89), ConfidenceLevel::High);
-        assert_eq!(
-            ConfidenceLevel::from_percent(90),
-            ConfidenceLevel::VeryHigh
-        );
+        assert_eq!(ConfidenceLevel::from_percent(90), ConfidenceLevel::VeryHigh);
         assert_eq!(
             ConfidenceLevel::from_percent(100),
             ConfidenceLevel::VeryHigh

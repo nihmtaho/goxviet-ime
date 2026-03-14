@@ -26,20 +26,20 @@ struct SettingRow<Content: View>: View {
     }
     
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: 12) {
             // Left side: Icon + Label
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
                 if let icon = systemImage {
                     Image(systemName: icon)
-                        .font(.system(size: 16))
+                        .font(.system(size: 14))
                         .foregroundColor(.accentColor)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 20, height: 20)
                 }
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 13, weight: .medium))
-                    
+
                     if let desc = description {
                         Text(desc)
                             .font(.system(size: 11))
@@ -47,14 +47,14 @@ struct SettingRow<Content: View>: View {
                     }
                 }
             }
-            
+
             Spacer()
-            
+
             // Right side: Control
             content()
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -68,7 +68,7 @@ struct ToggleRow: View {
     let description: String?
     let systemImage: String?
     @Binding var isOn: Bool
-    
+
     init(
         title: String,
         description: String? = nil,
@@ -80,12 +80,13 @@ struct ToggleRow: View {
         self.systemImage = systemImage
         self._isOn = isOn
     }
-    
+
     var body: some View {
         SettingRow(title: title, description: description, systemImage: systemImage) {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
         }
     }
 }
@@ -133,19 +134,19 @@ struct SettingRowCustomTitle<Title: View, Content: View>: View {
     @ViewBuilder let content: () -> Content
     
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: 12) {
             // Left side: Icon + Label
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
                 if let icon = systemImage {
                     Image(systemName: icon)
-                        .font(.system(size: 16))
+                        .font(.system(size: 14))
                         .foregroundColor(.accentColor)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 20, height: 20)
                 }
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     title()
-                    
+
                     if let desc = description {
                         Text(desc)
                             .font(.system(size: 11))
@@ -153,14 +154,14 @@ struct SettingRowCustomTitle<Title: View, Content: View>: View {
                     }
                 }
             }
-            
+
             Spacer()
-            
+
             // Right side: Control
             content()
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -180,6 +181,7 @@ struct ToggleRowCustomTitle<Title: View>: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
         }
     }
 }

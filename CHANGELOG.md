@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## [2.0.13] - 2026-03-14
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.13.md](.release-notes/release_note_2.0.13.md)
+
+### ✨ Features
+
+- **Triple-tone Telex Auto-Correction** (`aaa`+SPACE → `à`, `eee`+SPACE → `è`, `ooo`+SPACE → `ò`): Phát hiện chuỗi gõ ba lần cùng nguyên âm (`aaa`, `eee`, `ooo`, `uuu`, `iii`) rồi nhấn SPACE — tự động sửa thành nguyên âm có dấu huyền tương ứng. Giải quyết finger-slip phổ biến khi gõ nhanh. (PR #67)
+- **Compact Settings UI**: Giảm row padding (`8→5pt`), icon size (`24→20pt`), section spacing (`20→14`), thêm `.controlSize(.small)` toàn bộ Toggle/Switch trong General và Per-App tabs. (PR #64)
+- **Per-App Settings Density**: App row padding giảm, icon `32→28pt`, list spacing `8→4`, toolbar `24/12→16/8`. (PR #64)
+- **General Settings Reorder**: Keyboard Shortcut lên đầu → Input Method → Tone Settings → Smart Features (+ Instant Auto-Restore) → Editing (đổi tên từ Auto-Restore). (PR #64)
+
+### 🐛 Bug Fixes
+
+- **Triple-tone Display Sync** (không hiện intermediate state khi đang gõ): Khi triple-tone đang được tích lũy (`aa`, `aaa`), suppression flag ngăn engine hiển thị trạng thái trung gian sai — chỉ áp dụng correction khi phím SPACE xác nhận. (PR #67)
+- **Triple-tone SPACE idempotency** (không double-apply khi display đã đúng): Bỏ qua SPACE restore khi display hiện tại đã khớp với kết quả corrected — tránh xóa rồi gõ lại ký tự đã đúng. (PR #67)
+- **Triple-tone Boundary Skip** (tránh false restore khi suppressed): Khi triple-tone flag đang active, bỏ qua toàn bộ boundary checks để tránh English restore sai trên chuỗi như `aaa`, `eee`. (PR #67)
+- **Triphthong `ươu`** (ơ+u không bị từ chối là vowel cluster sai): Thêm `ơ+u` vào whitelist vowel cluster — cho phép tổ hợp `ươu` hợp lệ trong tiếng Việt (ví dụ: `rượu`). (PR #67)
+- **English context: Restore on invalid vowel cluster / non-digraph coda / dd-stroke**: Khi buffer chứa cụm nguyên âm không hợp lệ, coda không phải digraph, hoặc dd-stroke trong ngữ cảnh English → khôi phục raw keystrokes thay vì giữ transform sai. (PR #67)
+- **Core Engine: Stroke Invalid Combo Handling** (`ddd` → `ddd` thay vì `dd` toggle): Khi gõ ba lần `d`, phát hiện invalid combo (`đd` không hợp lệ vì `đ` là initial-only consonant), lập tức khôi phục thành raw keystrokes thay vì toggle. Thêm `restore_stroke_to_raw()` method. (PR #65)
+- **Core Engine: NA-PAC Validity Check** (coda digraph validation): Kiểm tra tính hợp lệ NA (nucleus-aperture) + PAC (phonetic coda) trước khi hoàn thành digraph — ngăn tổ hợp NA-PAC không hợp lệ (ví dụ: NA.5 open-only + consonant coda). Thêm `check_coda_extension_validity()` và `check_first_coda_validity()` methods. (PR #65)
+- **Core Engine: Digraph Coda Guard** (`ích` + 'h' gõ đúng không restore sai): Khi phím mới hoàn thành digraph `ch`/`ng`/`nh` và buffer đã có Vietnamese transforms, bỏ qua English restoration để tránh false negative. (PR #65)
+- **Dictionary Cleanup**: Xóa 15 obsolete English dictionary text files (`common_2chars.txt` ~ `common_16chars.txt`), 15 `.bin` files, và source file `EnglishWords.txt` — không ảnh hưởng English detection (đã chuyển sang phonotactic-only v2.0.11). (PR #65)
+- **Telex/VNI: Invalid vowel cluster + tone mark** (`yas` → `yas` thay vì `yá`): Từ chối áp dụng dấu thanh khi cụm nguyên âm bắt đầu bằng `y` và theo sau là nguyên âm không phải `ê` — cụm đó không hợp lệ trong tiếng Việt. (PR #65)
+- **Telex/VNI: Horn/Breve bỏ qua nguyên âm đệm** (`hoacwj` → `hoặc` thay vì `hơacj`): Sửa `find_horn_positions` để bỏ qua `o` khi `o` đóng vai trò glide (âm đệm) trước `a`/`e`. (PR #65)
+- **Telex/VNI: Khôi phục raw khi NA-PAC không hợp lệ** (`hoawjch` → `hoawjch` thay vì `hoặch`): Kiểm tra tính hợp lệ NA-PAC trước khi mở rộng phụ âm cuối thành digraph — `oă` (NA.3) không cho phép kết hợp với `ch` (PAC.0). (PR #65)
+- **Telex/VNI: Digraph coda guard** (`rích`, `huỵch`, `cõng` gõ đúng): Bỏ qua English detection khi phím mới hoàn thành digraph coda `ch`/`ng`/`nh` trên buffer đã có Vietnamese transform — trạng thái buffer trung gian (kết thúc bằng `c`/`n`) trông giống phonotactic invalid nhưng digraph đầy đủ là hợp lệ. (PR #65)
+- **English detection: Diacritical modifier guard mở rộng**: Cũng tính tone marks (`s`/`f`/`r`/`x`/`j`) vào guard không-restore, không chỉ circumflex/horn/breve — ngăn restore sai trên từ có dấu thanh. (PR #65)
+- **Accessibility retry cải thiện**: Tăng retry 3→8 lần, interval 0.5s→0.75s; retry patiently khi `hadPermissionBefore` (không chỉ post-update) — xử lý macOS thu hồi permission thủ công hoặc TCC reset chậm; lưu `permissionGranted` vào UserDefaults khi quyền được cấp. (PR #64)
+- **Swift 6 Concurrency Warnings (130 → 1)**: Bọc notification/timer/DispatchSource observer closures trong `Task { @MainActor }` hoặc `MainActor.assumeIsolated {}` trên 17 files; thêm `@Sendable` vào `TypedNotifications` handler parameters; xóa `nonisolated(unsafe)` thừa khỏi singleton `static let`. (PR #64)
+- **FFI Constants Isolation**: Đổi `telex`/`vni`/`traditional`/`modern` thành `nonisolated static var` (computed) để truy cập từ `nonisolated init`. (PR #64)
+- **UpdateSimulator Timer Race**: Kiểm tra `self != nil` ngoài `Task`, dùng `self.progressTimer` để invalidate đúng. (PR #64)
+- **Deprecated `.onChange`**: Sửa `.onChange(of:perform:)` → two-parameter form (`AdvancedSettingsView`, `ShortcutEditorSheet`). (PR #64)
+
+### 🔧 CI/Chores
+
+- **SettingsKey Enum**: Tập trung tất cả `UserDefaults` key strings vào `SettingsKeys.swift` (`SettingsKey` enum, namespace `com.goxviet.ime.*`) — xóa `Keys` inner struct trong `SettingsManager` và string literals rải rác. (PR #64)
+- **Test Data Cleanup**: Xóa 162 dòng symbol/garbage khỏi `english_words.txt`; sửa `vietnamese_69k_pure.txt` (lôgic, mô đéc/môbilet, sâmbanh).
+- **Artifact Cleanup**: Xóa binary artifacts, temp docs, và test data thừa.
+
+---
+
 ## [2.0.12] - 2026-03-01
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.12.md](.release-notes/release_note_2.0.12.md)

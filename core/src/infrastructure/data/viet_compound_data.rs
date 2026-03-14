@@ -65,8 +65,8 @@ impl CompoundIndex {
         ]) as usize;
 
         let entry_pos = self.data_start + offset;
-        let len = u16::from_le_bytes([COMPOUND_DATA[entry_pos], COMPOUND_DATA[entry_pos + 1]])
-            as usize;
+        let len =
+            u16::from_le_bytes([COMPOUND_DATA[entry_pos], COMPOUND_DATA[entry_pos + 1]]) as usize;
         let bytes = &COMPOUND_DATA[entry_pos + 2..entry_pos + 2 + len];
         // Safety: build.rs wrote valid UTF-8 from TuDienTuGhep.txt
         unsafe { std::str::from_utf8_unchecked(bytes) }
@@ -106,9 +106,18 @@ mod tests {
     #[test]
     fn test_known_compounds_present() {
         // Sample entries from TuDienTuGhep.txt (first few lines)
-        assert!(is_vietnamese_compound("á châu"), "'á châu' should be in compound dict");
-        assert!(is_vietnamese_compound("á đông"), "'á đông' should be in compound dict");
-        assert!(is_vietnamese_compound("á hậu"), "'á hậu' should be in compound dict");
+        assert!(
+            is_vietnamese_compound("á châu"),
+            "'á châu' should be in compound dict"
+        );
+        assert!(
+            is_vietnamese_compound("á đông"),
+            "'á đông' should be in compound dict"
+        );
+        assert!(
+            is_vietnamese_compound("á hậu"),
+            "'á hậu' should be in compound dict"
+        );
     }
 
     #[test]
@@ -141,7 +150,15 @@ mod tests {
     fn test_entry_count() {
         let idx = CompoundIndex::load();
         println!("TuDienTuGhep: {} entries", idx.count);
-        assert!(idx.count > 60_000, "Expected 60K+ compound entries, got {}", idx.count);
-        assert!(idx.count < 80_000, "Expected < 80K compound entries, got {}", idx.count);
+        assert!(
+            idx.count > 60_000,
+            "Expected 60K+ compound entries, got {}",
+            idx.count
+        );
+        assert!(
+            idx.count < 80_000,
+            "Expected < 80K compound entries, got {}",
+            idx.count
+        );
     }
 }

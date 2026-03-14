@@ -28,7 +28,7 @@ enum InjectionMethod {
 /// Handles text injection with proper sequencing to prevent race conditions
 /// Following Single Responsibility Principle - only handles text injection
 public final class TextInjector {
-    nonisolated(unsafe) static let shared = TextInjector()
+    static let shared = TextInjector()
 
     // Semaphore to block keyboard callback until injection completes
     private let semaphore = DispatchSemaphore(value: 1)
@@ -406,7 +406,9 @@ private struct BundleConstants {
         "com.microsoft.VSCode", "com.google.antigravity", "com.todesktop.cursor",
         "com.visualstudio.code.oss", "com.vscodium",
         // Other code editors
-        "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3", "com.panic.Nova"
+        "dev.zed.Zed", "com.sublimetext.4", "com.sublimetext.3", "com.panic.Nova",
+        // DBeaver
+        "org.jkiss.dbeaver.core.product"
     ]
 
     /// Combined set of code editors and terminals for method detection
@@ -648,7 +650,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     }
 
     if role == "AXTextField" && bundleId.hasPrefix(BundleConstants.jetBrainsPrefix) {
-        return cached(.selection, (0, 0, 0), "sel:jb")
+        return cached(.selection, (3000, 8000, 3000), "sel:jb")
     }
     
     // Code editors & terminals - higher delays for Monaco/Electron-based apps
@@ -686,7 +688,7 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     }
     
     // Default: safe delays (changed from instant to fast)
-    return cached(.fast, (0, 0, 0), "default")
+    return cached(.fast, (100, 500, 100), "default")
 }
 
 // MARK: - Screen Text Reading (for word restoration)

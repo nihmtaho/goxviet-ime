@@ -36,15 +36,15 @@ enum FfiStatusCode: Int32 {
 struct FfiInputMethod: Equatable {
     let rawValue: Int32
     nonisolated init(rawValue: Int32) { self.rawValue = rawValue }
-    nonisolated(unsafe) static let telex = FfiInputMethod(rawValue: 0)
-    nonisolated(unsafe) static let vni = FfiInputMethod(rawValue: 1)
+    nonisolated static var telex: FfiInputMethod { FfiInputMethod(rawValue: 0) }
+    nonisolated static var vni: FfiInputMethod { FfiInputMethod(rawValue: 1) }
 }
 
 struct FfiToneStyle: Equatable {
     let rawValue: Int32
     nonisolated init(rawValue: Int32) { self.rawValue = rawValue }
-    nonisolated(unsafe) static let traditional = FfiToneStyle(rawValue: 0)  // Old style: hòa
-    nonisolated(unsafe) static let modern = FfiToneStyle(rawValue: 1)        // New style: hoà
+    nonisolated static var traditional: FfiToneStyle { FfiToneStyle(rawValue: 0) }  // Old style: hòa
+    nonisolated static var modern: FfiToneStyle { FfiToneStyle(rawValue: 1) }        // New style: hoà
 }
 
 struct FfiConfig_v2 {
@@ -160,7 +160,7 @@ struct ProcessResult {
 
 /// Thread-safe v2 FFI bridge using out parameter pattern
 final class RustBridgeV2 {
-    nonisolated(unsafe) static let shared = RustBridgeV2()
+    static let shared = RustBridgeV2()
     
     // MARK: - Properties
     

@@ -90,11 +90,11 @@ impl ToneType {
     pub fn combining_mark(&self) -> Option<char> {
         match self {
             ToneType::Ngang => None,
-            ToneType::Sac => Some('\u{0301}'),   // Combining acute accent
+            ToneType::Sac => Some('\u{0301}'), // Combining acute accent
             ToneType::Huyen => Some('\u{0300}'), // Combining grave accent
-            ToneType::Hoi => Some('\u{0309}'),   // Combining hook above
-            ToneType::Nga => Some('\u{0303}'),   // Combining tilde
-            ToneType::Nang => Some('\u{0323}'),  // Combining dot below
+            ToneType::Hoi => Some('\u{0309}'), // Combining hook above
+            ToneType::Nga => Some('\u{0303}'), // Combining tilde
+            ToneType::Nang => Some('\u{0323}'), // Combining dot below
         }
     }
 

@@ -16,7 +16,7 @@ use std::panic;
 // ============================================================================
 
 use crate::presentation::ffi::types::{
-    FfiStatusCode, FfiProcessResult_v2, FfiConfig_v2, FfiVersionInfo
+    FfiConfig_v2, FfiProcessResult_v2, FfiStatusCode, FfiVersionInfo,
 };
 
 /// Catch panics and return default value
@@ -46,7 +46,7 @@ where
 #[no_mangle]
 pub extern "C" fn ime_create_engine_v2(config: *const FfiConfig_v2) -> *mut c_void {
     use std::panic::{catch_unwind, AssertUnwindSafe};
-    
+
     let result = catch_unwind(AssertUnwindSafe(|| {
         // Parse config or use default
         let container = if config.is_null() {
@@ -56,10 +56,10 @@ pub extern "C" fn ime_create_engine_v2(config: *const FfiConfig_v2) -> *mut c_vo
             let engine_config = to_engine_config_v2(ffi_config);
             Box::new(Container::with_config(engine_config))
         };
-        
+
         Box::into_raw(container) as *mut c_void
     }));
-    
+
     match result {
         Ok(ptr) => ptr,
         Err(_) => std::ptr::null_mut(),
@@ -75,11 +75,9 @@ pub extern "C" fn ime_destroy_engine_v2(engine_ptr: *mut c_void) {
     if engine_ptr.is_null() {
         return;
     }
-    
-    let _ = std::panic::catch_unwind(|| {
-        unsafe {
-            let _ = Box::from_raw(engine_ptr as *mut Container);
-        }
+
+    let _ = std::panic::catch_unwind(|| unsafe {
+        let _ = Box::from_raw(engine_ptr as *mut Container);
     });
 }
 
@@ -161,7 +159,7 @@ pub extern "C" fn ime_process_key_v2(
     out: *mut FfiProcessResult_v2,
 ) -> c_int {
     use std::panic::{catch_unwind, AssertUnwindSafe};
-    
+
     // Null checks
     if engine_ptr.is_null() {
         return FfiStatusCode::ErrorNullEngine.to_c_int();
@@ -169,25 +167,25 @@ pub extern "C" fn ime_process_key_v2(
     if out.is_null() {
         return FfiStatusCode::ErrorNullOutput.to_c_int();
     }
-    
+
     // Panic safety
     let result = catch_unwind(AssertUnwindSafe(|| {
         // Cast to Container
         let container = unsafe { &*(engine_ptr as *const Container) };
-        
+
         // Convert ASCII char to macOS virtual keycode (legacy engine uses keycodes)
         let ascii = key_char as u8;
         let keycode = match crate::data::keys::from_ascii(ascii) {
             Some(kc) => kc,
             None => return FfiStatusCode::ErrorInvalidKey,
         };
-        
+
         let key_event = KeyEvent::new(keycode, false, false, false, false);
-        
+
         // Process through processor service (following v1 pattern)
         let processor = container.processor_service();
         let mut locked = processor.lock().unwrap();
-        
+
         // Process key
         let transform_result = match locked.process_key(key_event) {
             Ok(result) => result,
@@ -195,20 +193,20 @@ pub extern "C" fn ime_process_key_v2(
                 return FfiStatusCode::ErrorProcessingFailed;
             }
         };
-        
+
         // Convert to FFI result (v2)
         let ffi_result = to_ffi_process_result_v2(transform_result);
-        
+
         // Write to out parameter
         unsafe {
             (*out).text = ffi_result.text;
             (*out).backspace_count = ffi_result.backspace_count;
             (*out).consumed = ffi_result.consumed;
         }
-        
+
         FfiStatusCode::Success
     }));
-    
+
     match result {
         Ok(status) => status.to_c_int(),
         Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
@@ -243,46 +241,46 @@ pub extern "C" fn ime_process_key_ext_v2(
     out: *mut FfiProcessResult_v2,
 ) -> c_int {
     use std::panic::{catch_unwind, AssertUnwindSafe};
-    
+
     if engine_ptr.is_null() {
         return FfiStatusCode::ErrorNullEngine.to_c_int();
     }
     if out.is_null() {
         return FfiStatusCode::ErrorNullOutput.to_c_int();
     }
-    
+
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
-        
+
         let ascii = key_char as u8;
         let keycode = match crate::data::keys::from_ascii(ascii) {
             Some(kc) => kc,
             None => return FfiStatusCode::ErrorInvalidKey,
         };
-        
+
         let key_event = KeyEvent::with_caps(keycode, caps, shift, ctrl, false, false);
-        
+
         let processor = container.processor_service();
         let mut locked = processor.lock().unwrap();
-        
+
         let transform_result = match locked.process_key(key_event) {
             Ok(result) => result,
             Err(_) => {
                 return FfiStatusCode::ErrorProcessingFailed;
             }
         };
-        
+
         let ffi_result = to_ffi_process_result_v2(transform_result);
-        
+
         unsafe {
             (*out).text = ffi_result.text;
             (*out).backspace_count = ffi_result.backspace_count;
             (*out).consumed = ffi_result.consumed;
         }
-        
+
         FfiStatusCode::Success
     }));
-    
+
     match result {
         Ok(status) => status.to_c_int(),
         Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
@@ -297,10 +295,7 @@ pub extern "C" fn ime_process_key_ext_v2(
 /// * 0 on success
 /// * <0 on error
 #[no_mangle]
-pub extern "C" fn ime_get_config_v2(
-    engine_ptr: *mut c_void,
-    out: *mut FfiConfig_v2,
-) -> c_int {
+pub extern "C" fn ime_get_config_v2(engine_ptr: *mut c_void, out: *mut FfiConfig_v2) -> c_int {
     // Null checks
     if engine_ptr.is_null() {
         return FfiStatusCode::ErrorNullEngine.to_c_int();
@@ -308,21 +303,21 @@ pub extern "C" fn ime_get_config_v2(
     if out.is_null() {
         return FfiStatusCode::ErrorNullOutput.to_c_int();
     }
-    
+
     let result = std::panic::catch_unwind(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
-        
+
         // Get EngineConfig and convert directly to FfiConfig_v2
         let engine_config = container.get_config();
         let ffi_config_v2 = from_engine_config_v2(&engine_config);
-        
+
         unsafe {
             *out = ffi_config_v2;
         }
-        
+
         FfiStatusCode::Success
     });
-    
+
     match result {
         Ok(status) => status.to_c_int(),
         Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
@@ -339,10 +334,7 @@ pub extern "C" fn ime_get_config_v2(
 /// * 0 on success
 /// * <0 on error
 #[no_mangle]
-pub extern "C" fn ime_set_config_v2(
-    engine_ptr: *mut c_void,
-    config: *const FfiConfig_v2,
-) -> c_int {
+pub extern "C" fn ime_set_config_v2(engine_ptr: *mut c_void, config: *const FfiConfig_v2) -> c_int {
     // Null checks
     if engine_ptr.is_null() {
         return FfiStatusCode::ErrorNullEngine.to_c_int();
@@ -350,18 +342,18 @@ pub extern "C" fn ime_set_config_v2(
     if config.is_null() {
         return FfiStatusCode::ErrorNullConfig.to_c_int();
     }
-    
+
     let result = std::panic::catch_unwind(|| {
         let container = unsafe { &mut *(engine_ptr as *mut Container) };
         let ffi_config = unsafe { &*config };
-        
+
         // Convert v2 config directly to EngineConfig
         let engine_config = to_engine_config_v2(ffi_config);
         container.update_config(engine_config);
-        
+
         FfiStatusCode::Success
     });
-    
+
     match result {
         Ok(status) => status.to_c_int(),
         Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
@@ -381,14 +373,14 @@ pub extern "C" fn ime_get_version_v2(out: *mut FfiVersionInfo) -> c_int {
     if out.is_null() {
         return FfiStatusCode::ErrorNullOutput.to_c_int();
     }
-    
+
     unsafe {
         (*out).major = 2;
         (*out).minor = 0;
         (*out).patch = 0;
         (*out).api_version = 2;
     }
-    
+
     FfiStatusCode::Success.to_c_int()
 }
 
@@ -437,12 +429,12 @@ pub extern "C" fn ime_add_shortcut_v2(
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine as *const Container) };
-        
+
         let trigger_str = match unsafe { std::ffi::CStr::from_ptr(trigger).to_str() } {
             Ok(s) => s,
             Err(_) => return FfiStatusCode::ErrorInvalidArgument,
         };
-        
+
         let expansion_str = match unsafe { std::ffi::CStr::from_ptr(expansion).to_str() } {
             Ok(s) => s,
             Err(_) => return FfiStatusCode::ErrorInvalidArgument,

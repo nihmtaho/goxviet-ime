@@ -11,7 +11,7 @@ import Cocoa
 
 /// Centralized manager for app-wide resources
 final class ResourceManager {
-    nonisolated(unsafe) static let shared = ResourceManager()
+    static let shared = ResourceManager()
     
     // MARK: - Properties
     
@@ -137,7 +137,9 @@ final class ResourceManager {
         ) { [weak self] _ in
             let thermalState = ProcessInfo.processInfo.thermalState
             if thermalState == .serious || thermalState == .critical {
-                self?.handleMemoryPressure()
+                Task { @MainActor [weak self] in
+                    self?.handleMemoryPressure()
+                }
             }
         }
         

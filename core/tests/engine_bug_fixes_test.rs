@@ -1,5 +1,5 @@
 //! Test for 4 critical engine bug fixes
-//! 
+//!
 //! Issues from DICTIONARY_TEST_FAILURE_ANALYSIS_V2.md:
 //! 1. Smart 'w' Double-Apply Bug: khuow → khươ (should be khuơ)
 //! 2. Compound Vowel Over-Aggressive: khoeo → khôe (should stay khoeo)
@@ -24,7 +24,7 @@ fn test_issue_1_smart_w_double_apply_vni() {
     // Issue: khuo7 should produce khuơ, not khươ
     // In VNI: 7 = horn/móc modifier
     let mut engine = Engine::new();
-    engine.set_method(1);  // 1 = VNI method
+    engine.set_method(1); // 1 = VNI method
     let result = type_word(&mut engine, "khuo7");
     println!("Issue #1 (VNI): khuo7 → {}", result);
     assert_eq!(result, "khuơ", "VNI '7' should create ơ, not ư+ơ");
@@ -35,7 +35,7 @@ fn test_issue_2_compound_vowel_oeo_telex() {
     // Issue: khoeo should stay khoeo, not become khôe
     // Pattern: o + e + o (engine incorrectly pairs oe as compound vowel)
     let mut engine = Engine::new();
-    
+
     // Type step by step to debug
     println!("\nStep 1: k");
     engine.on_key(40, false, false); // k
@@ -47,15 +47,20 @@ fn test_issue_2_compound_vowel_oeo_telex() {
     engine.on_key(14, false, false); // e
     println!("Step 5: o (critical)");
     let result = engine.on_key(31, false, false); // o
-    
-    println!("Result: action={}, count={}, backspace={}", 
-        result.action, result.count, result.backspace);
-    
+
+    println!(
+        "Result: action={}, count={}, backspace={}",
+        result.action, result.count, result.backspace
+    );
+
     // Get full display text from engine buffer
     let display_text = engine.get_buffer();
     println!("Issue #2 (Telex): khoeo → '{}'", display_text);
-    
-    assert_eq!(display_text, "khoeo", "Pattern 'oeo' should not be transformed");
+
+    assert_eq!(
+        display_text, "khoeo",
+        "Pattern 'oeo' should not be transformed"
+    );
 }
 
 #[test]
@@ -65,7 +70,10 @@ fn test_issue_3_foreign_word_tareh() {
     let mut engine = Engine::new();
     let result = type_word(&mut engine, "tareh");
     println!("Issue #3 (Telex): tareh → {}", result);
-    assert_eq!(result, "tareh", "Foreign word should not trigger unwanted auto-restore");
+    assert_eq!(
+        result, "tareh",
+        "Foreign word should not trigger unwanted auto-restore"
+    );
 }
 
 #[test]
@@ -74,10 +82,13 @@ fn test_issue_4_vni_compound_mark_thuow() {
     // Pattern: u + o + 7(horn) + 3(hỏi) creates unwanted ư
     // In VNI: 7 = móc (horn), 3 = hỏi (interrogative)
     let mut engine = Engine::new();
-    engine.set_method(1);  // 1 = VNI method
+    engine.set_method(1); // 1 = VNI method
     let result = type_word(&mut engine, "thuo73");
     println!("Issue #4 (VNI): thuo73 → {}", result);
-    assert_eq!(result, "thuở", "VNI compound mark should not create unintended vowel");
+    assert_eq!(
+        result, "thuở",
+        "VNI compound mark should not create unintended vowel"
+    );
 }
 
 // Additional tests for variations
@@ -88,7 +99,10 @@ fn test_issue_2_compound_vowel_khoeo_with_tone_telex() {
     let mut engine = Engine::new();
     let result = type_word(&mut engine, "khoeof");
     println!("Issue #2 variant: khoeof → {}", result);
-    assert_eq!(result, "khoèo", "Pattern 'oeo' with tone should not be transformed");
+    assert_eq!(
+        result, "khoèo",
+        "Pattern 'oeo' with tone should not be transformed"
+    );
 }
 
 #[test]
@@ -106,7 +120,7 @@ fn test_normal_uo_compound_still_works_vni() {
     // Ensure fix doesn't break normal uo → ương transformation in VNI
     // muo + 7 + ng → mương (with default tone)
     let mut engine = Engine::new();
-    engine.set_method(1);  // 1 = VNI method
+    engine.set_method(1); // 1 = VNI method
     let result = type_word(&mut engine, "muo7ng");
     println!("Normal uo compound (VNI): muo7ng → {}", result);
     assert_eq!(result, "mương", "Normal u+o+7 → ương should still work");
@@ -123,7 +137,7 @@ fn test_issue_5_uyu_triphthong_telex() {
     // Pattern: khuyur → Expected: khuỷu (u+y+u with hỏi tone on y)
     // Telex: r = hỏi tone
     let mut engine = Engine::new();
-    engine.set_method(0);  // 0 = Telex
+    engine.set_method(0); // 0 = Telex
     let result = type_word(&mut engine, "khuyur");
     println!("Issue #5 Telex: khuyur → {}", result);
     assert_eq!(result, "khuỷu", "uyu triphthong with hỏi tone should work");
@@ -134,7 +148,7 @@ fn test_issue_5_uyu_triphthong_vni() {
     // Pattern: khuyu3 → Expected: khuỷu (u+y+u with hỏi tone on y)
     // VNI: 3 = hỏi tone
     let mut engine = Engine::new();
-    engine.set_method(1);  // 1 = VNI
+    engine.set_method(1); // 1 = VNI
     let result = type_word(&mut engine, "khuyu3");
     println!("Issue #5 VNI: khuyu3 → {}", result);
     assert_eq!(result, "khuỷu", "uyu triphthong with hỏi tone should work");

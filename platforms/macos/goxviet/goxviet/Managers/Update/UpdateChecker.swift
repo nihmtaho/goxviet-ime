@@ -27,7 +27,7 @@ enum UpdateCheckResult {
 // MARK: - Update Checker
 
 class UpdateChecker: @unchecked Sendable {
-    nonisolated(unsafe) static let shared = UpdateChecker()
+    static let shared = UpdateChecker()
 
     private let githubAPIURL = "https://api.github.com/repos/nihmtaho/goxviet-ime/releases/latest"
 
