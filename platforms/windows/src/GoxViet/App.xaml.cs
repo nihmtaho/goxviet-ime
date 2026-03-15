@@ -7,6 +7,7 @@ using GoxViet.FFI;
 using GoxViet.Input;
 using GoxViet.Settings;
 using GoxViet.UI;
+using Application = System.Windows.Application;
 
 namespace GoxViet;
 

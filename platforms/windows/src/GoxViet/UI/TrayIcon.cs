@@ -3,9 +3,9 @@
 
 using System.Drawing;
 using System.Reflection;
-using System.Windows;
 using System.Windows.Forms;
 using GoxViet.Settings;
+using WpfApplication = System.Windows.Application;
 
 namespace GoxViet.UI;
 
@@ -55,7 +55,7 @@ public sealed class TrayIcon : IDisposable
 
     private static void Shutdown()
     {
-        System.Windows.Application.Current.Shutdown();
+        WpfApplication.Current.Shutdown();
     }
 
     private static Icon LoadIcon(bool enabled)
