@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>Resources\tray_on.ico</ApplicationIcon>
+    <AssemblyName>GoxViet</AssemblyName>
+    <RootNamespace>GoxViet</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64;arm64</Platforms>
+    <!-- RuntimeIdentifiers (plural): restore pre-fetches assets for both RIDs in one pass -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- RuntimeIdentifier (singular): active RID selected at build time via -p:Platform -->
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'arm64'">win-arm64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\tray_on.ico" />
+    <Resource Include="Resources\tray_off.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CI: DLL downloaded to project root by actions/download-artifact -->
+    <None Include="goxviet_core.dll"
+          Condition="Exists('goxviet_core.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Local dev x64: copy from Rust build output -->
+    <None Include="..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll"
+          Condition="'$(Platform)' == 'x64' And Exists('..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Local dev arm64: copy from Rust build output -->
+    <None Include="..\..\..\..\core\target\aarch64-pc-windows-msvc\release\goxviet_core.dll"
+          Condition="'$(Platform)' == 'arm64' And Exists('..\..\..\..\core\target\aarch64-pc-windows-msvc\release\goxviet_core.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>
