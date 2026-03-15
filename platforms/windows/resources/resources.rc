@@ -1,0 +1,42 @@
+#include <windows.h>
+#include <winver.h>
+#include "../src/resource.h"
+
+// Icons — reuse the existing tray icons from the project
+IDI_APP_ICON  ICON "../src/GoxViet/Resources/tray_on.ico"
+IDI_TRAY_ON   ICON "../src/GoxViet/Resources/tray_on.ico"
+IDI_TRAY_OFF  ICON "../src/GoxViet/Resources/tray_off.ico"
+
+// DPI-aware manifest (auto-generated manifest disabled via /MANIFEST:NO)
+1 RT_MANIFEST "manifest.xml"
+
+// Version info
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEFLAGSMASK  0x3fL
+FILEFLAGS      0x0L
+FILEOS         VOS__WINDOWS32
+FILETYPE       VFT_APP
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription",  "Gõ Việt — Vietnamese Input Method"
+            VALUE "ProductName",      "Gõ Việt"
+            VALUE "FileVersion",      "1.0.0"
+            VALUE "ProductVersion",   "1.0.0"
+            VALUE "LegalCopyright",   "MIT License"
+            VALUE "CompanyName",      "GoxViet"
+            VALUE "Author",           "nihmtaho"
+            VALUE "OriginalFilename", "goxviet.exe"
+            VALUE "InternalName",     "goxviet"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04B0
+    END
+END

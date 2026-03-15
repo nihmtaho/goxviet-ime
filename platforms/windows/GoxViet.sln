@@ -1,0 +1,21 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+# Project now uses CMake. Open the folder in Visual Studio 2022 (it auto-detects
+# CMakeLists.txt) or build from the command line:
+#   cmake -B build-x64   -G "Visual Studio 17 2022" -A x64   platforms/windows
+#   cmake -B build-x86   -G "Visual Studio 17 2022" -A Win32 platforms/windows
+#   cmake -B build-arm64 -G "Visual Studio 17 2022" -A ARM64 platforms/windows
+#   cmake --build build-x64 --config Release
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM64 = Debug|ARM64
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		Release|ARM64 = Release|ARM64
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+	EndGlobalSection
+EndGlobal
