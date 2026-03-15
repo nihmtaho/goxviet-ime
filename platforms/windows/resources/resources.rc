@@ -29,6 +29,8 @@ BEGIN
             VALUE "FileVersion",      "1.0.0"
             VALUE "ProductVersion",   "1.0.0"
             VALUE "LegalCopyright",   "MIT License"
+            VALUE "CompanyName",      "GoxViet"
+            VALUE "Author",           "nihmtaho"
             VALUE "OriginalFilename", "goxviet.exe"
             VALUE "InternalName",     "goxviet"
         END
