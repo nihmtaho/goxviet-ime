@@ -59,7 +59,15 @@ jobs:
       - name: Verify DLL exports
         run: |
           $dll = "core/target/x86_64-pc-windows-msvc/release/goxviet_core.dll"
-          $exports = & dumpbin /exports $dll 2>&1
+
+          # Locate dumpbin via vswhere (not in PATH by default on GitHub Actions)
+          $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath  = & $vswhere -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" `
+                       -ErrorAction Stop | Select-Object -First 1 -ExpandProperty FullName
+          Write-Host "Using dumpbin: $dumpbin"
+
+          $exports = & $dumpbin /exports $dll 2>&1
           $required = @(
             "ime_create_engine_v2",
             "ime_process_key_v2",
