@@ -1,36 +1,27 @@
 ---
 name: "✨ Feature Request"
-about: Propose a new feature or major improvement for GoxViet IME
+about: Propose a new feature or improvement for GoxViet IME
 title: "feat(scope): <short description>"
 labels: [enhancement]
 assignees: []
 ---
 
-## 🎯 Summary
+## Summary
 
-<!-- Mô tả ngắn gọn về tính năng bạn muốn đề xuất. -->
+<!-- Mô tả ngắn gọn tính năng muốn đề xuất. -->
 
-## 💡 Motivation
+## Motivation
 
-<!-- Giải thích lý do tại sao tính năng này cần thiết và giá trị mang lại. -->
+<!-- Tại sao tính năng này cần thiết? Giá trị mang lại là gì? -->
 
-## 🛠 Detailed Proposal
+## Proposal
 
-<!-- 
-Mô tả chi tiết về tính năng:
-- Cách hoạt động mong muốn
-- Giao diện (nếu có)
-- Tác động tới các module hiện tại
--->
+<!-- Mô tả chi tiết: cách hoạt động, giao diện (nếu có), tác động tới các module. -->
 
-## 🔄 Alternatives
+## Alternatives
 
-<!-- Liệt kê các giải pháp thay thế đã cân nhắc (nếu có). -->
+<!-- Các giải pháp thay thế đã cân nhắc (nếu có). -->
 
-## 📁 Additional Context
+## Additional Context
 
-<!-- Bổ sung thông tin, link tham khảo, mockup, v.v. -->
-
----
-> [!TIP]
-> Đề xuất label: `enhancement`, `core`, `telex`, `vni`, `platform-macos`.
+<!-- Link tham khảo, mockup, v.v. -->
