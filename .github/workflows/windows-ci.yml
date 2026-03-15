@@ -120,10 +120,8 @@ jobs:
         include:
           - arch: x64
             dotnet_platform: x64
-            dotnet_rid: win-x64
           - arch: arm64
             dotnet_platform: arm64
-            dotnet_rid: win-arm64
 
     steps:
       - uses: actions/checkout@v5
@@ -148,8 +146,7 @@ jobs:
         run: |
           cd platforms/windows
           dotnet build GoxViet.sln -c Release --no-restore `
-            -p:Platform=${{ matrix.dotnet_platform }} `
-            -r ${{ matrix.dotnet_rid }}
+            -p:Platform=${{ matrix.dotnet_platform }}
 
       - name: Upload Windows app artifact (${{ matrix.arch }})
         uses: actions/upload-artifact@v5

@@ -11,7 +11,8 @@
     <RootNamespace>GoxViet</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64;arm64</Platforms>
-    <!-- RuntimeIdentifier is passed via CLI: -r win-x64 or -r win-arm64 -->
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'arm64'">win-arm64</RuntimeIdentifier>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
