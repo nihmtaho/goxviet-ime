@@ -76,7 +76,7 @@ jobs:
           )
           $missing = @()
           foreach ($sym in $required) {
-            if ($exports -notmatch $sym) { $missing += $sym }
+            if (-not ($exports -match $sym)) { $missing += $sym }
           }
           if ($missing.Count -gt 0) {
             Write-Error "Missing DLL exports: $($missing -join ', ')"
