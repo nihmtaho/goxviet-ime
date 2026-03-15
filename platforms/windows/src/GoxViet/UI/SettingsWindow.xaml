@@ -1,0 +1,62 @@
+<Window x:Class="GoxViet.UI.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GoxViet — Cài đặt"
+        Width="380" Height="340"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False">
+    <StackPanel Margin="24">
+        <TextBlock Text="Gõ Việt" FontSize="20" FontWeight="Bold" Margin="0,0,0,4"/>
+        <TextBlock x:Name="TxtVersion" FontSize="11" Foreground="Gray" Margin="0,0,0,20"/>
+
+        <CheckBox x:Name="ChkEnabled"
+                  Content="Bật bộ gõ tiếng Việt"
+                  FontSize="13"
+                  Margin="0,0,0,16"/>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Kiểu gõ:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+            <ComboBox x:Name="CboInputMethod" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                <ComboBoxItem Content="Telex"/>
+                <ComboBoxItem Content="VNI"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Vị trí dấu:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+            <ComboBox x:Name="CboToneStyle" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8">
+                <ComboBoxItem Content="Mới (hoà, thuỷ)"/>
+                <ComboBoxItem Content="Cũ (hòa, thủy)"/>
+            </ComboBox>
+        </Grid>
+
+        <CheckBox x:Name="ChkSmartMode"
+                  Content="Chế độ thông minh (tự nhận biết ngữ cảnh)"
+                  Margin="0,4"/>
+        <CheckBox x:Name="ChkInstantRestore"
+                  Content="Tự khôi phục từ tiếng Anh"
+                  Margin="0,4"/>
+
+        <TextBlock Text="Phím tắt: Ctrl+Space để bật/tắt nhanh"
+                   FontSize="11" Foreground="Gray" Margin="0,12,0,0"/>
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,20,0,0">
+            <Button Content="Lưu"    Width="80" Margin="0,0,8,0" Click="Save_Click"
+                    IsDefault="True"/>
+            <Button Content="Hủy"    Width="80" Click="Cancel_Click"
+                    IsCancel="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

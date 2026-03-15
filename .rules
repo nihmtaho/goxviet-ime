@@ -1,4 +1,4 @@
-# GoxViet – Copilot Instructions
+# GoxViet – Rules & Conventions
 
 **Project:** **Gõ Việt (GoxViet)** – A high-performance, cross-platform Vietnamese Input Method Engine (IME).  
 **Goals:** Latency < 3ms core / < 16ms end-to-end, zero FFI panics, native macOS/Windows UX.
@@ -47,7 +47,23 @@ Open `platforms/macos/goxviet/goxviet.xcodeproj` in Xcode. The Rust library must
 ./scripts/release.sh <version>
 ```
 
+### Windows App — `platforms/windows/` — C# .NET 8 WPF + P/Invoke → Rust core DLL.
+
+Open `platforms/windows/GoxViet.sln` in Visual Studio (after Rust DLL is built).
+
+```powershell
+# Build Rust core DLL for Windows
+.\scripts\rust_build_dll_for_windows.ps1
+```
+
+> **Known CI fixes:** `.docs/guides/windows-ci-lessons.md`
+> Covers: dumpbin PATH, PowerShell `-notmatch` array bug, ambiguous `Application` (WPF+WinForms), eval test skip, serial_test threads, cdylib crate-type.
+
 ---
+
+## Best Practices
+- **Always** write a test for any new feature or bug fix in the Rust core.
+- **Always** mark todos or issues when you are done. 
 
 ## Architecture
 
@@ -188,7 +204,10 @@ Scopes: `core`, `macos`, `windows`, `ffi`
 |---|---|
 | `.docs/features/core-engine/` | Engine architecture, data formats |
 | `.docs/features/platform/macos/` | macOS platform specifics |
+| `.docs/features/platform/windows/architecture.md` | Windows platform architecture |
+| `.docs/guides/windows-ci-lessons.md` | Windows CI known issues & fixes |
 | `platforms/macos/AGENT.override.md` | macOS-specific overrides |
+| `platforms/windows/AGENT.override.md` | Windows-specific overrides |
 | `CHANGELOG.md` | Version history |
 | `STRUCTURE.md` | Detailed monorepo structure |
 
