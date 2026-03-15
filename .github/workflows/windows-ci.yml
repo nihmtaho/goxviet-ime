@@ -26,7 +26,7 @@ env:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────
-  # Job 1: Build Rust core DLL — matrix: x64 + arm64
+  # Job 1: Build Rust core DLL — matrix: x86 + x64 + arm64
   # ─────────────────────────────────────────────────────────────────────
   build-rust-dll:
     name: Build Rust DLL (${{ matrix.arch }})
@@ -37,6 +37,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - arch: x86
+            rust_target: i686-pc-windows-msvc
           - arch: x64
             rust_target: x86_64-pc-windows-msvc
           - arch: arm64
@@ -74,7 +76,6 @@ jobs:
         run: |
           $dll = "core/target/${{ matrix.rust_target }}/release/goxviet_core.dll"
 
-          # Locate dumpbin via vswhere (not in PATH by default on GitHub Actions)
           $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath  = & $vswhere -latest -property installationPath
           $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" `
@@ -106,10 +107,10 @@ jobs:
           retention-days: 7
 
   # ─────────────────────────────────────────────────────────────────────
-  # Job 2: Build C# Windows app — matrix: x64 + arm64
+  # Job 2: Build C++ Windows app — matrix: x86 + x64 + arm64
   # ─────────────────────────────────────────────────────────────────────
-  build-dotnet:
-    name: Build C# App (${{ matrix.arch }})
+  build-cpp:
+    name: Build C++ App (${{ matrix.arch }})
     runs-on: windows-latest
     needs: build-rust-dll
     timeout-minutes: 20
@@ -118,52 +119,60 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - arch: x86
+            cmake_arch: Win32
           - arch: x64
-            dotnet_platform: x64
+            cmake_arch: x64
           - arch: arm64
-            dotnet_platform: arm64
+            cmake_arch: ARM64
 
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up .NET 8
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Download Rust DLL artifact (${{ matrix.arch }})
+      - name: Download Rust DLL (${{ matrix.arch }})
         uses: actions/download-artifact@v5
         with:
           name: goxviet-core-dll-${{ matrix.arch }}
-          path: platforms/windows/src/GoxViet
+          path: platforms/windows/build-${{ matrix.arch }}/Release
 
-      - name: Restore NuGet packages
+      - name: Configure CMake (${{ matrix.arch }})
         run: |
-          cd platforms/windows
-          dotnet restore GoxViet.sln
+          cmake -B platforms/windows/build-${{ matrix.arch }} `
+                -G "Visual Studio 17 2022" `
+                -A ${{ matrix.cmake_arch }} `
+                platforms/windows
 
       - name: Build (Release ${{ matrix.arch }})
         run: |
-          cd platforms/windows
-          dotnet build GoxViet.sln -c Release --no-restore `
-            -p:Platform=${{ matrix.dotnet_platform }}
+          cmake --build platforms/windows/build-${{ matrix.arch }} `
+                --config Release `
+                --parallel
+
+      - name: Verify executable exists
+        run: |
+          $exe = "platforms/windows/build-${{ matrix.arch }}/Release/goxviet.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Build output not found: $exe"
+            exit 1
+          }
+          Write-Host "Build succeeded: $exe"
 
       - name: Upload Windows app artifact (${{ matrix.arch }})
         uses: actions/upload-artifact@v5
         with:
           name: goxviet-windows-app-${{ matrix.arch }}
-          path: platforms/windows/src/GoxViet/bin/${{ matrix.dotnet_platform }}/Release/net8.0-windows/
+          path: platforms/windows/build-${{ matrix.arch }}/Release/
           retention-days: 7
 
   # ─────────────────────────────────────────────────────────────────────
   # Job 3: Pre-release
-  # Chỉ chạy khi PR feature/* → develop có labels "windows" và "pre-release"
-  # Đóng gói cả x64 và arm64, tạo tag và GitHub pre-release
+  # Runs on PR feature/* → develop with labels "windows" and "pre-release"
+  # Packages x86 + x64 + arm64
   # ─────────────────────────────────────────────────────────────────────
   pre-release-windows:
     name: Pre-release Windows Build
     runs-on: windows-latest
-    needs: build-dotnet
+    needs: build-cpp
     if: |
       github.event_name == 'pull_request' &&
       github.event.pull_request.base.ref == 'develop' &&
@@ -174,6 +183,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Download app artifact (x86)
+        uses: actions/download-artifact@v5
+        with:
+          name: goxviet-windows-app-x86
+          path: dist/windows-x86
 
       - name: Download app artifact (x64)
         uses: actions/download-artifact@v5
@@ -199,21 +214,18 @@ jobs:
 
       - name: Create pre-release ZIPs
         run: |
-          $version = "${{ steps.version.outputs.version }}"
-          Compress-Archive -Path dist/windows-x64/* `
-            -DestinationPath "dist/GoxViet-$version-windows-x64.zip"
-          Compress-Archive -Path dist/windows-arm64/* `
-            -DestinationPath "dist/GoxViet-$version-windows-arm64.zip"
+          $v = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path dist/windows-x86/*   -DestinationPath "dist/GoxViet-$v-windows-x86.zip"
+          Compress-Archive -Path dist/windows-x64/*   -DestinationPath "dist/GoxViet-$v-windows-x64.zip"
+          Compress-Archive -Path dist/windows-arm64/* -DestinationPath "dist/GoxViet-$v-windows-arm64.zip"
 
       - name: Create pre-release tag
         shell: bash
         run: |
           TAG="pre-${{ steps.version.outputs.version }}"
-          echo "Creating tag: $TAG at ${{ github.sha }}"
           gh api repos/${{ github.repository }}/git/refs \
             -f ref="refs/tags/${TAG}" \
             -f sha="${{ github.sha }}"
-          echo "Tag created successfully."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -221,7 +233,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: pre-${{ steps.version.outputs.version }}
-          name: "[Pre-release] GoxViet Windows – PR #${{ github.event.pull_request.number }}"
+          name: "[Pre-release] Gõ Việt Windows — PR #${{ github.event.pull_request.number }}"
           body: |
             **Pre-release build** từ PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}
 
@@ -230,30 +242,38 @@ jobs:
 
             | Artifact | Architecture |
             |---|---|
-            | `GoxViet-*-windows-x64.zip` | Windows x64 (Intel/AMD) |
+            | `GoxViet-*-windows-x86.zip`   | Windows x86 (32-bit) |
+            | `GoxViet-*-windows-x64.zip`   | Windows x64 (Intel/AMD 64-bit) |
             | `GoxViet-*-windows-arm64.zip` | Windows ARM64 (Snapdragon/Surface) |
 
             > Build tự động để test. Không dùng cho production.
           prerelease: true
           files: |
+            dist/GoxViet-${{ steps.version.outputs.version }}-windows-x86.zip
             dist/GoxViet-${{ steps.version.outputs.version }}-windows-x64.zip
             dist/GoxViet-${{ steps.version.outputs.version }}-windows-arm64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ─────────────────────────────────────────────────────────────────────
-  # Job 4: Official release — chỉ chạy khi push tag v*.*.* (giống macOS)
-  # Đóng gói cả x64 và arm64
+  # Job 4: Official release — runs on push of tag v*.*.*
+  # Packages x86 + x64 + arm64
   # ─────────────────────────────────────────────────────────────────────
   release-windows:
     name: Package Windows Release
     runs-on: windows-latest
-    needs: build-dotnet
+    needs: build-cpp
     if: startsWith(github.ref, 'refs/tags/v')
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Download app artifact (x86)
+        uses: actions/download-artifact@v5
+        with:
+          name: goxviet-windows-app-x86
+          path: dist/windows-x86
 
       - name: Download app artifact (x64)
         uses: actions/download-artifact@v5
@@ -277,16 +297,16 @@ jobs:
 
       - name: Create release ZIPs
         run: |
-          $version = "${{ steps.version.outputs.version }}"
-          Compress-Archive -Path dist/windows-x64/* `
-            -DestinationPath "dist/GoxViet-$version-windows-x64.zip"
-          Compress-Archive -Path dist/windows-arm64/* `
-            -DestinationPath "dist/GoxViet-$version-windows-arm64.zip"
+          $v = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path dist/windows-x86/*   -DestinationPath "dist/GoxViet-$v-windows-x86.zip"
+          Compress-Archive -Path dist/windows-x64/*   -DestinationPath "dist/GoxViet-$v-windows-x64.zip"
+          Compress-Archive -Path dist/windows-arm64/* -DestinationPath "dist/GoxViet-$v-windows-arm64.zip"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            dist/GoxViet-${{ steps.version.outputs.version }}-windows-x86.zip
             dist/GoxViet-${{ steps.version.outputs.version }}-windows-x64.zip
             dist/GoxViet-${{ steps.version.outputs.version }}-windows-arm64.zip
         env:

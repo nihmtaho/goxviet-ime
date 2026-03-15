@@ -3,26 +3,19 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GoxViet", "src\GoxViet\GoxViet.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
-EndProject
+# Project now uses CMake. Open the folder in Visual Studio 2022 (it auto-detects
+# CMakeLists.txt) or build from the command line:
+#   cmake -B build-x64   -G "Visual Studio 17 2022" -A x64   platforms/windows
+#   cmake -B build-x86   -G "Visual Studio 17 2022" -A Win32 platforms/windows
+#   cmake -B build-arm64 -G "Visual Studio 17 2022" -A ARM64 platforms/windows
+#   cmake --build build-x64 --config Release
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|arm64 = Debug|arm64
+		Debug|ARM64 = Debug|ARM64
+		Debug|Win32 = Debug|Win32
 		Debug|x64 = Debug|x64
-		Release|arm64 = Release|arm64
+		Release|ARM64 = Release|ARM64
+		Release|Win32 = Release|Win32
 		Release|x64 = Release|x64
-	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|arm64.ActiveCfg = Debug|arm64
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|arm64.Build.0 = Debug|arm64
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|x64.ActiveCfg = Debug|x64
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|x64.Build.0 = Debug|x64
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|arm64.ActiveCfg = Release|arm64
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|arm64.Build.0 = Release|arm64
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x64.ActiveCfg = Release|x64
-		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|x64.Build.0 = Release|x64
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal

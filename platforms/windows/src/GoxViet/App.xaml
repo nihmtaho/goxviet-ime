@@ -1,6 +1,0 @@
-<Application x:Class="GoxViet.App"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- No StartupUri — this is a tray-only app with no main window -->
-    <Application.Resources/>
-</Application>
