@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>Resources\tray_on.ico</ApplicationIcon>
+    <AssemblyName>GoxViet</AssemblyName>
+    <RootNamespace>GoxViet</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\tray_on.ico" />
+    <Resource Include="Resources\tray_off.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copy goxviet_core.dll to output directory automatically -->
+    <None Include="..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll"
+          Condition="Exists('..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>
