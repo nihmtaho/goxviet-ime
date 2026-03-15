@@ -3,18 +3,22 @@ name: Windows CI
 on:
   push:
     branches: [develop, main]
+    tags:
+      - 'v*.*.*'
     paths:
       - 'core/**'
       - 'platforms/windows/**'
       - '.github/workflows/windows-ci.yml'
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'core/**'
       - 'platforms/windows/**'
       - '.github/workflows/windows-ci.yml'
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: read
 
 env:
   RUST_BACKTRACE: 1
@@ -30,7 +34,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Rust (MSVC stable)
         uses: dtolnay/rust-toolchain@stable
@@ -85,7 +89,7 @@ jobs:
           Write-Host "All required exports present."
 
       - name: Upload DLL artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: goxviet-core-dll
           path: core/target/x86_64-pc-windows-msvc/release/goxviet_core.dll
@@ -101,7 +105,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v4
@@ -109,7 +113,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Download Rust DLL artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: goxviet-core-dll
           path: platforms/windows/src/GoxViet
@@ -125,15 +129,73 @@ jobs:
           dotnet build GoxViet.sln -c Release --no-restore -p:Platform=x64
 
       - name: Upload Windows app artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: goxviet-windows-app
           path: platforms/windows/src/GoxViet/bin/x64/Release/net8.0-windows/
           retention-days: 7
 
-  # ──────────────────────────────────────────────
-  # Job 3: Package for release (on version tags only)
-  # ──────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────────────
+  # Job 3: Pre-release
+  # Chỉ chạy khi PR từ feature/* → develop có labels "windows" và "pre-release"
+  # ──────────────────────────────────────────────────────────────────────
+  pre-release-windows:
+    name: Pre-release Windows Build
+    runs-on: windows-latest
+    needs: build-dotnet
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'develop' &&
+      startsWith(github.event.pull_request.head.ref, 'feature/') &&
+      contains(github.event.pull_request.labels.*.name, 'windows') &&
+      contains(github.event.pull_request.labels.*.name, 'pre-release')
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download app artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: goxviet-windows-app
+          path: dist/windows
+
+      - name: Generate pre-release version
+        id: version
+        shell: bash
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          VERSION="0.0.0-pre.pr${PR_NUMBER}.${SHORT_SHA}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Pre-release version: $VERSION"
+
+      - name: Create pre-release ZIP
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          Compress-Archive -Path dist/windows/* `
+            -DestinationPath "dist/GoxViet-$version-windows-x64.zip"
+
+      - name: Publish GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pre-${{ steps.version.outputs.version }}
+          name: "[Pre-release] GoxViet Windows – PR #${{ github.event.pull_request.number }}"
+          body: |
+            **Pre-release build** từ PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}
+
+            Branch: `${{ github.event.pull_request.head.ref }}` → `develop`
+            Commit: `${{ github.sha }}`
+
+            > Build tự động để test. Không dùng cho production.
+          prerelease: true
+          files: dist/GoxViet-${{ steps.version.outputs.version }}-windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Job 4: Official release — chỉ chạy khi push tag v*.*.* (giống macOS)
+  # ──────────────────────────────────────────────────────────────────────
   release-windows:
     name: Package Windows Release
     runs-on: windows-latest
@@ -142,10 +204,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download app artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: goxviet-windows-app
           path: dist/windows
@@ -155,8 +217,8 @@ jobs:
         shell: bash
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          echo "tag=$TAG"          >> $GITHUB_OUTPUT
-          echo "version=${TAG#v}"  >> $GITHUB_OUTPUT
+          echo "tag=$TAG"         >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Create release ZIP
         run: |
