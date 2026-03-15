@@ -2,6 +2,7 @@
 // Persists settings to %APPDATA%\GoxViet\settings.json.
 // Exposes Changed event so TrayIcon and KeyboardHook can react to updates.
 
+using System.IO;
 using System.Text.Json;
 using GoxViet.FFI;
 
