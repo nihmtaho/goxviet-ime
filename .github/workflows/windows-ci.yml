@@ -176,6 +176,18 @@ jobs:
           Compress-Archive -Path dist/windows/* `
             -DestinationPath "dist/GoxViet-$version-windows-x64.zip"
 
+      - name: Create pre-release tag
+        shell: bash
+        run: |
+          TAG="pre-${{ steps.version.outputs.version }}"
+          echo "Creating tag: $TAG at ${{ github.sha }}"
+          gh api repos/${{ github.repository }}/git/refs \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${{ github.sha }}"
+          echo "Tag created successfully."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish GitHub pre-release
         uses: softprops/action-gh-release@v2
         with:
