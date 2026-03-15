@@ -10,8 +10,8 @@
     <AssemblyName>GoxViet</AssemblyName>
     <RootNamespace>GoxViet</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Platforms>x64</Platforms>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64;arm64</Platforms>
+    <!-- RuntimeIdentifier is passed via CLI: -r win-x64 or -r win-arm64 -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
@@ -21,9 +21,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Copy goxviet_core.dll to output directory automatically -->
+    <!-- Copy goxviet_core.dll to output directory (local dev — x64) -->
     <None Include="..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll"
-          Condition="Exists('..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll')">
+          Condition="'$(Platform)' == 'x64' And Exists('..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Copy goxviet_core.dll to output directory (local dev — arm64) -->
+    <None Include="..\..\..\..\core\target\aarch64-pc-windows-msvc\release\goxviet_core.dll"
+          Condition="'$(Platform)' == 'arm64' And Exists('..\..\..\..\core\target\aarch64-pc-windows-msvc\release\goxviet_core.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
