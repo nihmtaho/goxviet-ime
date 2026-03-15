@@ -25,12 +25,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Copy goxviet_core.dll to output directory (local dev — x64) -->
+    <!-- CI: DLL downloaded to project root by actions/download-artifact -->
+    <None Include="goxviet_core.dll"
+          Condition="Exists('goxviet_core.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Local dev x64: copy from Rust build output -->
     <None Include="..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll"
           Condition="'$(Platform)' == 'x64' And Exists('..\..\..\..\core\target\x86_64-pc-windows-msvc\release\goxviet_core.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Copy goxviet_core.dll to output directory (local dev — arm64) -->
+    <!-- Local dev arm64: copy from Rust build output -->
     <None Include="..\..\..\..\core\target\aarch64-pc-windows-msvc\release\goxviet_core.dll"
           Condition="'$(Platform)' == 'arm64' And Exists('..\..\..\..\core\target\aarch64-pc-windows-msvc\release\goxviet_core.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
