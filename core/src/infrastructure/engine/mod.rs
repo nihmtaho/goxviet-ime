@@ -397,7 +397,33 @@ impl Engine {
     /// * `ctrl` - true if Cmd/Ctrl/Alt is pressed (bypasses IME)
     /// * `shift` - true if Shift key is pressed (for symbols like @, #, $)
     pub fn on_key_ext(&mut self, key: u16, caps: bool, ctrl: bool, shift: bool) -> Result {
-        if !self.enabled || ctrl {
+        if !self.enabled {
+            self.clear();
+            self.word_history.clear();
+            self.spaces_after_commit = 0;
+            return Result::none();
+        }
+
+        if ctrl {
+            // CTRL key: commit current buffer as-is, then output the CTRL+key char literally.
+            // This prevents tone/mark modifiers from being applied when CTRL is held.
+            //
+            // Example (Telex): "a" + CTRL+s → "as"  ('s' is NOT applied as sắc tone)
+            // Example (VNI):   "a" + CTRL+8 → "a8"  ('8' is NOT applied as ngã tone)
+            //
+            // When the buffer is non-empty and the key has a printable char, commit + insert.
+            // Otherwise (empty buffer or non-printable), pass through to OS as before.
+            if !self.buf.is_empty() {
+                if let Some(ctrl_char) = crate::utils::key_to_char(key, caps || shift) {
+                    let result = Result::send(0, &[ctrl_char]);
+                    self.word_history.push(&self.buf, &self.raw_input);
+                    self.clear();
+                    self.spaces_after_commit = 0;
+                    self.is_english_word = false;
+                    return result;
+                }
+            }
+            // Buffer empty or non-printable key: pass through to OS unchanged.
             self.clear();
             self.word_history.clear();
             self.spaces_after_commit = 0;
@@ -3979,6 +4005,49 @@ impl Engine {
                 self.sync_buffer_with_raw_input();
                 self.last_transform = None;
                 return Some(result);
+            }
+        }
+
+        // Fallback: detect mid-word tone absorption that produces invalid Vietnamese output.
+        //
+        // Pattern: a Telex tone modifier key is consumed in the MIDDLE of a word (not as the
+        // last raw key), producing a Vietnamese compound that is structurally valid but not
+        // in the TuDien dictionary. is_english_by_phonotactic() was blocked by Priority 1b
+        // (FSM says the structure is valid), but the rendered output is not a real word.
+        //
+        // Example: "core" → 'r' at position 2 absorbed as hỏi → "coẻ"
+        //   - buf_keys=[C,O,E], oe-compound is structurally valid → Priority 1b returns false
+        //   - "coẻ" is NOT in TuDien (invalid Vietnamese word)
+        //   - Last raw key is 'e' (NOT a tone modifier) → tone was absorbed mid-word
+        //   - Phonotactic on full raw [C,O,R,E] → V+R rhotic, English confidence ≥ 80 → restore
+        //
+        // NOT triggered for "dỉ" (dir): last raw key IS 'r' (tone modifier) → skip.
+        // NOT triggered for valid Vietnamese like "khoẻ": is_real_vietnamese=true → skip.
+        if has_pending_restore {
+            let output = self.buf.to_full_string();
+            let is_real_vietnamese =
+                crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
+            if !is_real_vietnamese {
+                let last_raw_is_non_modifier = {
+                    use crate::data::keys as k;
+                    const TELEX_MODS: &[u16] = &[k::R, k::S, k::F, k::X, k::J, k::W];
+                    match self.raw_input.iter().last() {
+                        Some((lk, _)) if self.method == 0 => !TELEX_MODS.contains(&lk),
+                        Some((lk, _)) => !crate::data::keys::is_number(lk),
+                        None => false,
+                    }
+                };
+                if last_raw_is_non_modifier {
+                    let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
+                    let phonotactic = crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(&raw_keys);
+                    if phonotactic.english_confidence >= 80 {
+                        self.is_english_word = true;
+                        let result = self.auto_restore_english_with_space();
+                        self.sync_buffer_with_raw_input();
+                        self.last_transform = None;
+                        return Some(result);
+                    }
+                }
             }
         }
 

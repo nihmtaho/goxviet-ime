@@ -452,6 +452,14 @@ impl Phonology {
                 let k1 = buffer_keys.get(pos1).copied().unwrap_or(0);
                 let k2 = buffer_keys.get(pos2).copied().unwrap_or(0);
 
+                // Special case: "uu" → ưu cluster - horn goes on FIRST u.
+                // Typing "u-u-w" should produce "ưu" (not "uư").
+                // This matches HORN_PATTERNS[0] which specifies HornPlacement::First for U+U.
+                if k1 == keys::U && k2 == keys::U {
+                    result.push(pos1);
+                    return result;
+                }
+
                 // Special case: "ua" - check preceding consonant (Q excluded)
                 if k1 == keys::U && k2 == keys::A {
                     let has_non_q_consonant = pos1 > 0
