@@ -1371,36 +1371,42 @@ impl Engine {
         // 3. Mark modifier (aa/aw/ee/oo/ow/uw, etc.)
         if !skip_modifiers {
             if let Some(mark_val) = m.mark(key) {
-                if let Some(result) = self.try_mark(key, caps, mark_val) {
-                    self.is_english_word = false;
+                // Priority 1c: pre-check BEFORE applying any Vietnamese transform.
+                // "mic" + R/F/X/W and "rayc..." are NEVER valid Vietnamese sequences.
+                // Intercept here so 'r'/'f'/'x' falls through as a plain letter —
+                // no intermediate "mỉc"/"mìc"/"mĩc" is ever produced.
+                let is_1c_english = if self.method == 0 {
+                    use crate::data::keys as k;
+                    let raw_1c: Vec<u16> =
+                        self.raw_input.iter().map(|(rk, _)| rk).collect();
+                    const MIC_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
+                    (raw_1c.len() >= 4
+                        && raw_1c[0] == k::M
+                        && raw_1c[1] == k::I
+                        && raw_1c[2] == k::C
+                        && MIC_MODS.contains(&raw_1c[3]))
+                        || (raw_1c.len() >= 4
+                            && raw_1c[0] == k::R
+                            && raw_1c[1] == k::A
+                            && raw_1c[2] == k::Y
+                            && raw_1c[3] == k::C)
+                } else {
+                    false
+                };
 
-                    // Priority 1c: hard-coded English-only sequences that are structurally
-                    // valid Vietnamese must bypass the deferred boundary check.
-                    // "mic" + R/F/X/W → "mỉc"/"mìc"/"mĩc" but these are NEVER real Vietnamese.
-                    // "rayc..." → also always English. Restore immediately.
-                    if self.method == 0 {
-                        use crate::data::keys as k;
-                        let raw_1c: Vec<u16> =
-                            self.raw_input.iter().map(|(rk, _)| rk).collect();
-                        const MIC_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
-                        let is_1c = (raw_1c.len() >= 4
-                            && raw_1c[0] == k::M
-                            && raw_1c[1] == k::I
-                            && raw_1c[2] == k::C
-                            && MIC_MODS.contains(&raw_1c[3]))
-                            || (raw_1c.len() >= 4
-                                && raw_1c[0] == k::R
-                                && raw_1c[1] == k::A
-                                && raw_1c[2] == k::Y
-                                && raw_1c[3] == k::C);
-                        if is_1c {
-                            self.is_english_word = true;
-                            let restore = self.instant_restore_english();
-                            self.sync_buffer_with_raw_input();
-                            self.last_transform = None;
-                            return restore;
-                        }
+                if is_1c_english {
+                    self.is_english_word = true;
+                    if self.has_vietnamese_transforms() {
+                        // Buffer has transforms from a prior key — restore all immediately.
+                        let restore = self.instant_restore_english();
+                        self.sync_buffer_with_raw_input();
+                        self.last_transform = None;
+                        return restore;
                     }
+                    // No transforms yet: skip the mark entirely.
+                    // Fall through to handle_normal_letter so 'r'/'f'/'x' appends as plain letter.
+                } else if let Some(result) = self.try_mark(key, caps, mark_val) {
+                    self.is_english_word = false;
 
                     // NOTE: Immediate English restore after mark is intentionally DEFERRED to
                     // the word-boundary check (check_and_restore_english_at_boundary).
