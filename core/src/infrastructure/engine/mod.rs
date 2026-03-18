@@ -3593,6 +3593,37 @@ impl Engine {
             return false;
         }
 
+        // Priority 1c: Hard-coded English-only prefixes that bypass structural validity.
+        // Only applies in Telex mode (method == 0); VNI uses numbers for tone — not relevant here.
+        //
+        // • "mic" + a Telex TONE modifier that is NOT sắc(s) or nặng(j):
+        //   Allowed Vietnamese: mics→"míc", micj→"mịc".
+        //   All others (micr/micf/micx/micw) produce non-words → treat as English immediately.
+        //   Non-modifier 4th chars (h/a/l/…) are NOT caught here — "mich" etc. go through normally.
+        // • "rayc..." is always English (raycast, raycasting; no Vietnamese words start with rayc).
+        if self.method == 0 {
+            use crate::data::keys as k;
+            // Telex tone modifiers that, after "mic", yield non-Vietnamese output.
+            // Excludes s (sắc) and j (nặng) which the user explicitly allows.
+            const MIC_ENGLISH_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
+            if keys.len() >= 4
+                && keys[0] == k::M
+                && keys[1] == k::I
+                && keys[2] == k::C
+                && MIC_ENGLISH_MODS.contains(&keys[3])
+            {
+                return true;
+            }
+            if keys.len() >= 4
+                && keys[0] == k::R
+                && keys[1] == k::A
+                && keys[2] == k::Y
+                && keys[3] == k::C
+            {
+                return true;
+            }
+        }
+
         // Priority 1b: Structural Vietnamese validity check using buf_keys + buf_tones.
         // This catches valid Vietnamese syllables that are NOT in the TuDien dictionary,
         // e.g. "dỉ" (dir), "sủ" (sur), "quỉ" (quir), "mỉu" (miur), etc.
