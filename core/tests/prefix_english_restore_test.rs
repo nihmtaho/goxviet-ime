@@ -96,3 +96,28 @@ fn test_raycasts_restores_at_space() {
 fn test_raycasting_restores_at_space() {
     telex(&[("raycasting ", "raycasting ")]);
 }
+
+// ── Verify truly immediate: no SPACE needed ───────────────────────────────
+
+/// "micr" followed immediately by another letter (no space) should NOT show "mỉc"
+/// mid-buffer. If restore is immediate, the 5th char starts in a clean buffer.
+#[test]
+fn test_micr_next_char_is_clean() {
+    // If restore is truly immediate at the 4th char:
+    //   m-i-c-r → restore to "micr" immediately
+    //   o → new word: "o"
+    //   space → boundary: output "o"
+    // Final screen: "micro "
+    // (NOT "mỉco " which would happen if restore waited for space)
+    telex(&[("micro ", "micro ")]);
+}
+
+#[test]
+fn test_micf_next_char_is_clean() {
+    telex(&[("micfo ", "micfo ")]);
+}
+
+#[test]
+fn test_micx_next_char_is_clean() {
+    telex(&[("micxo ", "micxo ")]);
+}

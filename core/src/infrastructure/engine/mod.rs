@@ -4243,6 +4243,33 @@ impl Engine {
             }
         }
 
+        // Priority 1c fast-path: hard-coded English-only sequences bypass the structural guard.
+        // "mic" + Telex modifier R/F/X/W and "rayc..." are NEVER valid Vietnamese, so we
+        // restore immediately without waiting for the word-boundary check.
+        if self.method == 0 {
+            use crate::data::keys as k;
+            let raw_keys_1c: Vec<u16> = self.raw_input.iter().map(|(key, _)| key).collect();
+            const MIC_ENGLISH_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
+            let is_1c = (raw_keys_1c.len() >= 4
+                && raw_keys_1c[0] == k::M
+                && raw_keys_1c[1] == k::I
+                && raw_keys_1c[2] == k::C
+                && MIC_ENGLISH_MODS.contains(&raw_keys_1c[3]))
+                || (raw_keys_1c.len() >= 4
+                    && raw_keys_1c[0] == k::R
+                    && raw_keys_1c[1] == k::A
+                    && raw_keys_1c[2] == k::Y
+                    && raw_keys_1c[3] == k::C);
+            if is_1c {
+                self.is_english_word = true;
+                let mut result = self.instant_restore_english();
+                result.backspace = result.backspace.saturating_sub(offset);
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+        }
+
         // Guard: if buffer is a valid Vietnamese syllable structure WITH its diacritical marks,
         // defer the English decision to the word-boundary check. This prevents mid-word false
         // restore when the raw input matches an English word but the RENDERED output is valid
