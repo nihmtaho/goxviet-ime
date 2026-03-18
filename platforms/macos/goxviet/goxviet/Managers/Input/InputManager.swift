@@ -61,6 +61,11 @@ class InputManager: LifecycleManaged {
     private var restoreShortcut: RestoreShortcut = SettingsManager.shared.restoreShortcut
     private var restoreShortcutEnabled: Bool = SettingsManager.shared.restoreShortcutEnabled
     private var restoreTapHistory: [(flags: UInt64, time: TimeInterval)] = []
+
+    // One-shot CTRL-commit: set to true when user taps Control alone.
+    // The next keyDown will be forwarded to the engine with ctrl=true,
+    // preventing tone application on the buffered Vietnamese text.
+    private var ctrlOneShotPending = false
     
     init() {
         // Initialize Rust bridge v2
@@ -526,11 +531,11 @@ class InputManager: LifecycleManaged {
             return Unmanaged.passUnretained(event)
         }
         
-        // 6. Ignore events with command/option modifiers (OS shortcuts like Cmd+A, Cmd+V, etc.)
-        // Note: Control key is handled separately in step 6b for the CTRL-commit feature.
-        if flags.contains(.maskCommand) || flags.contains(.maskAlternate) {
+        // 6. Ignore events with command/control/option modifiers (except Shift)
+        if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
             // Clear ALL state on modifier shortcuts (selection-delete, Cmd+A, Cmd+V, etc.)
             // This prevents stale buffer content from appearing after selection operations
+            ctrlOneShotPending = false
             ime_clear_all_v2()
             return Unmanaged.passUnretained(event)
         }
@@ -540,13 +545,6 @@ class InputManager: LifecycleManaged {
         if method == .passthrough {
             // Pass through without IME processing - remote device/game handles input
             return Unmanaged.passUnretained(event)
-        }
-
-        // 6b. Control key: CTRL-commit feature
-        // If buffer is non-empty: engine commits buffer as-is, outputs CTRL+key char literally (consumed=true).
-        // If buffer is empty: engine returns consumed=false → event passes through to app (e.g. Ctrl+S = Save).
-        if flags.contains(.maskControl) {
-            return processKeyWithEngine(keyCode: keyCode, flags: flags, proxy: proxy, event: event)
         }
         
         // 7. Handle ESC key for word restoration
@@ -578,6 +576,7 @@ class InputManager: LifecycleManaged {
         ]
         
         if navigationKeys.contains(keyCode) {
+            ctrlOneShotPending = false
             ime_clear_all_v2()
             return Unmanaged.passUnretained(event)
         }
@@ -641,6 +640,21 @@ class InputManager: LifecycleManaged {
             return nil // Swallow event
         }
 
+        // One-shot CTRL-commit: detect a bare Control tap (no Cmd/Opt mixed in).
+        // When Control is pressed alone → arm the one-shot flag.
+        // When Cmd/Opt is pressed → cancel it (user is doing an OS shortcut).
+        let pureControl = flags.contains(.maskControl)
+            && !flags.contains(.maskCommand)
+            && !flags.contains(.maskAlternate)
+        if pureControl {
+            ctrlOneShotPending = true
+            Log.info("CTRL one-shot armed")
+        } else if flags.contains(.maskCommand) || flags.contains(.maskAlternate) {
+            ctrlOneShotPending = false
+        }
+        // Control release (flags no longer contains .maskControl): keep the pending flag so the
+        // next keyDown can consume it.
+
         return Unmanaged.passUnretained(event)
     }
     
@@ -692,7 +706,11 @@ class InputManager: LifecycleManaged {
         
         let caps = capsLock != shift
         
-        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
+        // One-shot CTRL-commit: treat this keypress as ctrl=true if the user tapped Control
+        // immediately before this key (without holding it). Consume the one-shot flag.
+        let oneShotFired = ctrlOneShotPending
+        ctrlOneShotPending = false
+        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) || oneShotFired
         
         Log.key(keyCode, "Processing")
         
