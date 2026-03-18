@@ -526,19 +526,27 @@ class InputManager: LifecycleManaged {
             return Unmanaged.passUnretained(event)
         }
         
-        // 6. Ignore events with command/control/option modifiers (except Shift)
-        if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
+        // 6. Ignore events with command/option modifiers (OS shortcuts like Cmd+A, Cmd+V, etc.)
+        // Note: Control key is handled separately in step 6b for the CTRL-commit feature.
+        if flags.contains(.maskCommand) || flags.contains(.maskAlternate) {
             // Clear ALL state on modifier shortcuts (selection-delete, Cmd+A, Cmd+V, etc.)
             // This prevents stale buffer content from appearing after selection operations
             ime_clear_all_v2()
             return Unmanaged.passUnretained(event)
         }
-        
+
         // 6.1. Check for passthrough mode (iPhone Mirroring, games)
         let (method, _) = detectMethod()
         if method == .passthrough {
             // Pass through without IME processing - remote device/game handles input
             return Unmanaged.passUnretained(event)
+        }
+
+        // 6b. Control key: CTRL-commit feature
+        // If buffer is non-empty: engine commits buffer as-is, outputs CTRL+key char literally (consumed=true).
+        // If buffer is empty: engine returns consumed=false → event passes through to app (e.g. Ctrl+S = Save).
+        if flags.contains(.maskControl) {
+            return processKeyWithEngine(keyCode: keyCode, flags: flags, proxy: proxy, event: event)
         }
         
         // 7. Handle ESC key for word restoration
