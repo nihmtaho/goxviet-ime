@@ -397,7 +397,33 @@ impl Engine {
     /// * `ctrl` - true if Cmd/Ctrl/Alt is pressed (bypasses IME)
     /// * `shift` - true if Shift key is pressed (for symbols like @, #, $)
     pub fn on_key_ext(&mut self, key: u16, caps: bool, ctrl: bool, shift: bool) -> Result {
-        if !self.enabled || ctrl {
+        if !self.enabled {
+            self.clear();
+            self.word_history.clear();
+            self.spaces_after_commit = 0;
+            return Result::none();
+        }
+
+        if ctrl {
+            // CTRL key: commit current buffer as-is, then output the CTRL+key char literally.
+            // This prevents tone/mark modifiers from being applied when CTRL is held.
+            //
+            // Example (Telex): "a" + CTRL+s → "as"  ('s' is NOT applied as sắc tone)
+            // Example (VNI):   "a" + CTRL+8 → "a8"  ('8' is NOT applied as ngã tone)
+            //
+            // When the buffer is non-empty and the key has a printable char, commit + insert.
+            // Otherwise (empty buffer or non-printable), pass through to OS as before.
+            if !self.buf.is_empty() {
+                if let Some(ctrl_char) = crate::utils::key_to_char(key, caps || shift) {
+                    let result = Result::send(0, &[ctrl_char]);
+                    self.word_history.push(&self.buf, &self.raw_input);
+                    self.clear();
+                    self.spaces_after_commit = 0;
+                    self.is_english_word = false;
+                    return result;
+                }
+            }
+            // Buffer empty or non-printable key: pass through to OS unchanged.
             self.clear();
             self.word_history.clear();
             self.spaces_after_commit = 0;
@@ -1219,6 +1245,33 @@ impl Engine {
                             matches!(tone_type, ToneType::Horn | ToneType::Breve);
 
                         if !is_horn_or_breve {
+                            // Priority 1c: hard-coded English-only sequences bypass the
+                            // buf_is_viet guard below. "mic" + R/F/X/W and "rayc..." are NEVER
+                            // valid Vietnamese even though "mỉc" passes validate_with_tones.
+                            if self.method == 0 {
+                                use crate::data::keys as k;
+                                let raw_1c: Vec<u16> =
+                                    self.raw_input.iter().map(|(rk, _)| rk).collect();
+                                const MIC_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
+                                let is_1c = (raw_1c.len() >= 4
+                                    && raw_1c[0] == k::M
+                                    && raw_1c[1] == k::I
+                                    && raw_1c[2] == k::C
+                                    && MIC_MODS.contains(&raw_1c[3]))
+                                    || (raw_1c.len() >= 4
+                                        && raw_1c[0] == k::R
+                                        && raw_1c[1] == k::A
+                                        && raw_1c[2] == k::Y
+                                        && raw_1c[3] == k::C);
+                                if is_1c {
+                                    self.is_english_word = true;
+                                    let restore = self.instant_restore_english();
+                                    self.sync_buffer_with_raw_input();
+                                    self.last_transform = None;
+                                    return restore;
+                                }
+                            }
+
                             // Guard: if the current buf is a valid Vietnamese syllable structure,
                             // skip mid-word English detection entirely. This prevents false restore
                             // on intermediate states like "bâ" (from typing "baau"→"bâu") where
@@ -1318,7 +1371,41 @@ impl Engine {
         // 3. Mark modifier (aa/aw/ee/oo/ow/uw, etc.)
         if !skip_modifiers {
             if let Some(mark_val) = m.mark(key) {
-                if let Some(result) = self.try_mark(key, caps, mark_val) {
+                // Priority 1c: pre-check BEFORE applying any Vietnamese transform.
+                // "mic" + R/F/X/W and "rayc..." are NEVER valid Vietnamese sequences.
+                // Intercept here so 'r'/'f'/'x' falls through as a plain letter —
+                // no intermediate "mỉc"/"mìc"/"mĩc" is ever produced.
+                let is_1c_english = if self.method == 0 {
+                    use crate::data::keys as k;
+                    let raw_1c: Vec<u16> =
+                        self.raw_input.iter().map(|(rk, _)| rk).collect();
+                    const MIC_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
+                    (raw_1c.len() >= 4
+                        && raw_1c[0] == k::M
+                        && raw_1c[1] == k::I
+                        && raw_1c[2] == k::C
+                        && MIC_MODS.contains(&raw_1c[3]))
+                        || (raw_1c.len() >= 4
+                            && raw_1c[0] == k::R
+                            && raw_1c[1] == k::A
+                            && raw_1c[2] == k::Y
+                            && raw_1c[3] == k::C)
+                } else {
+                    false
+                };
+
+                if is_1c_english {
+                    self.is_english_word = true;
+                    if self.has_vietnamese_transforms() {
+                        // Buffer has transforms from a prior key — restore all immediately.
+                        let restore = self.instant_restore_english();
+                        self.sync_buffer_with_raw_input();
+                        self.last_transform = None;
+                        return restore;
+                    }
+                    // No transforms yet: skip the mark entirely.
+                    // Fall through to handle_normal_letter so 'r'/'f'/'x' appends as plain letter.
+                } else if let Some(result) = self.try_mark(key, caps, mark_val) {
                     self.is_english_word = false;
 
                     // NOTE: Immediate English restore after mark is intentionally DEFERRED to
@@ -3567,6 +3654,37 @@ impl Engine {
             return false;
         }
 
+        // Priority 1c: Hard-coded English-only prefixes that bypass structural validity.
+        // Only applies in Telex mode (method == 0); VNI uses numbers for tone — not relevant here.
+        //
+        // • "mic" + a Telex TONE modifier that is NOT sắc(s) or nặng(j):
+        //   Allowed Vietnamese: mics→"míc", micj→"mịc".
+        //   All others (micr/micf/micx/micw) produce non-words → treat as English immediately.
+        //   Non-modifier 4th chars (h/a/l/…) are NOT caught here — "mich" etc. go through normally.
+        // • "rayc..." is always English (raycast, raycasting; no Vietnamese words start with rayc).
+        if self.method == 0 {
+            use crate::data::keys as k;
+            // Telex tone modifiers that, after "mic", yield non-Vietnamese output.
+            // Excludes s (sắc) and j (nặng) which the user explicitly allows.
+            const MIC_ENGLISH_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
+            if keys.len() >= 4
+                && keys[0] == k::M
+                && keys[1] == k::I
+                && keys[2] == k::C
+                && MIC_ENGLISH_MODS.contains(&keys[3])
+            {
+                return true;
+            }
+            if keys.len() >= 4
+                && keys[0] == k::R
+                && keys[1] == k::A
+                && keys[2] == k::Y
+                && keys[3] == k::C
+            {
+                return true;
+            }
+        }
+
         // Priority 1b: Structural Vietnamese validity check using buf_keys + buf_tones.
         // This catches valid Vietnamese syllables that are NOT in the TuDien dictionary,
         // e.g. "dỉ" (dir), "sủ" (sur), "quỉ" (quir), "mỉu" (miur), etc.
@@ -3982,6 +4100,49 @@ impl Engine {
             }
         }
 
+        // Fallback: detect mid-word tone absorption that produces invalid Vietnamese output.
+        //
+        // Pattern: a Telex tone modifier key is consumed in the MIDDLE of a word (not as the
+        // last raw key), producing a Vietnamese compound that is structurally valid but not
+        // in the TuDien dictionary. is_english_by_phonotactic() was blocked by Priority 1b
+        // (FSM says the structure is valid), but the rendered output is not a real word.
+        //
+        // Example: "core" → 'r' at position 2 absorbed as hỏi → "coẻ"
+        //   - buf_keys=[C,O,E], oe-compound is structurally valid → Priority 1b returns false
+        //   - "coẻ" is NOT in TuDien (invalid Vietnamese word)
+        //   - Last raw key is 'e' (NOT a tone modifier) → tone was absorbed mid-word
+        //   - Phonotactic on full raw [C,O,R,E] → V+R rhotic, English confidence ≥ 80 → restore
+        //
+        // NOT triggered for "dỉ" (dir): last raw key IS 'r' (tone modifier) → skip.
+        // NOT triggered for valid Vietnamese like "khoẻ": is_real_vietnamese=true → skip.
+        if has_pending_restore {
+            let output = self.buf.to_full_string();
+            let is_real_vietnamese =
+                crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
+            if !is_real_vietnamese {
+                let last_raw_is_non_modifier = {
+                    use crate::data::keys as k;
+                    const TELEX_MODS: &[u16] = &[k::R, k::S, k::F, k::X, k::J, k::W];
+                    match self.raw_input.iter().last() {
+                        Some((lk, _)) if self.method == 0 => !TELEX_MODS.contains(&lk),
+                        Some((lk, _)) => !crate::data::keys::is_number(lk),
+                        None => false,
+                    }
+                };
+                if last_raw_is_non_modifier {
+                    let raw_keys: Vec<(u16, bool)> = self.raw_input.iter().collect();
+                    let phonotactic = crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(&raw_keys);
+                    if phonotactic.english_confidence >= 80 {
+                        self.is_english_word = true;
+                        let result = self.auto_restore_english_with_space();
+                        self.sync_buffer_with_raw_input();
+                        self.last_transform = None;
+                        return Some(result);
+                    }
+                }
+            }
+        }
+
         if !self.has_vietnamese_transforms() {
             return None;
         }
@@ -4134,6 +4295,33 @@ impl Engine {
         if raw_len >= buf_len + 2 {
             let is_dict = self.is_english_by_phonotactic();
             if is_dict {
+                self.is_english_word = true;
+                let mut result = self.instant_restore_english();
+                result.backspace = result.backspace.saturating_sub(offset);
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+        }
+
+        // Priority 1c fast-path: hard-coded English-only sequences bypass the structural guard.
+        // "mic" + Telex modifier R/F/X/W and "rayc..." are NEVER valid Vietnamese, so we
+        // restore immediately without waiting for the word-boundary check.
+        if self.method == 0 {
+            use crate::data::keys as k;
+            let raw_keys_1c: Vec<u16> = self.raw_input.iter().map(|(key, _)| key).collect();
+            const MIC_ENGLISH_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
+            let is_1c = (raw_keys_1c.len() >= 4
+                && raw_keys_1c[0] == k::M
+                && raw_keys_1c[1] == k::I
+                && raw_keys_1c[2] == k::C
+                && MIC_ENGLISH_MODS.contains(&raw_keys_1c[3]))
+                || (raw_keys_1c.len() >= 4
+                    && raw_keys_1c[0] == k::R
+                    && raw_keys_1c[1] == k::A
+                    && raw_keys_1c[2] == k::Y
+                    && raw_keys_1c[3] == k::C);
+            if is_1c {
                 self.is_english_word = true;
                 let mut result = self.instant_restore_english();
                 result.backspace = result.backspace.saturating_sub(offset);

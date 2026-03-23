@@ -577,6 +577,9 @@ impl PhonotacticEngine {
             &[keys::P, keys::E, keys::R], // per- (perform, perfect, person)
             &[keys::P, keys::O, keys::R], // por- (portal, portion, portrait)
             &[keys::P, keys::Y, keys::R], // pyr- (pyramid, pyrite, pyro)
+            // MIC removed from comment: safe because real Viet words (mích/mịch) have is_real_vietnamese=true
+            // → threshold 97 > 95 → not restored. Non-words (mỉc/mĩc/mìc) use threshold 60 → restored.
+            &[keys::M, keys::I, keys::C], // mic- (microphone, microscope, microchip, etc.)
         ];
 
         const PREFIXES_4: &[&[u16; 4]] = &[
@@ -591,6 +594,7 @@ impl PhonotacticEngine {
             &[keys::S, keys::U, keys::F, keys::F], // suff- (suffer, sufficient, suffix)
             &[keys::C, keys::O, keys::R, keys::R], // corr- (correct, corrupt, correspond)
             &[keys::M, keys::I, keys::S, keys::S], // miss- (miss, mission, missile)
+            &[keys::R, keys::A, keys::Y, keys::C], // rayc- (raycast, raycasting — computer graphics)
         ];
 
         const PREFIXES_4_CORE: &[u16; 4] = &[keys::C, keys::O, keys::R, keys::E]; // core- (core-dump, core-based)

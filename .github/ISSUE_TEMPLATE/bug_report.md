@@ -1,49 +1,40 @@
 ---
 name: "🐛 Bug Report"
-about: Report a bug, logic error, or platform issue for GoxViet IME
-title: "[type(scope)]: <short description>"
-labels: []
+about: Report a bug or unexpected behavior in GoxViet IME
+title: "fix(scope): <short description>"
+labels: [bug]
 assignees: []
 ---
 
-## 📝 Summary
+## Summary
 
-<!-- Ngắn gọn mô tả vấn đề gặp phải. -->
+<!-- Mô tả ngắn gọn vấn đề. -->
 
-## 🕹 Steps to Reproduce
+## Steps to Reproduce
 
-<!-- 
-Liệt kê từng bước để tái hiện lỗi:
-1. Gõ chuỗi characters...
-2. Nhấn phím...
-3. Quan sát kết quả...
--->
+1.
+2.
+3.
 
-## 📊 Comparison
+## Comparison
 
-| 🛑 Actual Result | ✅ Expected Result |
+| Actual | Expected |
 | :--- | :--- |
-| `actual` | `expected` |
+| `` | `` |
 
-### 🔍 Test Cases / Examples
+### Test Cases
 
-| Input sequence | Actual result | Expected result |
+| Input | Actual | Expected |
 | :--- | :--- | :--- |
-| `[input]` | `actual` | `expected` |
+| `` | `` | `` |
 
----
+## Environment
 
-## 💻 Environment
-
-- **OS:** macOS / Windows / etc.
-- **Application:** VSCode, Chrome, Terminal, etc.
+- **OS:** macOS / Windows
+- **App:** <!-- VSCode, Chrome, Terminal, etc. -->
 - **GoxViet Version:** vX.Y.Z
 - **Input Method:** Telex / VNI
 
-## 📁 Additional Context
+## Additional Context
 
-<!-- Bổ sung thông tin, log, ảnh chụp màn hình, hoặc link liên quan. -->
-
----
-> [!TIP]
-> Đề xuất label nếu có thể: `bug`, `core`, `telex`, `vni`, `auto-restore`, `platform-macos`.
+<!-- Log, screenshot, hoặc ghi chú thêm. -->
