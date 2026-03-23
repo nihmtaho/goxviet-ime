@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## [2.0.14] - 2026-03-23
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.14.md](.release-notes/release_note_2.0.14.md)
+
+### ✨ Features
+
+- **CTRL-commit** (CTRL+key commits buffer then outputs literal key): Khi nhấn CTRL (không kèm Cmd/Opt), buffer Vietnamese hiện tại được commit ngay lập tức, sau đó CTRL+phím tiếp theo được truyền thẳng đến ứng dụng như ký tự thô — không áp dụng tone transform. Hữu ích cho các app dùng CTRL-shortcut trong khi đang gõ tiếng Việt. (PR #78)
+- **English Prefix Patterns mới** (`mic-`, `rayc-`): Thêm `mic-` (microphone, microscope, microchip…) và `rayc-` (raycast, raycasting) vào bảng prefix patterns — ngay cả khi chuỗi trông giống Vietnamese structurally, engine sẽ restore về English. (PR #78)
+
+### 🐛 Bug Fixes
+
+- **`mic` + Telex modifier non-sắc/nặng → English** (micr/micf/micx/micw không biến thành mỉc/mĩc/mìc): Thêm Priority 1c fast-path — khi buffer là `micr`/`micf`/`micx`/`micw`, engine bỏ qua Vietnamese transform và restore ngay về English. Chỉ `mics` (→`míc`) và `micj` (→`mịc`) được giữ là Vietnamese. (PR #78)
+- **`core` → `core` (không bị giữ làm `coẻ`)**: Khi ký tự tone modifier bị absorbed ở giữa từ tạo ra compound hợp lệ về mặt cấu trúc nhưng KHÔNG có trong TuDien (`coẻ`), engine phát hiện mid-word absorption và restore về raw English. (PR #78)
+- **`uu` + `w` → `ưu` (horn lên u đầu tiên, không phải u thứ hai)**: Sửa lỗi `find_horn_positions` cho cluster `u+u` — horn luôn đặt lên `u` đầu tiên khi gõ `u-u-w`, tạo `ưu` đúng chuẩn thay vì `uư`. (PR #78)
+
+### 🔧 CI/Chores
+
+- **Claude Code GitHub Workflow**: Thêm workflow CI cho Claude Code agent. (PR #66)
+- **Cleanup old planning docs**: Xóa tài liệu planning cũ và cập nhật issue templates.
+
+---
+
 ## [2.0.13] - 2026-03-14
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.13.md](.release-notes/release_note_2.0.13.md)
