@@ -18,10 +18,23 @@ include!(concat!(env!("OUT_DIR"), "/viet_syllables.rs"));
 /// Check if `s` is a valid Vietnamese single syllable.
 ///
 /// The lookup table contains all ~7,000 entries from TuDien.txt (Unicode NFC).
-/// Complexity: O(1) via perfect hash function.
+/// Complexity: O(1) via perfect hash function (fast path); O(n) allocation only
+/// when the input contains uppercase letters (e.g. sentence-start capitalization).
 #[inline]
 pub fn is_valid_vietnamese_syllable(s: &str) -> bool {
-    VIET_SYLLABLES.contains(s)
+    // Fast path: exact match (the common case — input is already lowercase).
+    if VIET_SYLLABLES.contains(s) {
+        return true;
+    }
+    // Normalize capitalized input (e.g. "Trường" → "trường").
+    // Required because TuDien.txt stores only lowercase entries, but the buffer
+    // preserves the caps flag, producing uppercase-first strings for words typed
+    // at sentence start or as proper nouns.
+    let lower = s.to_lowercase();
+    if lower == s {
+        return false; // Already lowercase — no point re-checking.
+    }
+    VIET_SYLLABLES.contains(lower.as_str())
 }
 
 #[cfg(test)]
@@ -82,6 +95,16 @@ mod tests {
             !is_valid_vietnamese_syllable("enter"),
             "'enter' should NOT be valid Vietnamese"
         );
+    }
+
+    #[test]
+    fn test_capitalized_vietnamese_syllables() {
+        // Capitalized forms (sentence-start / proper nouns) must also be recognized.
+        assert!(is_valid_vietnamese_syllable("Trường"), "'Trường' (capitalized) should be valid");
+        assert!(is_valid_vietnamese_syllable("Anh"), "'Anh' should be valid");
+        assert!(is_valid_vietnamese_syllable("Không"), "'Không' should be valid");
+        assert!(is_valid_vietnamese_syllable("Bình"), "'Bình' should be valid");
+        assert!(is_valid_vietnamese_syllable("Đường"), "'Đường' should be valid");
     }
 
     #[test]

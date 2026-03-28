@@ -180,6 +180,63 @@ fn try_correct_triple_consonant(word: &str) -> Option<String> {
     None
 }
 
+/// Correct doubled Telex tone-marker consonants when the result is a single-consonant English word.
+///
+/// Handles words where the user typed one extra tone-marker key: e.g. typing "i-n-f-f-e-r"
+/// (double-f) intending to write "infer" (single-f). The double-key revert mechanism
+/// sometimes fails when `is_english_word` is already true before the first modifier,
+/// resulting in "inffer" on screen. This function detects and collapses those doubles.
+///
+/// Distinct from `try_correct_triple_consonant`: only collapses ff→f, ss→s, etc. when the
+/// doubled-consonant version is NOT in the double_consonant_words dictionary (real double-
+/// consonant words like "offer"/"differ" are handled by the triple-tone correction instead).
+///
+/// # Examples
+/// - "inffer" → contains "ff", "inffer" not in dict, "infer" phonotactic ≥80 → Some("infer")
+/// - "caffe" → contains "ff", "caffe" not in dict, "cafe" phonotactic ≥80 → Some("cafe")
+/// - "offer" → contains "ff", "offer" IS in dict → None (handled by triple correction)
+fn try_correct_double_tone(word: &str) -> Option<String> {
+    const DOUBLE_PATTERNS: &[(&str, &str)] = &[
+        ("ff", "f"),
+        ("ss", "s"),
+        ("rr", "r"),
+        ("xx", "x"),
+        ("jj", "j"),
+    ];
+    for &(double_pat, single) in DOUBLE_PATTERNS {
+        if let Some(idx) = word.find(double_pat) {
+            // If the word WITH the double consonant is in the dictionary, it's an
+            // intentional double — handled by the triple-tone correction instead.
+            if crate::data::is_double_consonant_word(word) {
+                continue;
+            }
+            let corrected = format!(
+                "{}{}{}",
+                &word[..idx],
+                single,
+                &word[idx + double_pat.len()..]
+            );
+            // Validate: corrected word must have high English phonotactic confidence.
+            let corrected_keys: Vec<(u16, bool)> = corrected
+                .chars()
+                .filter_map(|c| {
+                    let k = crate::utils::char_to_key(c);
+                    if k != 255 {
+                        Some((k, c.is_uppercase()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let phonotactic = crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(&corrected_keys);
+            if phonotactic.english_confidence >= 80 {
+                return Some(corrected);
+            }
+        }
+    }
+    None
+}
+
 impl Engine {
     pub fn new() -> Self {
         Self {
@@ -2070,7 +2127,27 @@ impl Engine {
                         // CRITICAL: For doubling patterns (aa, ee, oo), only apply if ADJACENT
                         // i.e., the key being pressed is the same as the last char
                         // This is already guaranteed because we're checking the last buffer char
-                        target_positions.push(last_buf_idx);
+                        //
+                        // For Telex circumflex doubling (aa→â, ee→ê, oo→ô): block if ANY vowel
+                        // in the buffer already has a tone mark/diacritical AND the last char
+                        // (the circumflex target) itself has no mark. This prevents invalid
+                        // V1+tone+V2+V2 patterns like "tafoo" → "tàô" (wrong; should be "tàoo")
+                        // and "chaofo" → "chàô" (wrong; should be "chàoo").
+                        //
+                        // The `!last_char.has_mark()` guard preserves intentional combining:
+                        // "vies" + "e" → "viế" (é already has sắc, second 'e' adds circumflex
+                        // to the SAME vowel → 'ế' = ê+sắc is correct and must not be blocked).
+                        //
+                        // Restricted to Telex (method==0); VNI '6' circumflex is always intentional.
+                        let blocked_by_existing_tone = tone_type == ToneType::Circumflex
+                            && self.method == 0
+                            && !last_char.has_mark()
+                            && self.buf.iter()
+                                .filter(|c| keys::is_vowel(c.key))
+                                .any(|c| c.has_tone() || c.has_mark());
+                        if !blocked_by_existing_tone {
+                            target_positions.push(last_buf_idx);
+                        }
                     }
                 }
 
@@ -4016,10 +4093,32 @@ impl Engine {
                 return Some(result);
             }
 
-            // If a triple tone was suppressed during typing but the corrected word wasn't in
-            // the dictionary (e.g. "offfet" → "offet" is not a known word), the word is still
-            // definitely English — the user would only type a triple tone-marker while typing
-            // English. Skip all further Vietnamese detection and just commit with SPACE.
+            // Double-tone Telex correction:
+            // When the user types a doubled Telex tone-marker consonant (ff/ss/rr/xx/jj),
+            // the raw_input contains e.g. "inffer"/"conffer" but the intended word is
+            // "infer"/"confer". Two paths lead here:
+            // - Triple-tone-guard path: is_english_word was set early, buf="infer" (correct),
+            //   raw_str="inffer" → corrected=="buf" → just add SPACE.
+            // - Double-key-revert path: buf synced to "conffer" via raw restore →
+            //   corrected≠buf → rewrite with backspaces.
+            if let Some(corrected) = try_correct_double_tone(&raw_str) {
+                let buf_rendered = self.buf.to_full_string();
+                if corrected == buf_rendered {
+                    // Buffer already shows the correct word — just commit with SPACE.
+                    self.clear();
+                    return Some(Result::send(0, &[' ']));
+                }
+                // Buffer shows the wrong word — erase and rewrite.
+                let backspace = self.buf.len().min(u8::MAX as usize) as u8;
+                let mut chars: Vec<char> = corrected.chars().collect();
+                chars.push(' ');
+                self.clear();
+                return Some(Result::send(backspace, &chars));
+            }
+
+            // If a triple tone was suppressed during typing but neither triple-consonant
+            // nor double-consonant correction fired (e.g. "offfet" → "offet" is not a
+            // known word), the word is still definitely English. Commit with SPACE.
             if self.triple_tone_suppressed {
                 self.clear();
                 return Some(Result::send(0, &[' ']));
