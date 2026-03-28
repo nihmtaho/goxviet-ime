@@ -2070,7 +2070,27 @@ impl Engine {
                         // CRITICAL: For doubling patterns (aa, ee, oo), only apply if ADJACENT
                         // i.e., the key being pressed is the same as the last char
                         // This is already guaranteed because we're checking the last buffer char
-                        target_positions.push(last_buf_idx);
+                        //
+                        // For Telex circumflex doubling (aa→â, ee→ê, oo→ô): block if ANY vowel
+                        // in the buffer already has a tone mark/diacritical AND the last char
+                        // (the circumflex target) itself has no mark. This prevents invalid
+                        // V1+tone+V2+V2 patterns like "tafoo" → "tàô" (wrong; should be "tàoo")
+                        // and "chaofo" → "chàô" (wrong; should be "chàoo").
+                        //
+                        // The `!last_char.has_mark()` guard preserves intentional combining:
+                        // "vies" + "e" → "viế" (é already has sắc, second 'e' adds circumflex
+                        // to the SAME vowel → 'ế' = ê+sắc is correct and must not be blocked).
+                        //
+                        // Restricted to Telex (method==0); VNI '6' circumflex is always intentional.
+                        let blocked_by_existing_tone = tone_type == ToneType::Circumflex
+                            && self.method == 0
+                            && !last_char.has_mark()
+                            && self.buf.iter()
+                                .filter(|c| keys::is_vowel(c.key))
+                                .any(|c| c.has_tone() || c.has_mark());
+                        if !blocked_by_existing_tone {
+                            target_positions.push(last_buf_idx);
+                        }
                     }
                 }
 
