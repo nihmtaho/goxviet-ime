@@ -72,7 +72,11 @@ fn test_triple_d_toggle() {
         buffer, result.backspace, result.count
     );
 
-    assert_eq!(buffer, "ddd", "Expected 'ddd' (invalid-combo restore) but got '{}'", buffer);
+    assert_eq!(
+        buffer, "ddd",
+        "Expected 'ddd' (invalid-combo restore) but got '{}'",
+        buffer
+    );
     assert_eq!(
         result.backspace, 1,
         "Should have backspace=1 to replace 'đ' with 'ddd'"

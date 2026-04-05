@@ -631,6 +631,7 @@ fn test_telex_batch(words: &[&str], _category: &str, _chunk_idx: usize) -> Batch
             enable_shortcuts: false,
             instant_restore_enabled: true,
             esc_restore_enabled: true,
+            ..Default::default()
         };
         let mut container = Container::with_config(config);
         let actual = type_word(&mut container, &input_with_space);
@@ -706,6 +707,7 @@ fn test_vni_batch(words: &[&str], _category: &str, _chunk_idx: usize) -> BatchRe
             enable_shortcuts: false,
             instant_restore_enabled: true,
             esc_restore_enabled: true,
+            ..Default::default()
         };
         let mut container = Container::with_config(config);
         let actual = type_word(&mut container, &input_with_space);
@@ -1050,6 +1052,7 @@ fn test_telex_specific_cases() {
             enable_shortcuts: false,
             instant_restore_enabled: true,
             esc_restore_enabled: true,
+            ..Default::default()
         };
         let mut container = Container::with_config(config);
         let result = type_word(&mut container, &input_with_space);
@@ -1139,6 +1142,7 @@ fn test_vni_specific_cases() {
             enable_shortcuts: false,
             instant_restore_enabled: true,
             esc_restore_enabled: true,
+            ..Default::default()
         };
         let mut container = Container::with_config(config);
         let result = type_word(&mut container, &input_with_space);

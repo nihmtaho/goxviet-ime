@@ -42,7 +42,10 @@ fn test_eng_with_no_modifier_is_valid() {
     let keys_arr = [keys::E, keys::N, keys::G];
     let tones_arr = [tone::NONE, tone::NONE, tone::NONE];
     let result = VietnameseSyllableValidator::validate_with_tones(&keys_arr, &tones_arr);
-    assert!(result.is_valid, "'eng' (plain e) should be valid Vietnamese");
+    assert!(
+        result.is_valid,
+        "'eng' (plain e) should be valid Vietnamese"
+    );
 }
 
 #[test]
@@ -52,7 +55,10 @@ fn test_eng_with_circumflex_is_invalid() {
     let keys_arr = [keys::E, keys::N, keys::G];
     let tones_arr = [tone::CIRCUMFLEX, tone::NONE, tone::NONE]; // ê+ng
     let result = VietnameseSyllableValidator::validate_with_tones(&keys_arr, &tones_arr);
-    assert!(!result.is_valid, "'êng' (ê before -ng) should be invalid Vietnamese");
+    assert!(
+        !result.is_valid,
+        "'êng' (ê before -ng) should be invalid Vietnamese"
+    );
 }
 
 #[test]
@@ -73,5 +79,8 @@ fn test_ieng_compound_is_valid() {
     let keys_arr = [keys::I, keys::E, keys::N, keys::G];
     let tones_arr = [tone::NONE, tone::CIRCUMFLEX, tone::NONE, tone::NONE];
     let result = VietnameseSyllableValidator::validate_with_tones(&keys_arr, &tones_arr);
-    assert!(result.is_valid, "'iêng' (iê compound) should be valid Vietnamese");
+    assert!(
+        result.is_valid,
+        "'iêng' (iê compound) should be valid Vietnamese"
+    );
 }

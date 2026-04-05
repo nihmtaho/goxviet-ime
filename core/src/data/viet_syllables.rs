@@ -100,11 +100,23 @@ mod tests {
     #[test]
     fn test_capitalized_vietnamese_syllables() {
         // Capitalized forms (sentence-start / proper nouns) must also be recognized.
-        assert!(is_valid_vietnamese_syllable("Trường"), "'Trường' (capitalized) should be valid");
+        assert!(
+            is_valid_vietnamese_syllable("Trường"),
+            "'Trường' (capitalized) should be valid"
+        );
         assert!(is_valid_vietnamese_syllable("Anh"), "'Anh' should be valid");
-        assert!(is_valid_vietnamese_syllable("Không"), "'Không' should be valid");
-        assert!(is_valid_vietnamese_syllable("Bình"), "'Bình' should be valid");
-        assert!(is_valid_vietnamese_syllable("Đường"), "'Đường' should be valid");
+        assert!(
+            is_valid_vietnamese_syllable("Không"),
+            "'Không' should be valid"
+        );
+        assert!(
+            is_valid_vietnamese_syllable("Bình"),
+            "'Bình' should be valid"
+        );
+        assert!(
+            is_valid_vietnamese_syllable("Đường"),
+            "'Đường' should be valid"
+        );
     }
 
     #[test]

@@ -137,7 +137,12 @@ struct GeneralSettingsTab: View {
             freeToneEnabled: $settingsManager.freeToneEnabled,
             instantRestoreEnabled: $settingsManager.instantRestoreEnabled,
             autoDisableForNonLatin: $settingsManager.autoDisableForNonLatin,
-            shiftBackspaceEnabled: $settingsManager.shiftBackspaceEnabled
+            shiftBackspaceEnabled: $settingsManager.shiftBackspaceEnabled,
+            escRestoreEnabled: $settingsManager.escRestoreEnabled,
+            bracketShortcutsEnabled: $settingsManager.bracketShortcutsEnabled,
+            foreignConsonantsEnabled: $settingsManager.foreignConsonantsEnabled,
+            autoCapitaliseEnabled: $settingsManager.autoCapitaliseEnabled,
+            wordHistoryEnabled: $settingsManager.wordHistoryEnabled
         )
         .tabItem {
             Label("General", systemImage: "gearshape")

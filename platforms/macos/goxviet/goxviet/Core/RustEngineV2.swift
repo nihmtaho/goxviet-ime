@@ -28,9 +28,13 @@ final class RustEngineV2 {
     private var escRestoreEnabled: Bool = false
     private var freeToneEnabled: Bool = false
     private var instantRestoreEnabled: Bool = false
-    
+    private var bracketShortcutsEnabled: Bool = false
+    private var foreignConsonantsEnabled: Bool = false
+    private var autoCapitaliseEnabled: Bool = false
+    private var wordHistoryEnabled: Bool = false
+
     // MARK: - Initialization
-    
+
     nonisolated private init() {
         // Default config
         self.currentConfig = FfiConfig_v2(
@@ -39,7 +43,11 @@ final class RustEngineV2 {
             smart_mode: true,
             instant_restore_enabled: true,
             esc_restore_enabled: false,
-            enable_shortcuts: true
+            enable_shortcuts: true,
+            bracket_shortcuts_enabled: false,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false
         )
     }
     
@@ -204,13 +212,57 @@ final class RustEngineV2 {
     func setInstantRestore(_ enabled: Bool) {
         lock.lock()
         defer { lock.unlock() }
-        
+
         instantRestoreEnabled = enabled
         currentConfig.instant_restore_enabled = enabled
         applyConfig()
         Log.info("Instant restore \(enabled ? "enabled" : "disabled")")
     }
-    
+
+    /// Set bracket shortcuts ([→ơ, ]→ư in Telex mode)
+    func setBracketShortcuts(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        bracketShortcutsEnabled = enabled
+        currentConfig.bracket_shortcuts_enabled = enabled
+        applyConfig()
+        Log.info("Bracket shortcuts \(enabled ? "enabled" : "disabled")")
+    }
+
+    /// Set foreign consonants (z/w/j/f as valid initials)
+    func setForeignConsonants(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        foreignConsonantsEnabled = enabled
+        currentConfig.foreign_consonants_enabled = enabled
+        applyConfig()
+        Log.info("Foreign consonants \(enabled ? "enabled" : "disabled")")
+    }
+
+    /// Set auto-capitalise after sentence-ending punctuation
+    func setAutoCapitalise(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        autoCapitaliseEnabled = enabled
+        currentConfig.auto_capitalise_enabled = enabled
+        applyConfig()
+        Log.info("Auto-capitalise \(enabled ? "enabled" : "disabled")")
+    }
+
+    /// Set word history backspace-after-space restore
+    func setWordHistory(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        wordHistoryEnabled = enabled
+        currentConfig.word_history_enabled = enabled
+        applyConfig()
+        Log.info("Word history \(enabled ? "enabled" : "disabled")")
+    }
+
     // MARK: - Buffer Management
     
     /// Clear current buffer (equivalent to ime_clear)
@@ -492,6 +544,26 @@ func ime_free_tone_v2(_ enabled: Bool) {
 /// Set instant restore
 func ime_instant_restore_v2(_ enabled: Bool) {
     RustEngineV2.shared.setInstantRestore(enabled)
+}
+
+/// Set bracket shortcuts ([→ơ, ]→ư in Telex mode)
+func ime_bracket_shortcuts_v2(_ enabled: Bool) {
+    RustEngineV2.shared.setBracketShortcuts(enabled)
+}
+
+/// Set foreign consonants (z/w/j/f as valid initials)
+func ime_foreign_consonants_v2(_ enabled: Bool) {
+    RustEngineV2.shared.setForeignConsonants(enabled)
+}
+
+/// Set auto-capitalise after sentence-ending punctuation
+func ime_auto_capitalise_v2(_ enabled: Bool) {
+    RustEngineV2.shared.setAutoCapitalise(enabled)
+}
+
+/// Set word history backspace-after-space restore
+func ime_word_history_v2(_ enabled: Bool) {
+    RustEngineV2.shared.setWordHistory(enabled)
 }
 
 /// Clear buffer

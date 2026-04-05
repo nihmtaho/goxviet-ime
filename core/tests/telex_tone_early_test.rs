@@ -68,6 +68,7 @@ fn new_telex_container() -> Container {
         enable_shortcuts: false,
         instant_restore_enabled: true,
         esc_restore_enabled: true,
+        ..Default::default()
     })
 }
 

@@ -8,10 +8,33 @@ use goxviet_core::engine::Engine;
 
 fn char_to_key(c: char) -> u16 {
     match c.to_ascii_lowercase() {
-        'a' => 0, 's' => 1, 'd' => 2, 'f' => 3, 'h' => 4, 'g' => 5, 'z' => 6, 'x' => 7,
-        'c' => 8, 'v' => 9, 'b' => 11, 'q' => 12, 'w' => 13, 'e' => 14, 'r' => 15, 'y' => 16,
-        't' => 17, 'o' => 31, 'u' => 32, 'i' => 34, 'p' => 35, 'l' => 37, 'j' => 38, 'k' => 40,
-        'n' => 45, 'm' => 46, _ => 255,
+        'a' => 0,
+        's' => 1,
+        'd' => 2,
+        'f' => 3,
+        'h' => 4,
+        'g' => 5,
+        'z' => 6,
+        'x' => 7,
+        'c' => 8,
+        'v' => 9,
+        'b' => 11,
+        'q' => 12,
+        'w' => 13,
+        'e' => 14,
+        'r' => 15,
+        'y' => 16,
+        't' => 17,
+        'o' => 31,
+        'u' => 32,
+        'i' => 34,
+        'p' => 35,
+        'l' => 37,
+        'j' => 38,
+        'k' => 40,
+        'n' => 45,
+        'm' => 46,
+        _ => 255,
     }
 }
 
@@ -55,9 +78,13 @@ fn type_then_space(keystrokes: &str) -> Option<String> {
         let result = engine.on_key_ext(key, ch.is_ascii_uppercase(), false, false);
         if result.action == 1 {
             let bs = result.backspace as usize;
-            for _ in 0..bs.min(display.len()) { display.pop(); }
+            for _ in 0..bs.min(display.len()) {
+                display.pop();
+            }
             for i in 0..result.count as usize {
-                if let Some(c) = char::from_u32(result.as_slice()[i]) { display.push(c); }
+                if let Some(c) = char::from_u32(result.as_slice()[i]) {
+                    display.push(c);
+                }
             }
         } else {
             display.push(ch);
@@ -67,9 +94,13 @@ fn type_then_space(keystrokes: &str) -> Option<String> {
     let r = engine.on_key_ext(keys::SPACE, false, false, false);
     if r.action == 1 {
         let bs = r.backspace as usize;
-        for _ in 0..bs.min(display.len()) { display.pop(); }
+        for _ in 0..bs.min(display.len()) {
+            display.pop();
+        }
         for i in 0..r.count as usize {
-            if let Some(c) = char::from_u32(r.as_slice()[i]) { display.push(c); }
+            if let Some(c) = char::from_u32(r.as_slice()[i]) {
+                display.push(c);
+            }
         }
         Some(display)
     } else {
