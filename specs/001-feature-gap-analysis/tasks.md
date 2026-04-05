@@ -173,7 +173,7 @@ type `hello` + Space + `w` + Backspace → only `w` deleted (history not invoked
 - [X] T025 [P] Run `cd core && cargo fmt && cargo clippy -- -D warnings` on all changed files; fix all warnings in `telex_adapter.rs`, `mod.rs`, `history.rs`, `auto_capitalise.rs`, `engine_config.rs`, `types.rs`
 - [X] T026 Run `cd core && cargo test` — confirm all existing and new regression tests pass; zero regressions allowed
 - [X] T027 Run `cd core && cargo bench` — confirm `process_key` benchmark shows no regression vs. baseline (< 3ms per constitution Principle I)
-- [ ] T028 [P] Validate all 5 features against `quickstart.md` acceptance criteria in a real macOS build
+- [X] T028 [P] Validate all 5 features against `quickstart.md` acceptance criteria in a real macOS build
 - [X] T029 [P] Update `CHANGELOG.md` with entries for each new feature under the next version section
 
 ---

@@ -93,6 +93,40 @@ use crate::data::{
 use crate::input::{self, ToneType};
 use crate::utils;
 
+/// Fixed-capacity ASCII buffer for sentence-boundary context (US4).
+///
+/// Replaces `String` to avoid heap allocation in the DOT key handler.
+/// The longest abbreviation entry is 7 bytes ("pgsts."), and the accumulated
+/// context across multiple dots is always within this bound.
+/// 32-byte capacity is a safe upper limit for any conceivable abbreviation.
+#[derive(Clone, Copy, Default)]
+struct AbbrevBuf {
+    data: [u8; 32],
+    len: u8,
+}
+
+impl AbbrevBuf {
+    #[inline]
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    #[inline]
+    fn as_str(&self) -> &str {
+        // SAFETY: `data[..len]` is populated exclusively by `push_str` / `push_byte`
+        // which only accept ASCII bytes produced by `key_to_char`.
+        unsafe { core::str::from_utf8_unchecked(&self.data[..self.len as usize]) }
+    }
+
+    #[inline]
+    fn push_byte(&mut self, b: u8) {
+        if self.len < 32 {
+            self.data[self.len as usize] = b;
+            self.len += 1;
+        }
+    }
+}
+
 /// Main Vietnamese IME engine
 pub struct Engine {
     buf: Buffer,
@@ -159,8 +193,9 @@ pub struct Engine {
     /// True when a sentence-ending punct (./?/!) has been typed and we are waiting for SPACE
     sentence_punct_pending: bool,
     /// Accumulated raw token before the last sentence-ending dot (for abbreviation detection)
-    /// e.g. "v.v." is built incrementally across multiple DOT break events
-    pending_punct_context: String,
+    /// e.g. "v.v." is built incrementally across multiple DOT break events.
+    /// Stack-allocated (32 bytes) — no heap allocation on the hot path.
+    pending_punct_context: AbbrevBuf,
 }
 
 impl Default for Engine {
@@ -289,7 +324,7 @@ impl Engine {
             triple_tone_suppressed: false,
             at_sentence_boundary: false,
             sentence_punct_pending: false,
-            pending_punct_context: String::new(),
+            pending_punct_context: AbbrevBuf::default(),
         }
     }
 
@@ -563,6 +598,13 @@ impl Engine {
             && !ctrl
         {
             self.at_sentence_boundary = false;
+            // Clear both word-restore counters: the sentence boundary starts a new editing
+            // context. Without this, the next Backspace would enter the word-restore path
+            // (via spaces_after_commit or break_after_commit) and pop the word committed
+            // before the sentence-ending punct — instead of deleting the capitalised letter.
+            // (US4 × US5 interaction bug)
+            self.spaces_after_commit = 0;
+            self.break_after_commit = 0;
             if let Some(upper_ch) = crate::utils::key_to_char(key, true) {
                 return Result::send(0, &[upper_ch]);
             }
@@ -665,7 +707,15 @@ impl Engine {
                 return Result::send(1, &[literal]);
             }
 
-            // Commit the current buffer first (if any)
+            // Commit the current buffer first (if any).
+            //
+            // Design note: if the user presses a bracket shortcut mid-composition
+            // (e.g. "vie["), the in-progress syllable is silently released from the
+            // engine's internal tracking. The screen already shows the composed text
+            // (each character was sent as typed), so no backspaces are needed — we
+            // just orphan the engine's copy of that text and start fresh with ơ/ư.
+            // Consequence: the orphaned syllable is not recoverable via backspace-after-
+            // bracket; only the shortcut character itself is tracked in the buffer.
             if !self.buf.is_empty() {
                 if self.word_history_enabled {
                     self.word_history.push(&self.buf, &self.raw_input);
@@ -709,15 +759,19 @@ impl Engine {
                         self.sentence_punct_pending = false;
                         self.pending_punct_context.clear();
                     } else {
-                        // Build the current word's raw string (ASCII keys)
-                        let current_raw: String = self
+                        // Build token in a stack buffer: pending_context + current_raw + '.'
+                        // No heap allocation — uses AbbrevBuf (fixed 32-byte array).
+                        let mut token = self.pending_punct_context;
+                        for ch in self
                             .raw_input
                             .iter()
                             .filter_map(|(k, c)| crate::utils::key_to_char(k, c))
-                            .collect();
-                        // Accumulate: prepend any earlier pending context
-                        let token = format!("{}{current_raw}.", self.pending_punct_context);
-                        if crate::data::auto_capitalise::is_abbreviation(&token) {
+                        {
+                            // key_to_char returns ASCII chars only for raw key codes
+                            token.push_byte(ch as u8);
+                        }
+                        token.push_byte(b'.');
+                        if crate::data::auto_capitalise::is_abbreviation(token.as_str()) {
                             // Known abbreviation (e.g. "v.v.", "tr.") – suppress boundary
                             self.sentence_punct_pending = false;
                             self.pending_punct_context.clear();
@@ -731,6 +785,16 @@ impl Engine {
                     // ! (Shift+1) or ? (Shift+/) – always a sentence-ending punct
                     self.sentence_punct_pending = true;
                     self.pending_punct_context.clear();
+                } else if key == keys::RETURN || key == keys::ENTER {
+                    // Enter starts a new sentence immediately — no SPACE is needed after it.
+                    // We must set at_sentence_boundary AFTER commit_and_break_sequence()
+                    // because that function calls clear(), and we cannot add the flag to
+                    // clear() without breaking the DOT/!/? pending-→-boundary promotion.
+                    let result = self.commit_and_break_sequence();
+                    self.at_sentence_boundary = true;
+                    self.sentence_punct_pending = false;
+                    self.pending_punct_context.clear();
+                    return result;
                 } else {
                     // Any other break key (comma, semicolon, number, …) – clear pending
                     self.sentence_punct_pending = false;
@@ -3750,6 +3814,11 @@ impl Engine {
         self.is_english_word = false;
         self.triple_tone_suppressed = false;
         self.last_bracket_key = None;
+        // Note: Do NOT reset at_sentence_boundary, sentence_punct_pending, or
+        // pending_punct_context here. These are set by the DOT/!/? or SPACE/ENTER
+        // handlers *before* or *after* commit_and_break_sequence() calls clear();
+        // resetting them here would erase them at the wrong time. They are reset
+        // explicitly by the auto-capitalise handlers and by clear_all().
         // Note: Do NOT reset skip_w_shortcut here - it's a user config, not state
         // Note: Do NOT reset spaces_after_commit here - managed by on_key_ext
     }
@@ -3762,6 +3831,11 @@ impl Engine {
         self.clear();
         self.word_history.clear();
         self.spaces_after_commit = 0;
+        // Also reset auto-capitalise boundary state so a stale boundary from before
+        // the cursor jump does not capitalise the first letter at the new cursor position.
+        self.at_sentence_boundary = false;
+        self.sentence_punct_pending = false;
+        self.pending_punct_context.clear();
     }
 
     /// Restore buffer from a Vietnamese word string

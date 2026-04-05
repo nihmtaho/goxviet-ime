@@ -191,3 +191,69 @@ fn test_only_first_letter_after_boundary_is_capitalised() {
         "Only the first letter after a sentence boundary should be auto-capitalised"
     );
 }
+
+// ── US4 × US5 interaction: Backspace after auto-capitalised letter ────────────
+
+#[test]
+#[serial]
+fn test_backspace_after_auto_capitalised_letter_does_not_restore_word() {
+    // Regression test for the spaces_after_commit bug (US4 × US5 interaction):
+    // When both auto_capitalise and word_history are enabled, pressing Backspace
+    // immediately after the auto-capitalised letter must NOT trigger word restore —
+    // it should simply delete the capitalised letter.
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_auto_capitalise(true);
+    engine.set_word_history_enabled(true);
+
+    // Type "xin. " → 'xin' is a word, '.' + space set sentence boundary
+    // Then type 'b' → auto-capitalised to 'B', spaces_after_commit must be cleared
+    engine.on_key(keys::X, false, false);
+    engine.on_key(keys::I, false, false);
+    engine.on_key(keys::N, false, false);
+    engine.on_key(keys::DOT, false, false); // sentence punct
+    engine.on_key(keys::SPACE, false, false); // promotes boundary
+    engine.on_key(keys::B, false, false); // auto-capitalised
+
+    // Now Backspace: should delete the 'B' only — must NOT enter the word-restore
+    // path (which would try to pop 'xin' from history).
+    engine.on_key(keys::DELETE, false, false);
+
+    // After deleting 'B', the buffer should be empty — not restored to 'xin'.
+    assert_eq!(
+        engine.get_buffer(),
+        "",
+        "Backspace after auto-capitalised letter must not restore the previous word"
+    );
+}
+
+// ── US4 – Enter as sentence-end trigger ──────────────────────────────────────
+
+#[test]
+#[serial]
+fn test_enter_capitalises_next_letter() {
+    // Enter (Return) starts a new sentence — next letter should be capitalised
+    // without requiring a space.
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_auto_capitalise(true);
+
+    engine.on_key(keys::A, false, false); // type 'a'
+    engine.on_key(keys::RETURN, false, false); // Enter — sentence boundary
+    let r = engine.on_key(keys::B, false, false); // should be 'B'
+
+    use goxviet_core::engine::Action;
+    assert_eq!(
+        r.action,
+        Action::Send as u8,
+        "'b' after Enter should be capitalised"
+    );
+    let first_char = unsafe { char::from_u32(*r.chars) };
+    assert_eq!(
+        first_char,
+        Some('B'),
+        "'b' after Enter should become 'B'"
+    );
+}

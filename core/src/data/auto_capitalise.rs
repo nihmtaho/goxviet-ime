@@ -21,7 +21,12 @@ pub static ABBREVIATION_LIST: &[&str] = &[
 
 /// Returns true if the given token (in any case) matches a known abbreviation.
 /// The token should already end with '.'.
+///
+/// Uses byte-level ASCII case-fold to avoid heap allocation. All entries in
+/// `ABBREVIATION_LIST` are ASCII (or won't match ASCII raw-key tokens), so
+/// `eq_ignore_ascii_case` is sufficient and allocation-free.
 pub fn is_abbreviation(token: &str) -> bool {
-    let lower = token.to_lowercase();
-    ABBREVIATION_LIST.contains(&lower.as_str())
+    ABBREVIATION_LIST
+        .iter()
+        .any(|&s| s.eq_ignore_ascii_case(token))
 }
