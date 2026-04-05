@@ -126,6 +126,14 @@ pub struct Engine {
     /// Enable instant auto-restore for English words
     /// When true (default), restores English words immediately upon detection
     instant_restore_enabled: bool,
+    /// Enable bracket shortcuts: `[` → ơ, `]` → ư in Telex mode
+    bracket_shortcuts_enabled: bool,
+    /// Enable foreign consonants (z, w, j, f) as valid word-initial consonants
+    foreign_consonants_enabled: bool,
+    /// Enable auto-capitalise after sentence-ending punctuation
+    auto_capitalise_enabled: bool,
+    /// Enable backspace-after-space word history restore
+    word_history_enabled: bool,
     /// Word history for backspace-after-space feature
     word_history: WordHistory,
     /// Number of spaces typed after committing a word (for backspace tracking)
@@ -142,6 +150,14 @@ pub struct Engine {
     break_after_commit: u8,
     /// True if the last keystroke was a suppressed triple-tone marker
     triple_tone_suppressed: bool,
+    /// True when the engine is at a sentence boundary (after `.`/`!`/`?` + space)
+    /// and the next lowercase letter should be auto-capitalised
+    at_sentence_boundary: bool,
+    /// True when a sentence-ending punct (./?/!) has been typed and we are waiting for SPACE
+    sentence_punct_pending: bool,
+    /// Accumulated raw token before the last sentence-ending dot (for abbreviation detection)
+    /// e.g. "v.v." is built incrementally across multiple DOT break events
+    pending_punct_context: String,
 }
 
 impl Default for Engine {
@@ -228,7 +244,10 @@ fn try_correct_double_tone(word: &str) -> Option<String> {
                     }
                 })
                 .collect();
-            let phonotactic = crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(&corrected_keys);
+            let phonotactic =
+                crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(
+                    &corrected_keys,
+                );
             if phonotactic.english_confidence >= 80 {
                 return Some(corrected);
             }
@@ -254,12 +273,19 @@ impl Engine {
             free_tone_enabled: true,
             modern_tone: true, // Default: modern style (hoà, thuý)
             instant_restore_enabled: true,
+            bracket_shortcuts_enabled: false,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false,
             word_history: WordHistory::new(),
             spaces_after_commit: 0,
             break_after_commit: 0,
             cached_syllable_boundary: None,
             is_english_word: false,
             triple_tone_suppressed: false,
+            at_sentence_boundary: false,
+            sentence_punct_pending: false,
+            pending_punct_context: String::new(),
         }
     }
 
@@ -306,6 +332,33 @@ impl Engine {
         self.instant_restore_enabled = enabled;
     }
 
+    /// Set whether bracket shortcuts are enabled ([→ơ, ]→ư in Telex mode)
+    pub fn set_bracket_shortcuts(&mut self, enabled: bool) {
+        self.bracket_shortcuts_enabled = enabled;
+    }
+
+    /// Set whether foreign consonants (z, w, j, f) are allowed as initials
+    pub fn set_foreign_consonants(&mut self, enabled: bool) {
+        self.foreign_consonants_enabled = enabled;
+    }
+
+    /// Set whether auto-capitalise after sentence end is enabled
+    pub fn set_auto_capitalise(&mut self, enabled: bool) {
+        self.auto_capitalise_enabled = enabled;
+    }
+
+    /// Set whether word history backspace-after-space restore is enabled
+    pub fn set_word_history_enabled(&mut self, enabled: bool) {
+        self.word_history_enabled = enabled;
+    }
+
+    /// Return the number of words currently stored in the word history ring buffer.
+    ///
+    /// Exposed for integration-test assertions (e.g. verifying capacity = 10).
+    pub fn word_history_len(&self) -> usize {
+        self.word_history.len()
+    }
+
     pub fn shortcuts(&self) -> &ShortcutTable {
         &self.shortcuts
     }
@@ -327,7 +380,9 @@ impl Engine {
     fn commit_and_break_sequence(&mut self) -> Result {
         // FIX: Save history before clearing so we can restore on backspace
         if !self.buf.is_empty() {
-            self.word_history.push(&self.buf, &self.raw_input);
+            if self.word_history_enabled {
+                self.word_history.push(&self.buf, &self.raw_input);
+            }
             self.break_after_commit = 1;
         } else if self.break_after_commit > 0 {
             // If we are continuing a break sequence (e.g. 123), increment
@@ -362,17 +417,19 @@ impl Engine {
                 let spaces_to_delete = self.spaces_after_commit as u8;
                 self.spaces_after_commit = 0;
 
-                // Restore previous word from history
-                if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
-                    // Calculate the full word length to delete
-                    // SAFETY: Clamp to u8::MAX to prevent overflow
-                    let word_len = restored_buf
-                        .to_full_string()
-                        .chars()
-                        .count()
-                        .min(u8::MAX as usize) as u8;
-                    // Don't restore - just return total delete count (spaces + word)
-                    return Result::send(spaces_to_delete + word_len, &[]);
+                // Restore previous word from history (only if feature is enabled)
+                if self.word_history_enabled {
+                    if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
+                        // Calculate the full word length to delete
+                        // SAFETY: Clamp to u8::MAX to prevent overflow
+                        let word_len = restored_buf
+                            .to_full_string()
+                            .chars()
+                            .count()
+                            .min(u8::MAX as usize) as u8;
+                        // Don't restore - just return total delete count (spaces + word)
+                        return Result::send(spaces_to_delete + word_len, &[]);
+                    }
                 }
 
                 return Result::send(spaces_to_delete, &[]);
@@ -383,14 +440,16 @@ impl Engine {
                 let breaks_to_delete = self.break_after_commit;
                 self.break_after_commit = 0;
 
-                if let Some((restored_buf, _)) = self.word_history.pop() {
-                    // SAFETY: Clamp to u8::MAX to prevent overflow
-                    let word_len = restored_buf
-                        .to_full_string()
-                        .chars()
-                        .count()
-                        .min(u8::MAX as usize) as u8;
-                    return Result::send(breaks_to_delete + word_len, &[]);
+                if self.word_history_enabled {
+                    if let Some((restored_buf, _)) = self.word_history.pop() {
+                        // SAFETY: Clamp to u8::MAX to prevent overflow
+                        let word_len = restored_buf
+                            .to_full_string()
+                            .chars()
+                            .count()
+                            .min(u8::MAX as usize) as u8;
+                        return Result::send(breaks_to_delete + word_len, &[]);
+                    }
                 }
 
                 return Result::send(breaks_to_delete, &[]);
@@ -473,7 +532,9 @@ impl Engine {
             if !self.buf.is_empty() {
                 if let Some(ctrl_char) = crate::utils::key_to_char(key, caps || shift) {
                     let result = Result::send(0, &[ctrl_char]);
-                    self.word_history.push(&self.buf, &self.raw_input);
+                    if self.word_history_enabled {
+                        self.word_history.push(&self.buf, &self.raw_input);
+                    }
                     self.clear();
                     self.spaces_after_commit = 0;
                     self.is_english_word = false;
@@ -485,6 +546,26 @@ impl Engine {
             self.word_history.clear();
             self.spaces_after_commit = 0;
             return Result::none();
+        }
+
+        // Auto-capitalise: if at sentence boundary and a letter key is pressed,
+        // emit the uppercase character immediately and clear the flag.
+        // We return early here so only the first letter is capitalised.
+        if self.auto_capitalise_enabled
+            && self.at_sentence_boundary
+            && keys::is_letter(key)
+            && !caps
+            && !shift
+            && !ctrl
+        {
+            self.at_sentence_boundary = false;
+            if let Some(upper_ch) = crate::utils::key_to_char(key, true) {
+                return Result::send(0, &[upper_ch]);
+            }
+        } else if self.at_sentence_boundary && key != keys::SPACE && !keys::is_letter(key) {
+            // Clear the boundary flag if a non-space, non-letter key is typed
+            // (e.g. user types another punct before starting the next sentence)
+            self.at_sentence_boundary = false;
         }
 
         // TEMP DISABLED: Raw mode prefix detection
@@ -503,7 +584,9 @@ impl Engine {
             // Must run BEFORE shortcuts so shortcut handling sees the already-restored buffer.
             if let Some(english_result) = self.check_and_restore_english_at_boundary() {
                 if !self.buf.is_empty() {
-                    self.word_history.push(&self.buf, &self.raw_input);
+                    if self.word_history_enabled {
+                        self.word_history.push(&self.buf, &self.raw_input);
+                    }
                     self.spaces_after_commit = 1;
                 }
                 self.clear();
@@ -516,7 +599,9 @@ impl Engine {
 
             // Push to history before clearing (for backspace-after-space feature)
             if !self.buf.is_empty() {
-                self.word_history.push(&self.buf, &self.raw_input);
+                if self.word_history_enabled {
+                    self.word_history.push(&self.buf, &self.raw_input);
+                }
                 self.spaces_after_commit = 1;
             } else if self.spaces_after_commit > 0 {
                 self.spaces_after_commit = self.spaces_after_commit.saturating_add(1);
@@ -527,6 +612,18 @@ impl Engine {
             self.clear();
             self.is_english_word = false;
             self.raw_input.clear();
+
+            // Auto-capitalise: promote pending sentence-boundary flag to active boundary.
+            // If a sentence-ending punct (./?/!) was typed before this space, set the flag
+            // so the next letter will be capitalised.
+            if self.auto_capitalise_enabled {
+                if self.sentence_punct_pending {
+                    self.at_sentence_boundary = true;
+                }
+                self.sentence_punct_pending = false;
+                self.pending_punct_context.clear();
+            }
+
             return shortcut_result;
         }
 
@@ -546,6 +643,29 @@ impl Engine {
             return result;
         }
 
+        // Bracket shortcuts: [ → ơ, ] → ư in Telex mode
+        if self.bracket_shortcuts_enabled
+            && self.method == 0
+            && (key == keys::LBRACKET || key == keys::RBRACKET)
+        {
+            let ch = if key == keys::LBRACKET { 'ơ' } else { 'ư' };
+            // Commit the current buffer first (if any)
+            let commit = if !self.buf.is_empty() {
+                if self.word_history_enabled {
+                    self.word_history.push(&self.buf, &self.raw_input);
+                }
+                self.buf.clear();
+                self.raw_input.clear();
+                self.spaces_after_commit = 0;
+                true
+            } else {
+                false
+            };
+            let _ = commit;
+            // Emit the shortcut character directly
+            return Result::send(0, &[ch]);
+        }
+
         // Other break keys (punctuation, arrows, numbers, etc.) just clear buffer
         // Only if NOT a modifier key (to allow VNI number-based modifiers)
         let m = input::get(self.method);
@@ -553,6 +673,44 @@ impl Engine {
             m.stroke(key) || m.remove(key) || m.tone(key).is_some() || m.mark(key).is_some();
 
         if !is_modifier && (keys::is_break(key) || keys::is_number(key)) {
+            // Auto-capitalise: detect sentence-ending punctuation before committing.
+            if self.auto_capitalise_enabled {
+                if key == keys::DOT && !shift {
+                    // DOT key: could be decimal separator or sentence-end.
+                    // If raw_input is empty and a number break was just committed,
+                    // this is a decimal dot (e.g. "3.14") – do not set pending.
+                    if self.raw_input.is_empty() && self.break_after_commit > 0 {
+                        self.sentence_punct_pending = false;
+                        self.pending_punct_context.clear();
+                    } else {
+                        // Build the current word's raw string (ASCII keys)
+                        let current_raw: String = self
+                            .raw_input
+                            .iter()
+                            .filter_map(|(k, c)| crate::utils::key_to_char(k, c))
+                            .collect();
+                        // Accumulate: prepend any earlier pending context
+                        let token = format!("{}{current_raw}.", self.pending_punct_context);
+                        if crate::data::auto_capitalise::is_abbreviation(&token) {
+                            // Known abbreviation (e.g. "v.v.", "tr.") – suppress boundary
+                            self.sentence_punct_pending = false;
+                            self.pending_punct_context.clear();
+                        } else {
+                            // Possible sentence end – keep accumulating (multi-dot abbreviations)
+                            self.pending_punct_context = token;
+                            self.sentence_punct_pending = true;
+                        }
+                    }
+                } else if (key == keys::N1 && shift) || (key == keys::SLASH && shift) {
+                    // ! (Shift+1) or ? (Shift+/) – always a sentence-ending punct
+                    self.sentence_punct_pending = true;
+                    self.pending_punct_context.clear();
+                } else {
+                    // Any other break key (comma, semicolon, number, …) – clear pending
+                    self.sentence_punct_pending = false;
+                    self.pending_punct_context.clear();
+                }
+            }
             return self.commit_and_break_sequence();
         }
 
@@ -570,8 +728,8 @@ impl Engine {
             // Backspace-after-space feature: restore previous word when all spaces deleted
             if self.spaces_after_commit > 0 && self.buf.is_empty() {
                 self.spaces_after_commit -= 1;
-                if self.spaces_after_commit == 0 {
-                    // All spaces deleted - restore the word buffer
+                if self.spaces_after_commit == 0 && self.word_history_enabled {
+                    // All spaces deleted - restore the word buffer (if feature enabled)
                     if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
                         self.buf = restored_buf;
                         self.raw_input = restored_raw;
@@ -589,7 +747,7 @@ impl Engine {
             // Corresponds to break_after_commit logic (numbers, etc)
             if self.break_after_commit > 0 && self.buf.is_empty() {
                 self.break_after_commit -= 1;
-                if self.break_after_commit == 0 {
+                if self.break_after_commit == 0 && self.word_history_enabled {
                     if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
                         self.buf = restored_buf;
                         self.raw_input = restored_raw;
@@ -636,6 +794,18 @@ impl Engine {
         // AND if applying the mark would result in valid Vietnamese
         // If buffer is empty, these are just regular letters
         let _m_method = input::get(self.method);
+
+        // T023 (FR-009): Invalidate the word-history restore opportunity when any
+        // non-Backspace key is typed while at word-start position.
+        //
+        // "Word-start position" = buffer is empty AND there is a recent committed
+        // word tracked by spaces_after_commit > 0.  Once the user starts a new word
+        // (or types any key) after the space, the previous word is no longer
+        // restorable via Backspace.
+        if self.word_history_enabled && self.buf.is_empty() && self.spaces_after_commit > 0 {
+            self.word_history.invalidate_last();
+            self.spaces_after_commit = 0;
+        }
 
         // CRITICAL FIX for English word detection:
         // We MUST always add all keys to raw_input, even if they're treated as modifiers.
@@ -789,7 +959,8 @@ impl Engine {
         {
             // LAYER 0: Words starting with F, J, W, Z are ALWAYS English
             // W is never a Vietnamese initial consonant (only used as Telex modifier)
-            if self.raw_input.len() == 1 {
+            // Exception: when foreign_consonants_enabled, z/j/f/w are valid Vietnamese initials
+            if self.raw_input.len() == 1 && !self.foreign_consonants_enabled {
                 let first_key = self.raw_input.iter().next().map(|(k, _)| k).unwrap_or(0);
                 if matches!(first_key, keys::F | keys::J | keys::W | keys::Z) {
                     self.is_english_word = true;
@@ -1434,8 +1605,7 @@ impl Engine {
                 // no intermediate "mỉc"/"mìc"/"mĩc" is ever produced.
                 let is_1c_english = if self.method == 0 {
                     use crate::data::keys as k;
-                    let raw_1c: Vec<u16> =
-                        self.raw_input.iter().map(|(rk, _)| rk).collect();
+                    let raw_1c: Vec<u16> = self.raw_input.iter().map(|(rk, _)| rk).collect();
                     const MIC_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
                     (raw_1c.len() >= 4
                         && raw_1c[0] == k::M
@@ -1557,6 +1727,12 @@ impl Engine {
     fn try_w_as_vowel(&mut self, caps: bool) -> Option<Result> {
         // CRITICAL: Skip Vietnamese transform if English word detected
         if self.is_english_word {
+            return None;
+        }
+
+        // Foreign consonants: when enabled, 'w' at word-start is a literal consonant,
+        // not a ư shortcut. Mid-word 'w' after a vowel still applies the horn modifier.
+        if self.foreign_consonants_enabled && self.buf.is_empty() {
             return None;
         }
 
@@ -2142,7 +2318,9 @@ impl Engine {
                         let blocked_by_existing_tone = tone_type == ToneType::Circumflex
                             && self.method == 0
                             && !last_char.has_mark()
-                            && self.buf.iter()
+                            && self
+                                .buf
+                                .iter()
                                 .filter(|c| keys::is_vowel(c.key))
                                 .any(|c| c.has_tone() || c.has_mark());
                         if !blocked_by_existing_tone {
@@ -3905,8 +4083,7 @@ impl Engine {
         }
 
         // Render the last vowel's base character (diacritic modifier only, no tone accent)
-        let last_char =
-            chars::to_char(last_vowel.key, false, last_vowel.tone, 0)?;
+        let last_char = chars::to_char(last_vowel.key, false, last_vowel.tone, 0)?;
         let new_char = crate::utils::key_to_char(new_key, false)?;
 
         // Special case: ư + o is the intermediate state for the ươ compound.
@@ -4159,7 +4336,8 @@ impl Engine {
                 // where the 'r' is consumed as a tone modifier but the result isn't
                 // a real Vietnamese word.
                 let output = self.buf.to_full_string();
-                let is_real_vietnamese = crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
+                let is_real_vietnamese =
+                    crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
 
                 let has_explicit_viet_tone = if is_real_vietnamese {
                     // Only check for explicit tone if the result IS a real Vietnamese word

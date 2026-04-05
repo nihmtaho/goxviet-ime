@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### ✨ Features
+
+- **ESC Restore (US1)**: Nhấn ESC khi đang gõ sẽ khôi phục lại chuỗi phím gốc (raw keystrokes), hoàn tác mọi biến đổi Telex/VNI. Hữu ích khi muốn gõ tên riêng hoặc chuỗi kỹ thuật mà không cần tắt IME. Bật/tắt qua Settings › Editing › ESC Restore.
+- **Bracket Shortcuts (US2)**: Hỗ trợ gõ `[` và `]` để tạo ngoặc vuông tiêu chuẩn trong khi đang ở chế độ Vietnamese — không còn bị transform thành ký tự khác. Bật/tắt qua Settings › Editing › Bracket Shortcuts.
+- **Foreign Consonants (US3)**: Phụ âm `f`, `j`, `w`, `z` khi đứng đầu âm tiết sẽ được pass-through nguyên vẹn (không bị xử lý như Telex modifier), hỗ trợ gõ từ nước ngoài và tên riêng. Bật/tắt qua Settings › Editing › Foreign Consonant Pass-Through.
+- **Auto-Capitalise (US4)**: Tự động viết hoa chữ cái đầu từ khi bắt đầu câu mới (sau dấu `.`, `!`, `?`). Tương thích với Smart Mode. Bật/tắt qua Settings › Editing › Auto-Capitalise.
+- **Word History / Backspace-After-Space (US5)**: Nhấn Backspace ngay sau khi Space sẽ khôi phục lại từ vừa commit vào buffer để tiếp tục chỉnh sửa. Lịch sử lưu tối đa 10 từ. Gõ phím bất kỳ (không phải Backspace) sau Space sẽ huỷ cơ hội khôi phục. Bật/tắt qua Settings › Editing › Backspace-After-Space Restore.
+
+---
+
 ## [2.0.14] - 2026-03-23
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.14.md](.release-notes/release_note_2.0.14.md)
