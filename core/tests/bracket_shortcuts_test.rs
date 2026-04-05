@@ -106,3 +106,57 @@ fn test_rbracket_passthrough_in_vni_mode() {
         "] should not produce a Send result in VNI mode even if bracket shortcuts enabled"
     );
 }
+
+// ── Double-press escape: [[ → [, ]] → ] ─────────────────────────────────────
+
+#[test]
+#[serial]
+fn test_double_lbracket_emits_literal_bracket() {
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_bracket_shortcuts(true);
+
+    // "[[" should produce "[" (second press undoes ơ and inserts literal [)
+    let output = type_word(&mut engine, "[[");
+    assert_eq!(output, "[", "Double [[ should produce literal [");
+}
+
+#[test]
+#[serial]
+fn test_double_rbracket_emits_literal_bracket() {
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_bracket_shortcuts(true);
+
+    // "]]" should produce "]" (second press undoes ư and inserts literal ])
+    let output = type_word(&mut engine, "]]");
+    assert_eq!(output, "]", "Double ]] should produce literal ]");
+}
+
+#[test]
+#[serial]
+fn test_mixed_brackets_no_escape() {
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_bracket_shortcuts(true);
+
+    // "[]" — different keys, each should produce its own character, no escape
+    let output = type_word(&mut engine, "[]");
+    assert_eq!(output, "ơư", "Mixed [] should produce ơ then ư");
+}
+
+#[test]
+#[serial]
+fn test_triple_lbracket_restarts_cycle() {
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_bracket_shortcuts(true);
+
+    // "[[" → "[" (literal), then "[" again → "ơ" (fresh cycle)
+    let output = type_word(&mut engine, "[[[");
+    assert_eq!(output, "[ơ", "[[[ should produce [ then ơ");
+}

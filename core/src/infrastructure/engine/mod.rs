@@ -128,6 +128,9 @@ pub struct Engine {
     instant_restore_enabled: bool,
     /// Enable bracket shortcuts: `[` → ơ, `]` → ư in Telex mode
     bracket_shortcuts_enabled: bool,
+    /// Tracks the last bracket key pressed for double-press escape:
+    /// `[[` → `[`, `]]` → `]`
+    last_bracket_key: Option<u16>,
     /// Enable foreign consonants (z, w, j, f) as valid word-initial consonants
     foreign_consonants_enabled: bool,
     /// Enable auto-capitalise after sentence-ending punctuation
@@ -274,6 +277,7 @@ impl Engine {
             modern_tone: true, // Default: modern style (hoà, thuý)
             instant_restore_enabled: true,
             bracket_shortcuts_enabled: false,
+            last_bracket_key: None,
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
@@ -643,28 +647,38 @@ impl Engine {
             return result;
         }
 
-        // Bracket shortcuts: [ → ơ, ] → ư in Telex mode
+        // Bracket shortcuts: [ → ơ, ] → ư in Telex mode.
+        // Double-press escapes: [[ → [, ]] → ]
         if self.bracket_shortcuts_enabled
             && self.method == 0
             && (key == keys::LBRACKET || key == keys::RBRACKET)
         {
+            // Double-press: undo the previous ơ/ư and emit literal bracket
+            if self.last_bracket_key == Some(key) {
+                self.last_bracket_key = None;
+                let literal = if key == keys::LBRACKET { '[' } else { ']' };
+                // Backspace = 1 to delete the ơ/ư emitted on the first press
+                return Result::send(1, &[literal]);
+            }
+
             let ch = if key == keys::LBRACKET { 'ơ' } else { 'ư' };
             // Commit the current buffer first (if any)
-            let commit = if !self.buf.is_empty() {
+            if !self.buf.is_empty() {
                 if self.word_history_enabled {
                     self.word_history.push(&self.buf, &self.raw_input);
                 }
                 self.buf.clear();
                 self.raw_input.clear();
                 self.spaces_after_commit = 0;
-                true
-            } else {
-                false
-            };
-            let _ = commit;
+            }
+            // Record this bracket for potential double-press escape
+            self.last_bracket_key = Some(key);
             // Emit the shortcut character directly
             return Result::send(0, &[ch]);
         }
+
+        // Any key that reaches here is not a bracket shortcut — clear the escape state
+        self.last_bracket_key = None;
 
         // Other break keys (punctuation, arrows, numbers, etc.) just clear buffer
         // Only if NOT a modifier key (to allow VNI number-based modifiers)
@@ -3714,6 +3728,7 @@ impl Engine {
         self.cached_syllable_boundary = None;
         self.is_english_word = false;
         self.triple_tone_suppressed = false;
+        self.last_bracket_key = None;
         // Note: Do NOT reset skip_w_shortcut here - it's a user config, not state
         // Note: Do NOT reset spaces_after_commit here - managed by on_key_ext
     }
