@@ -656,12 +656,15 @@ impl Engine {
             // Double-press: undo the previous ơ/ư and emit literal bracket
             if self.last_bracket_key == Some(key) {
                 self.last_bracket_key = None;
+                // Pop the ơ/ư char that was pushed to the buffer on the first press
+                if !self.buf.is_empty() {
+                    self.buf.pop();
+                }
                 let literal = if key == keys::LBRACKET { '[' } else { ']' };
                 // Backspace = 1 to delete the ơ/ư emitted on the first press
                 return Result::send(1, &[literal]);
             }
 
-            let ch = if key == keys::LBRACKET { 'ơ' } else { 'ư' };
             // Commit the current buffer first (if any)
             if !self.buf.is_empty() {
                 if self.word_history_enabled {
@@ -671,10 +674,19 @@ impl Engine {
                 self.raw_input.clear();
                 self.spaces_after_commit = 0;
             }
+            // Push the shortcut character into the buffer so tone marks work later.
+            // [ → ơ (O + horn), ] → ư (U + horn)
+            let (base_key, vowel_char) = if key == keys::LBRACKET {
+                (keys::O, chars::to_char(keys::O, caps, tone::HORN, 0).unwrap())
+            } else {
+                (keys::U, chars::to_char(keys::U, caps, tone::HORN, 0).unwrap())
+            };
+            let mut c = Char::new(base_key, caps);
+            c.tone = tone::HORN;
+            self.buf.push(c);
             // Record this bracket for potential double-press escape
             self.last_bracket_key = Some(key);
-            // Emit the shortcut character directly
-            return Result::send(0, &[ch]);
+            return Result::send(0, &[vowel_char]);
         }
 
         // Any key that reaches here is not a bracket shortcut — clear the escape state
@@ -1318,7 +1330,16 @@ impl Engine {
         // Modifier keys (w=horn, f=huyền, j=nặng, s=sắc, etc.) bypass the English detection
         // block above because that block requires `!_is_modifier`. Without this guard,
         // "jow" → "jơ" (horn on 'o') and "window" → "windơ" instead of staying as typed.
-        if (self.method == 0 || self.method == 1) && !self.raw_input.is_empty() {
+        //
+        // Exception: skip this guard when the buffer already has Vietnamese transforms.
+        // This handles bracket shortcuts ([ → ơ, ] → ư) which push to the buffer but NOT
+        // to raw_input. When a mark key like 'f' follows ']', raw_input=[F] so first_key=F
+        // would incorrectly trigger the guard. Since ơ/ư are already in the buffer (with
+        // tone=HORN), we skip the guard and let try_mark apply the accent normally.
+        if (self.method == 0 || self.method == 1)
+            && !self.raw_input.is_empty()
+            && !self.has_vietnamese_transforms()
+        {
             let first_key = self.raw_input.iter().next().map(|(k, _)| k).unwrap_or(0);
             if matches!(first_key, keys::F | keys::J | keys::W | keys::Z) {
                 return self.handle_normal_letter(key, caps, shift);

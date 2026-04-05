@@ -160,3 +160,44 @@ fn test_triple_lbracket_restarts_cycle() {
     let output = type_word(&mut engine, "[[[");
     assert_eq!(output, "[ơ", "[[[ should produce [ then ơ");
 }
+
+// ── Tone marks on bracket-emitted chars ──────────────────────────────────────
+
+#[test]
+#[serial]
+fn test_lbracket_then_sac_produces_o_sac() {
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_bracket_shortcuts(true);
+
+    // "[s" → ớ  ([→ ơ in buffer, s applies sắc)
+    let output = type_word(&mut engine, "[s");
+    assert_eq!(output, "ớ", "[s should produce ớ");
+}
+
+#[test]
+#[serial]
+fn test_rbracket_then_huyen_produces_u_huyen() {
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_bracket_shortcuts(true);
+
+    // "]f" → ừ  (]→ ư in buffer, f applies huyền)
+    let output = type_word(&mut engine, "]f");
+    assert_eq!(output, "ừ", "]f should produce ừ");
+}
+
+#[test]
+#[serial]
+fn test_rbracket_lbracket_sac_produces_uong_sac() {
+    let mut engine = Engine::new();
+    engine.set_method(0); // Telex
+    engine.set_enabled(true);
+    engine.set_bracket_shortcuts(true);
+
+    // "][s" → ướ  (]→ ư committed, [→ ơ in buffer, s applies sắc)
+    let output = type_word(&mut engine, "][s");
+    assert_eq!(output, "ướ", "][s should produce ướ");
+}
