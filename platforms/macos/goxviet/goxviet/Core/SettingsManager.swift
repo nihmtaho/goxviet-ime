@@ -115,6 +115,43 @@ final class SettingsManager: ObservableObject {
             Log.info("Text Expansion \(textExpansionEnabled ? "enabled" : "disabled") (v2 pending)")
         }
     }
+
+    // MARK: - Feature Gap US1–US5 Settings
+
+    @Published var escRestoreEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.escRestoreEnabled, value: escRestoreEnabled)
+            postNotification(.escRestoreChanged, value: escRestoreEnabled)
+        }
+    }
+
+    @Published var bracketShortcutsEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.bracketShortcutsEnabled, value: bracketShortcutsEnabled)
+            postNotification(.bracketShortcutsChanged, value: bracketShortcutsEnabled)
+        }
+    }
+
+    @Published var foreignConsonantsEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.foreignConsonantsEnabled, value: foreignConsonantsEnabled)
+            postNotification(.foreignConsonantsChanged, value: foreignConsonantsEnabled)
+        }
+    }
+
+    @Published var autoCapitaliseEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.autoCapitaliseEnabled, value: autoCapitaliseEnabled)
+            postNotification(.autoCapitaliseChanged, value: autoCapitaliseEnabled)
+        }
+    }
+
+    @Published var wordHistoryEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.wordHistoryEnabled, value: wordHistoryEnabled)
+            postNotification(.wordHistoryChanged, value: wordHistoryEnabled)
+        }
+    }
     
     // MARK: - Shortcuts (Text Expansion)
     
@@ -302,6 +339,11 @@ final class SettingsManager: ObservableObject {
         outputEncoding = .unicode
         shiftBackspaceEnabled = false
         textExpansionEnabled = true
+        escRestoreEnabled = false
+        bracketShortcutsEnabled = false
+        foreignConsonantsEnabled = false
+        autoCapitaliseEnabled = false
+        wordHistoryEnabled = false
         
         // Save to defaults
         saveAllToDefaults()
@@ -808,7 +850,14 @@ final class SettingsManager: ObservableObject {
         }
         shiftBackspaceEnabled = userDefaults.bool(forKey: SettingsKey.shiftBackspaceEnabled)
         textExpansionEnabled = userDefaults.bool(forKey: SettingsKey.textExpansionEnabled)
-        
+
+        // Feature Gap US1–US5 settings (all default false)
+        escRestoreEnabled = userDefaults.bool(forKey: SettingsKey.escRestoreEnabled)
+        bracketShortcutsEnabled = userDefaults.bool(forKey: SettingsKey.bracketShortcutsEnabled)
+        foreignConsonantsEnabled = userDefaults.bool(forKey: SettingsKey.foreignConsonantsEnabled)
+        autoCapitaliseEnabled = userDefaults.bool(forKey: SettingsKey.autoCapitaliseEnabled)
+        wordHistoryEnabled = userDefaults.bool(forKey: SettingsKey.wordHistoryEnabled)
+
         loadShortcutsFromDefaults()
 
         // Mark as launched after loading
@@ -836,6 +885,11 @@ final class SettingsManager: ObservableObject {
         saveToDefaults(SettingsKey.hideFromDock, value: hideFromDock)
         saveToDefaults(SettingsKey.outputEncoding, value: outputEncoding.rawValue)
         saveToDefaults(SettingsKey.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
+        saveToDefaults(SettingsKey.escRestoreEnabled, value: escRestoreEnabled)
+        saveToDefaults(SettingsKey.bracketShortcutsEnabled, value: bracketShortcutsEnabled)
+        saveToDefaults(SettingsKey.foreignConsonantsEnabled, value: foreignConsonantsEnabled)
+        saveToDefaults(SettingsKey.autoCapitaliseEnabled, value: autoCapitaliseEnabled)
+        saveToDefaults(SettingsKey.wordHistoryEnabled, value: wordHistoryEnabled)
     }
     
     private func syncToCore() {

@@ -171,6 +171,10 @@ impl ProcessorService {
         engine.set_modern_tone(config.use_modern_tone_placement);
         engine.set_english_auto_restore(config.instant_restore_enabled);
         engine.set_esc_restore(config.esc_restore_enabled);
+        engine.set_bracket_shortcuts(config.bracket_shortcuts_enabled);
+        engine.set_foreign_consonants(config.foreign_consonants_enabled);
+        engine.set_auto_capitalise(config.auto_capitalise_enabled);
+        engine.set_word_history_enabled(config.word_history_enabled);
 
         // Set method based on input_method trait
         match input_method.method_id() {

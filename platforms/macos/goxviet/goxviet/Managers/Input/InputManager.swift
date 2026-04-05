@@ -119,6 +119,14 @@ class InputManager: LifecycleManaged {
         // Apply saved instant restore setting
         ime_instant_restore_v2(settings.instantRestoreEnabled)
         Log.info("Loaded instant restore: \(settings.instantRestoreEnabled ? "enabled" : "disabled")")
+
+        // Feature Gap US1–US5 settings
+        ime_esc_restore_v2(settings.escRestoreEnabled)
+        ime_bracket_shortcuts_v2(settings.bracketShortcutsEnabled)
+        ime_foreign_consonants_v2(settings.foreignConsonantsEnabled)
+        ime_auto_capitalise_v2(settings.autoCapitaliseEnabled)
+        ime_word_history_v2(settings.wordHistoryEnabled)
+        Log.info("Feature Gap settings loaded")
         
         // Apply saved text expansion and sync shortcuts
         _ = ime_set_shortcuts_enabled_v2(settings.textExpansionEnabled)
@@ -357,7 +365,48 @@ class InputManager: LifecycleManaged {
             }
         }
         ResourceManager.shared.register(observer: instantRestoreObserver, identifier: "InputManager.instantRestoreObserver")
-        
+
+        // Feature Gap US1–US5 observers
+        let escRestoreObserver = NotificationCenter.default.addObserver(
+            forName: .escRestoreChanged, object: nil, queue: .main
+        ) { notification in
+            let enabled = notification.object as? Bool ?? SettingsManager.shared.escRestoreEnabled
+            Task { @MainActor in ime_esc_restore_v2(enabled) }
+        }
+        ResourceManager.shared.register(observer: escRestoreObserver, identifier: "InputManager.escRestoreObserver")
+
+        let bracketShortcutsObserver = NotificationCenter.default.addObserver(
+            forName: .bracketShortcutsChanged, object: nil, queue: .main
+        ) { notification in
+            let enabled = notification.object as? Bool ?? SettingsManager.shared.bracketShortcutsEnabled
+            Task { @MainActor in ime_bracket_shortcuts_v2(enabled) }
+        }
+        ResourceManager.shared.register(observer: bracketShortcutsObserver, identifier: "InputManager.bracketShortcutsObserver")
+
+        let foreignConsonantsObserver = NotificationCenter.default.addObserver(
+            forName: .foreignConsonantsChanged, object: nil, queue: .main
+        ) { notification in
+            let enabled = notification.object as? Bool ?? SettingsManager.shared.foreignConsonantsEnabled
+            Task { @MainActor in ime_foreign_consonants_v2(enabled) }
+        }
+        ResourceManager.shared.register(observer: foreignConsonantsObserver, identifier: "InputManager.foreignConsonantsObserver")
+
+        let autoCapitaliseObserver = NotificationCenter.default.addObserver(
+            forName: .autoCapitaliseChanged, object: nil, queue: .main
+        ) { notification in
+            let enabled = notification.object as? Bool ?? SettingsManager.shared.autoCapitaliseEnabled
+            Task { @MainActor in ime_auto_capitalise_v2(enabled) }
+        }
+        ResourceManager.shared.register(observer: autoCapitaliseObserver, identifier: "InputManager.autoCapitaliseObserver")
+
+        let wordHistoryObserver = NotificationCenter.default.addObserver(
+            forName: .wordHistoryChanged, object: nil, queue: .main
+        ) { notification in
+            let enabled = notification.object as? Bool ?? SettingsManager.shared.wordHistoryEnabled
+            Task { @MainActor in ime_word_history_v2(enabled) }
+        }
+        ResourceManager.shared.register(observer: wordHistoryObserver, identifier: "InputManager.wordHistoryObserver")
+
         // Add observer for shortcut changes
         let shortcutObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("shortcutChanged"),
@@ -787,8 +836,12 @@ class InputManager: LifecycleManaged {
         )
         
         // FIX: Clear buffer after break keys (punctuation) to prevent issues like "d-d" -> "dđ"
-        // Break keys reset composition context, so buffer should be cleared
-        if keyCode.isBreakKey {
+        // Break keys reset composition context, so buffer should be cleared.
+        // EXCEPTION: bracket keys ([, ]) must NOT clear when handled as shortcuts — the engine
+        // stores `last_bracket_key` to detect double-press ([[ → [, ]] → ]). Calling
+        // ime_clear_v2() after the first [ would wipe that state before the second [ arrives.
+        let isBracketKey = (keyCode == KeyCodes.lbracket || keyCode == KeyCodes.rbracket)
+        if keyCode.isBreakKey && !isBracketKey {
             ime_clear_v2()
             Log.info("Cleared buffer after break key: \(keyCode)")
         }

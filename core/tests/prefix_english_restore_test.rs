@@ -52,7 +52,9 @@ fn test_mics_sac_not_immediate_english() {
             let key = goxviet_core::utils::char_to_key(c);
             let r = e.on_key(key, false, false);
             if r.action == Action::Send as u8 {
-                for _ in 0..r.backspace as usize { screen.pop(); }
+                for _ in 0..r.backspace as usize {
+                    screen.pop();
+                }
                 for i in 0..r.count as usize {
                     unsafe {
                         if let Some(ch) = char::from_u32(*r.chars.offset(i as isize)) {

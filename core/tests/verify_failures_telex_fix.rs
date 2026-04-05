@@ -52,6 +52,7 @@ fn make_container() -> Container {
         enable_shortcuts: false,
         instant_restore_enabled: true,
         esc_restore_enabled: true,
+        ..Default::default()
     };
     Container::with_config(config)
 }
@@ -77,14 +78,16 @@ fn test_failures_telex_txt_regression() {
         let mut container = make_container();
         let actual = type_word(&mut container, input);
         if actual != *expected {
-            failed.push(format!("  {:12} → expected '{}', got '{}'", input.trim(), expected, actual));
+            failed.push(format!(
+                "  {:12} → expected '{}', got '{}'",
+                input.trim(),
+                expected,
+                actual
+            ));
         }
     }
 
     if !failed.is_empty() {
-        panic!(
-            "failures_telex.txt cases not fixed:\n{}",
-            failed.join("\n")
-        );
+        panic!("failures_telex.txt cases not fixed:\n{}", failed.join("\n"));
     }
 }

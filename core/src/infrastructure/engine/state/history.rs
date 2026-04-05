@@ -39,27 +39,34 @@ use crate::infrastructure::engine::buffer::Buffer;
 
 /// Ring buffer capacity (stores last N committed words)
 ///
-/// This value is chosen to balance memory usage with practical needs:
-/// - 3 words covers typical backspace-after-space scenarios
-/// - Total memory: ~3 * (256 + 264) ≈ 1.6KB
-/// - Reduced from 10 to optimize memory footprint (70% reduction)
-pub const HISTORY_CAPACITY: usize = 3;
+/// Capacity of 10 allows stepping back through up to 10 committed words
+/// via the backspace-after-space restore feature (FR-008/FR-009).
+/// Total memory: ~10 * (256 + 264 + 1) ≈ 5.2KB (stack-allocated)
+pub const HISTORY_CAPACITY: usize = 10;
 
 /// Ring buffer for word history
 ///
-/// Stores pairs of (Buffer, RawInputBuffer) for each committed word.
-/// Uses a ring buffer pattern for O(1) push/pop operations.
+/// Stores triples of (Buffer, RawInputBuffer, is_restorable) for each committed word.
+/// Uses a ring buffer pattern for O(1) push/pop/invalidate operations.
+///
+/// # `is_restorable` invariant
+///
+/// Every entry starts as restorable (`true`). If the user types any non-Backspace
+/// key while at word-start position (buffer empty, spaces_after_commit > 0), the
+/// most recent entry is marked non-restorable (`false`). A subsequent `pop()` for
+/// a non-restorable entry returns `None` (no restore) but still removes the entry.
 ///
 /// # Memory Layout
 ///
 /// ```text
-/// ┌─────────────────────────────────────────────┐
-/// │ buffers[0..3]      │ ~768 bytes             │
-/// │ raw_inputs[0..3]   │ ~792 bytes             │
-/// │ head: usize        │ 8 bytes                │
-/// │ len: usize         │ 8 bytes                │
-/// └─────────────────────────────────────────────┘
-/// Total: ~1.6KB (stack-allocated)
+/// ┌──────────────────────────────────────────────┐
+/// │ buffers[0..10]     │ ~2560 bytes             │
+/// │ raw_inputs[0..10]  │ ~2640 bytes             │
+/// │ restorable[0..10]  │ 10 bytes                │
+/// │ head: usize        │ 8 bytes                 │
+/// │ len: usize         │ 8 bytes                 │
+/// └──────────────────────────────────────────────┘
+/// Total: ~5.2KB (stack-allocated)
 /// ```
 ///
 /// # Thread Safety
@@ -71,6 +78,8 @@ pub struct WordHistory {
     buffers: [Buffer; HISTORY_CAPACITY],
     /// Ring buffer for raw keystroke history
     raw_inputs: [RawInputBuffer; HISTORY_CAPACITY],
+    /// Whether each entry can still be restored (FR-009 invalidation flag)
+    restorable: [bool; HISTORY_CAPACITY],
     /// Current head position (next write index)
     head: usize,
     /// Current number of elements (0 to HISTORY_CAPACITY)
@@ -92,6 +101,7 @@ impl WordHistory {
         Self {
             buffers: std::array::from_fn(|_| Buffer::new()),
             raw_inputs: std::array::from_fn(|_| RawInputBuffer::new()),
+            restorable: [true; HISTORY_CAPACITY],
             head: 0,
             len: 0,
         }
@@ -100,6 +110,7 @@ impl WordHistory {
     /// Push buffer and raw_input to history
     ///
     /// If the history is full, the oldest entry is overwritten.
+    /// New entries are always marked as restorable.
     ///
     /// # Arguments
     /// * `buf` - The displayed buffer state to save
@@ -113,6 +124,7 @@ impl WordHistory {
         // This avoids syscalls for allocation/deallocation
         self.buffers[self.head].clone_from(buf);
         self.raw_inputs[self.head].clone_from(raw);
+        self.restorable[self.head] = true; // new entries are always restorable
 
         self.head = (self.head + 1) % HISTORY_CAPACITY;
         if self.len < HISTORY_CAPACITY {
@@ -120,13 +132,15 @@ impl WordHistory {
         }
     }
 
-    /// Pop most recent buffer and raw_input from history
+    /// Pop most recent buffer and raw_input from history.
     ///
-    /// Returns `None` if history is empty.
+    /// The entry is always removed from the ring buffer. Returns `Some` only if
+    /// the entry is marked restorable (`is_restorable == true`); returns `None`
+    /// for invalidated entries (FR-009).
     ///
     /// # Returns
-    /// `Some((Buffer, RawInputBuffer))` - The most recently pushed entry
-    /// `None` - If history is empty
+    /// `Some((Buffer, RawInputBuffer))` - The most recently pushed **restorable** entry
+    /// `None` - If history is empty or the most recent entry was invalidated
     ///
     /// # Performance
     /// O(1) - simple array access and counter update
@@ -137,10 +151,35 @@ impl WordHistory {
         }
         self.head = (self.head + HISTORY_CAPACITY - 1) % HISTORY_CAPACITY;
         self.len -= 1;
+        if !self.restorable[self.head] {
+            // Entry was invalidated — remove it but do not restore
+            std::mem::take(&mut self.buffers[self.head]);
+            std::mem::take(&mut self.raw_inputs[self.head]);
+            return None;
+        }
         Some((
             std::mem::take(&mut self.buffers[self.head]),
             std::mem::take(&mut self.raw_inputs[self.head]),
         ))
+    }
+
+    /// Invalidate the most recent history entry (FR-009).
+    ///
+    /// Called when the user types any non-Backspace key while at word-start
+    /// position (buffer empty, spaces_after_commit > 0). Marks the entry so
+    /// that a subsequent `pop()` returns `None` instead of restoring the word.
+    ///
+    /// No-op if history is empty.
+    ///
+    /// # Performance
+    /// O(1)
+    #[inline]
+    pub fn invalidate_last(&mut self) {
+        if self.len == 0 {
+            return;
+        }
+        let index = (self.head + HISTORY_CAPACITY - 1) % HISTORY_CAPACITY;
+        self.restorable[index] = false;
     }
 
     /// Peek at the most recent entry without removing it
@@ -346,7 +385,7 @@ mod tests {
     fn test_overflow_wraps_around() {
         let mut history = WordHistory::new();
 
-        // Push more than capacity (15 entries, but capacity is 3)
+        // Push more than capacity (15 entries, capacity is 10)
         for i in 0..15 {
             let s: String = std::iter::repeat('a').take(i + 1).collect();
             history.push(&make_buffer(&s), &make_raw_input(&s));
@@ -361,8 +400,8 @@ mod tests {
         assert_eq!(buf.len(), 15);
 
         // Pop all and verify LIFO order
-        // With capacity=3, we should have entries 13, 14, 15 (the last 3 pushed)
-        for i in (13..=15).rev() {
+        // With capacity=10, we should have entries 6..=15 (the last 10 pushed)
+        for i in (6..=15).rev() {
             let (buf, _) = history.pop().unwrap();
             assert_eq!(buf.len(), i, "Expected buffer with {} chars", i);
         }

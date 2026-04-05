@@ -15,6 +15,11 @@ struct GeneralSettingsView: View {
     @Binding var instantRestoreEnabled: Bool
     @Binding var autoDisableForNonLatin: Bool
     @Binding var shiftBackspaceEnabled: Bool
+    @Binding var escRestoreEnabled: Bool
+    @Binding var bracketShortcutsEnabled: Bool
+    @Binding var foreignConsonantsEnabled: Bool
+    @Binding var autoCapitaliseEnabled: Bool
+    @Binding var wordHistoryEnabled: Bool
     
     @State private var showResetConfirmation = false
     @State private var showImportExport = false
@@ -225,6 +230,15 @@ struct GeneralSettingsView: View {
                         Divider()
 
                         ToggleRow(
+                            title: "ESC Key Restore",
+                            description: "Press ESC to revert Vietnamese text to the original keystrokes",
+                            systemImage: "escape",
+                            isOn: $escRestoreEnabled
+                        )
+
+                        Divider()
+
+                        ToggleRow(
                             title: "Auto-Disable for Non-Latin Apps",
                             description: "Automatically disable IME for apps using non-Latin scripts",
                             systemImage: "globe",
@@ -297,6 +311,49 @@ struct GeneralSettingsView: View {
                     .padding(8)
                 } label: {
                     Label("Editing", systemImage: "pencil.and.outline")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                // Vietnamese Extensions Section (US2–US5)
+                GroupBox {
+                    VStack(spacing: 6) {
+                        ToggleRow(
+                            title: "Bracket Shortcuts ([ / ])",
+                            description: "In Telex mode, [ inserts ơ and ] inserts ư",
+                            systemImage: "square.and.pencil",
+                            isOn: $bracketShortcutsEnabled
+                        )
+
+                        Divider()
+
+                        ToggleRow(
+                            title: "Allow Foreign Consonants (z, w, j, f)",
+                            description: "Type z, w, j, f at word start as literal consonants",
+                            systemImage: "character.phonetic",
+                            isOn: $foreignConsonantsEnabled
+                        )
+
+                        Divider()
+
+                        ToggleRow(
+                            title: "Auto-Capitalise After Sentence End",
+                            description: "Automatically capitalise the first letter after . ! ?",
+                            systemImage: "textformat.abc",
+                            isOn: $autoCapitaliseEnabled
+                        )
+
+                        Divider()
+
+                        ToggleRow(
+                            title: "Backspace-After-Space Restore",
+                            description: "Press Backspace after Space to restore the last typed word",
+                            systemImage: "delete.backward",
+                            isOn: $wordHistoryEnabled
+                        )
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Vietnamese Extensions", systemImage: "flag")
                         .font(.system(size: 14, weight: .semibold))
                 }
 
@@ -498,7 +555,12 @@ struct GeneralSettingsView: View {
         instantRestoreEnabled = true
         autoDisableForNonLatin = true
         settingsManager.restoreShortcut = .default
-        
+        escRestoreEnabled = false
+        bracketShortcutsEnabled = false
+        foreignConsonantsEnabled = false
+        autoCapitaliseEnabled = false
+        wordHistoryEnabled = false
+
         Log.info("General settings reset to defaults")
     }
     
@@ -755,6 +817,11 @@ extension Notification.Name {
     static let freeToneChanged = Notification.Name("com.goxviet.freeToneChanged")
     static let restoreShortcutChanged = Notification.Name("com.goxviet.restoreShortcutChanged")
     static let instantRestoreChanged = Notification.Name("com.goxviet.instantRestoreChanged")
+    static let escRestoreChanged = Notification.Name("com.goxviet.escRestoreChanged")
+    static let bracketShortcutsChanged = Notification.Name("com.goxviet.bracketShortcutsChanged")
+    static let foreignConsonantsChanged = Notification.Name("com.goxviet.foreignConsonantsChanged")
+    static let autoCapitaliseChanged = Notification.Name("com.goxviet.autoCapitaliseChanged")
+    static let wordHistoryChanged = Notification.Name("com.goxviet.wordHistoryChanged")
 }
 
 #Preview {
@@ -765,7 +832,12 @@ extension Notification.Name {
         freeToneEnabled: .constant(false),
         instantRestoreEnabled: .constant(true),
         autoDisableForNonLatin: .constant(true),
-        shiftBackspaceEnabled: .constant(true)
+        shiftBackspaceEnabled: .constant(true),
+        escRestoreEnabled: .constant(false),
+        bracketShortcutsEnabled: .constant(false),
+        foreignConsonantsEnabled: .constant(false),
+        autoCapitaliseEnabled: .constant(false),
+        wordHistoryEnabled: .constant(false)
     )
     .frame(width: 700, height: 600)
 }

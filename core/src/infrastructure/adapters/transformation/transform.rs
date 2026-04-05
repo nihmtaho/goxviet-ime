@@ -57,7 +57,13 @@ impl TransformResult {
 /// Apply tone diacritic transformation (^, ơ, ư, ă)
 ///
 /// Pattern-based: scans buffer for matching vowels
-pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8, modern: bool) -> TransformResult {
+pub fn apply_tone(
+    buf: &mut Buffer,
+    key: u16,
+    tone_value: u8,
+    method: u8,
+    modern: bool,
+) -> TransformResult {
     // Find target vowels based on key and method
     let targets = find_tone_targets(buf, key, tone_value, method);
 

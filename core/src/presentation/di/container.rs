@@ -218,6 +218,10 @@ mod tests {
             enable_shortcuts: true,
             instant_restore_enabled: true,
             esc_restore_enabled: false,
+            bracket_shortcuts_enabled: false,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false,
         };
 
         let container = Container::with_config(custom_config.clone());
@@ -244,6 +248,10 @@ mod tests {
             enable_shortcuts: true,
             instant_restore_enabled: true,
             esc_restore_enabled: false,
+            bracket_shortcuts_enabled: false,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false,
         };
 
         container.update_config(new_config.clone());
