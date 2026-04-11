@@ -4,12 +4,10 @@
 //! All functions use `catch_unwind` to prevent panics crossing FFI boundary.
 
 use super::conversions::*;
-use super::types::*;
 use crate::domain::entities::key_event::KeyEvent;
 use crate::presentation::di::Container;
 use std::ffi::{c_void, CString};
 use std::os::raw::{c_char, c_int};
-use std::panic;
 
 // ============================================================================
 // FFI API v2 - Out Parameter Pattern (Swift-Safe)
@@ -18,19 +16,6 @@ use std::panic;
 use crate::presentation::ffi::types::{
     FfiConfig_v2, FfiProcessResult_v2, FfiStatusCode, FfiVersionInfo,
 };
-
-/// Catch panics and return default value
-///
-/// Prevents panics from crossing FFI boundary
-fn catch_panic<F, R>(default: R, f: F) -> R
-where
-    F: FnOnce() -> R + panic::UnwindSafe,
-{
-    match panic::catch_unwind(f) {
-        Ok(result) => result,
-        Err(_) => default,
-    }
-}
 
 /// Create engine with optional config (v2 API)
 ///

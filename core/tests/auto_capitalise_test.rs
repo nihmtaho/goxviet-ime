@@ -251,9 +251,5 @@ fn test_enter_capitalises_next_letter() {
         "'b' after Enter should be capitalised"
     );
     let first_char = unsafe { char::from_u32(*r.chars) };
-    assert_eq!(
-        first_char,
-        Some('B'),
-        "'b' after Enter should become 'B'"
-    );
+    assert_eq!(first_char, Some('B'), "'b' after Enter should become 'B'");
 }
