@@ -66,6 +66,7 @@ class InputManager: LifecycleManaged {
     // The next keyDown will be forwarded to the engine with ctrl=true,
     // preventing tone application on the buffered Vietnamese text.
     private var ctrlOneShotPending = false
+
     
     init() {
         // Initialize Rust bridge v2
@@ -199,12 +200,12 @@ class InputManager: LifecycleManaged {
         
         if let runLoopSource = self.runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-            self.runLoopSource = nil
+            self.runLoopSource = nil // Swift ARC releases the CFRunLoopSource retain here
         }
-        
+
         if let eventTap = self.eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
-            self.eventTap = nil
+            self.eventTap = nil // Swift ARC releases the CFMachPort retain here
         }
         
         // Unregister all observers via ResourceManager
@@ -234,9 +235,12 @@ class InputManager: LifecycleManaged {
     /// Track if focused element is text input (AXTextField, AXTextArea, AXComboBox)
     private var isFocusedOnTextInput: Bool = false
     
-    /// Check if current focused element is a text input field
+    /// Check if current focused element is a text input field.
+    /// Must be called on the main thread; apply a short timeout so a sluggish
+    /// AX server never hangs the caller.
     private func checkFocusedElementIsTextInput() -> Bool {
         let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05) // 50 ms — prevents indefinite hang
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
               let element = focusedRef else {
@@ -370,40 +374,40 @@ class InputManager: LifecycleManaged {
         let escRestoreObserver = NotificationCenter.default.addObserver(
             forName: .escRestoreChanged, object: nil, queue: .main
         ) { notification in
-            let enabled = notification.object as? Bool ?? SettingsManager.shared.escRestoreEnabled
-            Task { @MainActor in ime_esc_restore_v2(enabled) }
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_esc_restore_v2(fromObject ?? SettingsManager.shared.escRestoreEnabled) }
         }
         ResourceManager.shared.register(observer: escRestoreObserver, identifier: "InputManager.escRestoreObserver")
 
         let bracketShortcutsObserver = NotificationCenter.default.addObserver(
             forName: .bracketShortcutsChanged, object: nil, queue: .main
         ) { notification in
-            let enabled = notification.object as? Bool ?? SettingsManager.shared.bracketShortcutsEnabled
-            Task { @MainActor in ime_bracket_shortcuts_v2(enabled) }
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_bracket_shortcuts_v2(fromObject ?? SettingsManager.shared.bracketShortcutsEnabled) }
         }
         ResourceManager.shared.register(observer: bracketShortcutsObserver, identifier: "InputManager.bracketShortcutsObserver")
 
         let foreignConsonantsObserver = NotificationCenter.default.addObserver(
             forName: .foreignConsonantsChanged, object: nil, queue: .main
         ) { notification in
-            let enabled = notification.object as? Bool ?? SettingsManager.shared.foreignConsonantsEnabled
-            Task { @MainActor in ime_foreign_consonants_v2(enabled) }
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_foreign_consonants_v2(fromObject ?? SettingsManager.shared.foreignConsonantsEnabled) }
         }
         ResourceManager.shared.register(observer: foreignConsonantsObserver, identifier: "InputManager.foreignConsonantsObserver")
 
         let autoCapitaliseObserver = NotificationCenter.default.addObserver(
             forName: .autoCapitaliseChanged, object: nil, queue: .main
         ) { notification in
-            let enabled = notification.object as? Bool ?? SettingsManager.shared.autoCapitaliseEnabled
-            Task { @MainActor in ime_auto_capitalise_v2(enabled) }
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_auto_capitalise_v2(fromObject ?? SettingsManager.shared.autoCapitaliseEnabled) }
         }
         ResourceManager.shared.register(observer: autoCapitaliseObserver, identifier: "InputManager.autoCapitaliseObserver")
 
         let wordHistoryObserver = NotificationCenter.default.addObserver(
             forName: .wordHistoryChanged, object: nil, queue: .main
         ) { notification in
-            let enabled = notification.object as? Bool ?? SettingsManager.shared.wordHistoryEnabled
-            Task { @MainActor in ime_word_history_v2(enabled) }
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_word_history_v2(fromObject ?? SettingsManager.shared.wordHistoryEnabled) }
         }
         ResourceManager.shared.register(observer: wordHistoryObserver, identifier: "InputManager.wordHistoryObserver")
 
@@ -552,14 +556,16 @@ class InputManager: LifecycleManaged {
             return Unmanaged.passUnretained(event)
         }
         
-        // Check for Spotlight on first keystroke (Spotlight doesn't fire AX notifications)
-        PerAppModeManagerEnhanced.shared.checkSpotlightOnce()
-        
+        // Dispatch AX-based checks to the main thread so they never block the IOKit
+        // event tap callback. Both functions read/write @MainActor state only.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            PerAppModeManagerEnhanced.shared.checkSpotlightOnce()
+            self.updateFocusState()
+        }
+
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
-        
-        // Update focus state to track if we're in text input
-        updateFocusState()
         
         // 4. Check for toggle shortcut (default: Control+Space)
         if currentShortcut.matches(keyCode: keyCode, flags: flags) {
@@ -586,6 +592,18 @@ class InputManager: LifecycleManaged {
             // This prevents stale buffer content from appearing after selection operations
             ctrlOneShotPending = false
             ime_clear_all_v2()
+
+            // Cmd+Space (Spotlight) or Option+Space (Raycast/Alfred):
+            // Spotlight/Raycast opens on keyDown — by the time this async block runs on the
+            // main thread, macOS has already processed the shortcut and the panel has focus.
+            if keyCode == 49 /* Space */ &&
+               (flags.contains(.maskCommand) || flags.contains(.maskAlternate)) {
+                PerAppModeManagerEnhanced.shared.resetSpotlightCache()
+                DispatchQueue.main.async {
+                    PerAppModeManagerEnhanced.shared.checkSpotlightOnce(force: true)
+                }
+            }
+
             return Unmanaged.passUnretained(event)
         }
 

@@ -761,7 +761,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Stop event tap immediately to prevent new keyboard events
         InputManager.shared.stop()
-        
+
+        // Flush any debounced UserDefaults writes so no settings are lost on quit
+        SettingsManager.shared.flushPendingSaves()
+
         // Cancel all pending operations
         NSObject.cancelPreviousPerformRequests(withTarget: self)
         

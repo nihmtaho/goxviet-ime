@@ -85,8 +85,12 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            MainActor.assumeIsolated {
-                self?.handleActivationNotification(notification)
+            // Extract NSRunningApplication (NSObject, @unchecked Sendable) before crossing
+            // the isolation boundary so the non-Sendable Notification never enters the Task.
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication else { return }
+            Task { @MainActor [weak self, app] in
+                self?.handleAppActivation(app)
             }
         }
         
@@ -136,13 +140,17 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     // MARK: - Notification Handling
     
+    /// Entry point for notification-based app activation (internal and synthetic callers).
     private func handleActivationNotification(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        handleAppActivation(app)
+    }
+
+    /// Core app-switch handler. Takes an `NSRunningApplication` directly so callers can
+    /// extract it before crossing isolation boundaries (avoids sending `Notification`).
+    private func handleAppActivation(_ app: NSRunningApplication) {
         let startTime = CFAbsoluteTimeGetCurrent()
-        
-        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-              let bundleId = app.bundleIdentifier else {
-            return
-        }
+        guard let bundleId = app.bundleIdentifier else { return }
         
         // Ignore same app
         guard bundleId != currentBundleId else { return }
@@ -174,8 +182,8 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         // Update current
         currentBundleId = bundleId
         
-        // Reset spotlight check flag for next detection
-        resetSpotlightCheck()
+        // Reset Spotlight detection cache so the next open is detected fresh
+        resetSpotlightCache()
         
         // Clear buffer
         ime_clear_v2()
@@ -362,7 +370,7 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     private func startPollingTimer() {
         stopPollingTimer()
         
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.checkForSpecialPanelApp()
             }
@@ -405,33 +413,49 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         }
     }
     
-    /// Lightweight check for Spotlight only - called on first keystroke.
-    /// Spotlight doesn't fire AX notifications consistently, so we need this fallback.
-    /// Uses flag to only check once per session (until next app switch).
-    private var spotlightChecked = false
-    private static let spotlightBundleId = "com.apple.Spotlight"
-    
-    func checkSpotlightOnce() {
-        // Skip if already checked in this session
-        guard !spotlightChecked else { return }
-        spotlightChecked = true
-        
-        // Quick check: is Spotlight the focused element?
+    /// Lightweight check for panel apps (Spotlight, Raycast, …) dispatched to the
+    /// main thread on every keystroke, gated by a short TTL to avoid querying AX on
+    /// every single key press while still reacting within half a second of opening.
+    ///
+    /// TTL = 0.5 s:
+    ///   • Worst-case detection lag: 0.5 s (down from 3 s)
+    ///   • AX query rate during active typing: ≤ 2/sec (cheap with 50 ms cap)
+    ///
+    /// Cache is also reset immediately via `resetSpotlightCache()` whenever a
+    /// modifier shortcut that typically opens a panel (Cmd/Opt + Space) is pressed,
+    /// so the very first keystroke in the panel triggers detection.
+    private var lastSpotlightCheckTime: Date = .distantPast
+    private static let spotlightCheckTTL: TimeInterval = 0.5   // was 3.0 s
+
+    /// - Parameter force: If true, bypass the TTL and run the AX check immediately.
+    ///   Used by proactive checks scheduled after Cmd/Opt+Space to guarantee detection
+    ///   even when the TTL was recently reset by an earlier (pre-panel-open) check.
+    func checkSpotlightOnce(force: Bool = false) {
+        // Throttle: skip if we checked within the last 0.5 seconds (unless forced)
+        let now = Date()
+        if !force {
+            guard now.timeIntervalSince(lastSpotlightCheckTime) > Self.spotlightCheckTTL else { return }
+        }
+        lastSpotlightCheckTime = now
+
+        // Quick check: is the focused element owned by a panel app?
         let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05) // 50 ms — prevents indefinite hang
         var focusedElement: CFTypeRef?
-        
+
         guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
               let element = focusedElement else { return }
-        
+
         var pid: pid_t = 0
         guard AXUIElementGetPid(element as! AXUIElement, &pid) == .success, pid > 0,
               let app = NSRunningApplication(processIdentifier: pid),
               let bundleId = app.bundleIdentifier,
-              bundleId.hasPrefix(Self.spotlightBundleId) else { return }
-        
-        // Spotlight is active - handle app switch if not already tracked
+              // Check against all known panel apps: Spotlight, Raycast, Emoji panel, …
+              SpecialPanelAppDetector.isSpecialPanelApp(bundleId) else { return }
+
+        // Panel app is active — handle app switch if not already tracked
         if bundleId != currentBundleId {
-            Log.info("Spotlight detected via checkSpotlightOnce()")
+            Log.info("Panel app detected via checkSpotlightOnce(): \(bundleId)")
             let userInfo: [AnyHashable: Any] = [
                 NSWorkspace.applicationUserInfoKey: app
             ]
@@ -443,10 +467,12 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             handleActivationNotification(notification)
         }
     }
-    
-    /// Reset spotlight check flag - call when app switch occurs
-    func resetSpotlightCheck() {
-        spotlightChecked = false
+
+    /// Reset the panel-app detection cache — call on every app switch so the next
+    /// Spotlight/Raycast open is detected fresh rather than being throttled by the TTL.
+    /// Also called when Cmd/Opt+Space is pressed (likely opens a panel).
+    func resetSpotlightCache() {
+        lastSpotlightCheckTime = .distantPast
     }
 }
 

@@ -201,6 +201,8 @@ Scopes: `core`, `macos`, `windows`, `ffi`
 ## Active Technologies
 - Rust (stable) + Swift 6 (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`) + SmallVec (hot-path stack allocation), AppKit/SwiftUI (macOS UI), Criterion (benchmarks) (001-feature-gap-analysis)
 - `UserDefaults` (settings persistence); in-memory fixed-capacity ring buffer (`WordHistory`) (001-feature-gap-analysis)
+- Swift 6.2 (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`), Rust stable + AppKit, ApplicationServices (CGEventTap, AXUIElement), CoreFoundation (003-macos-input-optimization)
+- UserDefaults (settings persistence; no database) (003-macos-input-optimization)
 
 ## Recent Changes
 - 001-feature-gap-analysis: Added Rust (stable) + Swift 6 (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`) + SmallVec (hot-path stack allocation), AppKit/SwiftUI (macOS UI), Criterion (benchmarks)

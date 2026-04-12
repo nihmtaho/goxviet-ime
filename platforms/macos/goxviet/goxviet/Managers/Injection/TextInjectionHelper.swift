@@ -80,8 +80,26 @@ public final class TextInjector {
         }
     }
 
-    /// Inject text replacement synchronously (blocks until complete)
+    /// Inject text replacement synchronously (blocks until complete).
+    ///
+    /// `syncProxy` and `passthrough` inject inline through the event tap proxy and
+    /// must NEVER acquire the semaphore — they are called from the IOKit callback
+    /// thread where blocking would stall all keyboard input.  All other methods are
+    /// dispatched to a background queue before this function is called, so they may
+    /// safely wait on the semaphore to serialise concurrent injection state.
     func injectSync(bs: Int, text: String, method: InjectionMethod, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy) {
+        // syncProxy/passthrough: inline, semaphore-free, safe to call from IOKit thread
+        switch method {
+        case .syncProxy:
+            injectViaProxy(bs: bs, text: text, proxy: proxy)
+            return
+        case .passthrough:
+            return
+        default:
+            break
+        }
+
+        // All remaining methods: serialise with semaphore (called from background queue only)
         semaphore.wait()
         defer { semaphore.signal() }
 
@@ -96,11 +114,8 @@ public final class TextInjector {
             injectViaBackspace(bs: bs, text: text, delays: delays, charByChar: true)
         case .instant, .slow, .fast:
             injectViaBackspace(bs: bs, text: text, delays: delays)
-        case .syncProxy:
-            injectViaProxy(bs: bs, text: text, proxy: proxy)
-        case .passthrough:
-            // Should not reach here - passthrough is handled in keyboard callback
-            break
+        case .syncProxy, .passthrough:
+            break // handled above; unreachable
         }
 
         // Settle time: 20ms for slow apps, 5ms for others
@@ -224,6 +239,7 @@ public final class TextInjector {
     private func injectViaAX(bs: Int, text: String) -> Bool {
         // Get focused element
         let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05) // 50ms cap — Spotlight can be slow
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
               let ref = focusedRef else {
@@ -332,9 +348,10 @@ public final class TextInjector {
     /// Spotlight can be busy searching, causing AX API to fail temporarily
     private func injectViaAXWithFallback(bs: Int, text: String, proxy: CGEventTapProxy) {
         // Try AX API up to 3 times (Spotlight might be busy)
+        // Retry delay reduced from 5ms → 2ms: AX timeout is 50ms so total worst-case is 3×50ms+2×2ms
         for attempt in 0..<3 {
             if attempt > 0 {
-                usleep(5000)  // 5ms delay before retry
+                usleep(2000)  // 2ms delay before retry (was 5ms)
             }
             if injectViaAX(bs: bs, text: text) {
                 return  // Success!
@@ -439,13 +456,14 @@ private struct BundleConstants {
 // MARK: - Detection Cache
 
 /// Cache for detectMethod() - avoids expensive AX queries on every keystroke
-/// Uses time-based TTL (200ms) + app switch invalidation for safety
+/// Uses time-based TTL (1000ms) + app switch invalidation for safety
 /// PERFORMANCE: Uses CFAbsoluteTimeGetCurrent() instead of Date() for faster timestamp
+/// TTL is 1s: at 120 WPM (100ms/char) this gives ~10 keystrokes per AX query instead of ~2.
 private enum DetectionCache {
     static var result: (method: InjectionMethod, delays: (UInt32, UInt32, UInt32))?
     static var timestamp: CFAbsoluteTime = 0
     static var lastLoggedKey: String = ""  // Only log when method+app changes
-    static let ttl: CFAbsoluteTime = 0.2  // 200ms
+    static let ttl: CFAbsoluteTime = 1.0  // 1000ms — reduced AX query frequency
 
     static func get() -> (InjectionMethod, (UInt32, UInt32, UInt32))? {
         guard let cached = result,
@@ -524,32 +542,27 @@ func resolveRole(axEl: AXUIElement) -> String? {
 
 /// Detect optimal injection method based on focused app and UI element
 func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
-    // Check cache first (200ms TTL)
+    // Check cache first (1000ms TTL, invalidated on app switch)
     if let cached = DetectionCache.get() {
         return cached
     }
     
     // Get focused element and its owning app (works for overlays like Spotlight)
     let systemWide = AXUIElementCreateSystemWide()
+    // Cap AX query at 50ms — prevents indefinite hang on slow/busy accessibility servers.
+    // Single attempt only: retries with usleep add 1–2ms of forced delay on every cache miss.
+    // If AX fails, the bundle-ID fallback chain below handles it gracefully.
+    AXUIElementSetMessagingTimeout(systemWide, 0.05)
     var focused: CFTypeRef?
     var role: String?
     var bundleId: String?
-    
-    // Try up to 3 times with small delay for transient failures
-    var focusResult: AXError = .failure
-    for attempt in 0..<3 {
-        if attempt > 0 {
-            usleep(1000) // 1ms delay between retries
-        }
-        focusResult = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focused)
-        if focusResult == .success {
-            break
-        }
-    }
+
+    let focusResult = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focused)
     
     if focusResult == .success, let el = focused {
         let axEl = el as! AXUIElement
-        
+        AXUIElementSetMessagingTimeout(axEl, 0.05) // cap per-element queries at 50ms
+
         // Get role using resolveRole helper (handles role=nil cases)
         role = resolveRole(axEl: axEl)
         
