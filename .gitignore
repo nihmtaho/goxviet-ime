@@ -235,4 +235,3 @@ gha-creds-*.json
 .venv
 .ruff_cache
 .uvasx/
-.specify/

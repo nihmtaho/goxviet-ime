@@ -205,7 +205,6 @@ pub fn apply_mark(buf: &mut Buffer, mark_value: u8, modern: bool) -> TransformRe
     // Modifier as u8 matches tone::NONE/CIRCUMFLEX/HORN constants (0/1/2).
     {
         use crate::data::chars as char_data;
-        use crate::infrastructure::adapters::validation::syllable_structure_validator;
         let vowel_cluster: String = vowels
             .iter()
             .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))

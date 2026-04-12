@@ -727,9 +727,15 @@ impl Engine {
             // Push the shortcut character into the buffer so tone marks work later.
             // [ → ơ (O + horn), ] → ư (U + horn)
             let (base_key, vowel_char) = if key == keys::LBRACKET {
-                (keys::O, chars::to_char(keys::O, caps, tone::HORN, 0).unwrap())
+                (
+                    keys::O,
+                    chars::to_char(keys::O, caps, tone::HORN, 0).unwrap(),
+                )
             } else {
-                (keys::U, chars::to_char(keys::U, caps, tone::HORN, 0).unwrap())
+                (
+                    keys::U,
+                    chars::to_char(keys::U, caps, tone::HORN, 0).unwrap(),
+                )
             };
             let mut c = Char::new(base_key, caps);
             c.tone = tone::HORN;
@@ -2972,16 +2978,6 @@ impl Engine {
         vowel_compound::normalize_uo_compound(&mut self.buf)
     }
 
-    /// Find positions of U+O or O+U compound (adjacent vowels)
-    /// Returns Some((first_pos, second_pos)) if found, None otherwise
-    /// Delegates to vowel_compound module.
-    fn find_uo_compound_positions(&self) -> Option<(usize, usize)> {
-        vowel_compound::find_uo_compound_positions(&self.buf)
-    }
-
-    /// Check for uo compound in buffer (any tone state)
-    /// Delegates to vowel_compound module.
-
     /// Check for complete ươ compound (both u and o have horn)
     /// Delegates to vowel_compound module.
     fn has_complete_uo_compound(&self) -> bool {
@@ -4912,18 +4908,6 @@ impl Engine {
         }
 
         None
-    }
-
-    /// Rebuild output from entire buffer (used after transform when we need full rebuild)
-    fn rebuild_output_from_entire_buffer(&self) -> Result {
-        let buf_len = self.buf.len();
-        if buf_len == 0 {
-            return Result::none();
-        }
-
-        let chars: Vec<char> = self.buf.to_full_string().chars().collect();
-        // SAFETY: Clamp to u8::MAX to prevent overflow
-        Result::send(buf_len.min(u8::MAX as usize) as u8, &chars)
     }
 
     /// Advanced phonotactic analysis for English detection
