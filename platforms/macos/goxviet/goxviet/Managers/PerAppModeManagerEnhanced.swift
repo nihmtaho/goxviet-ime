@@ -19,9 +19,10 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     private(set) var currentBundleId: String?
     private(set) var isRunning: Bool = false
     
-    // Polling timer for special panel apps
-    private var pollingTimer: Timer?
-    
+    // MARK: - Performance Stats
+
+    private var statsTimer: Timer?
+
     // MARK: - Caching
     
     /// LRU cache for app metadata (icon, name, etc.)
@@ -85,8 +86,12 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            MainActor.assumeIsolated {
-                self?.handleActivationNotification(notification)
+            // Extract NSRunningApplication (NSObject, @unchecked Sendable) before crossing
+            // the isolation boundary so the non-Sendable Notification never enters the Task.
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication else { return }
+            Task { @MainActor [weak self, app] in
+                self?.handleAppActivation(app)
             }
         }
         
@@ -114,8 +119,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             Log.info("PerAppModeManagerEnhanced started")
         }
         
-        // Start polling for special panel apps
-        startPollingTimer()
+        // Start event-driven panel app detection and performance monitoring
+        startPanelAppObservers()
+        startStatsTimer()
     }
     
     func stop() {
@@ -126,8 +132,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             center: NSWorkspace.shared.notificationCenter
         )
         
-        stopPollingTimer()
-        
+        stopPanelAppObservers()
+        stopStatsTimer()
+
         isRunning = false
         currentBundleId = nil
         
@@ -136,13 +143,17 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     
     // MARK: - Notification Handling
     
+    /// Entry point for notification-based app activation (internal and synthetic callers).
     private func handleActivationNotification(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        handleAppActivation(app)
+    }
+
+    /// Core app-switch handler. Takes an `NSRunningApplication` directly so callers can
+    /// extract it before crossing isolation boundaries (avoids sending `Notification`).
+    private func handleAppActivation(_ app: NSRunningApplication) {
         let startTime = CFAbsoluteTimeGetCurrent()
-        
-        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-              let bundleId = app.bundleIdentifier else {
-            return
-        }
+        guard let bundleId = app.bundleIdentifier else { return }
         
         // Ignore same app
         guard bundleId != currentBundleId else { return }
@@ -174,8 +185,8 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         // Update current
         currentBundleId = bundleId
         
-        // Reset spotlight check flag for next detection
-        resetSpotlightCheck()
+        // Reset Spotlight detection cache so the next open is detected fresh
+        resetSpotlightCache()
         
         // Clear buffer
         ime_clear_v2()
@@ -357,81 +368,109 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         }
     }
     
-    // MARK: - Special Panel Detection
-    
-    private func startPollingTimer() {
-        stopPollingTimer()
-        
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+    // MARK: - Special Panel Detection (Event-Driven)
+
+    /// Replaces the 5-second polling timer. Listens for panel app launch events
+    /// and immediately handles them — no fixed interval needed.
+    /// For Spotlight (which doesn't launch a new process each open), the per-keystroke
+    /// checkSpotlightOnce() + resetSpotlightCache() on Cmd/Opt+Space covers detection.
+    private func startPanelAppObservers() {
+        let launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication,
+                  let bundleId = app.bundleIdentifier,
+                  SpecialPanelAppDetector.isSpecialPanelApp(bundleId) else { return }
+            Task { @MainActor [weak self, app] in
+                guard let self, bundleId != self.currentBundleId else { return }
+                Log.info("Panel app launched: \(bundleId)")
+                self.handleAppActivation(app)
+            }
+        }
+        ResourceManager.shared.register(
+            observer: launchObserver,
+            identifier: "PerAppModeManagerEnhanced.panelLaunchObserver",
+            center: NSWorkspace.shared.notificationCenter
+        )
+    }
+
+    private func stopPanelAppObservers() {
+        ResourceManager.shared.unregister(
+            observerIdentifier: "PerAppModeManagerEnhanced.panelLaunchObserver",
+            center: NSWorkspace.shared.notificationCenter
+        )
+    }
+
+    // MARK: - Performance Stats
+
+    private func startStatsTimer() {
+        let timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.checkForSpecialPanelApp()
+                self?.logPerformanceStats()
             }
         }
-        
-        ResourceManager.shared.register(timer: timer, identifier: "PerAppModeManagerEnhanced.pollingTimer")
-        pollingTimer = timer
-        
-        if let timer = pollingTimer {
-            RunLoop.current.add(timer, forMode: .common)
+        ResourceManager.shared.register(timer: timer, identifier: "PerAppModeManagerEnhanced.statsTimer")
+        statsTimer = timer
+        RunLoop.current.add(timer, forMode: .common)
+    }
+
+    private func stopStatsTimer() {
+        ResourceManager.shared.unregister(timerIdentifier: "PerAppModeManagerEnhanced.statsTimer")
+        statsTimer = nil
+    }
+
+    private func logPerformanceStats() {
+        let s = appMetadataCache.getStats()
+        Log.info("[Perf] AppMetadataCache — hits:\(s.hits) misses:\(s.misses) evictions:\(s.evictions) rate:\(String(format: "%.1f%%", s.hitRate * 100)) size:\(s.size)/\(s.capacity)")
+        appMetadataCache.resetStats()
+    }
+    
+    /// Lightweight check for panel apps (Spotlight, Raycast, …) dispatched to the
+    /// main thread on every keystroke, gated by a short TTL to avoid querying AX on
+    /// every single key press while still reacting within half a second of opening.
+    ///
+    /// TTL = 0.5 s:
+    ///   • Worst-case detection lag: 0.5 s (down from 3 s)
+    ///   • AX query rate during active typing: ≤ 2/sec (cheap with 50 ms cap)
+    ///
+    /// Cache is also reset immediately via `resetSpotlightCache()` whenever a
+    /// modifier shortcut that typically opens a panel (Cmd/Opt + Space) is pressed,
+    /// so the very first keystroke in the panel triggers detection.
+    private var lastSpotlightCheckTime: Date = .distantPast
+    private static let spotlightCheckTTL: TimeInterval = 0.5   // was 3.0 s
+
+    /// - Parameter force: If true, bypass the TTL and run the AX check immediately.
+    ///   Used by proactive checks scheduled after Cmd/Opt+Space to guarantee detection
+    ///   even when the TTL was recently reset by an earlier (pre-panel-open) check.
+    func checkSpotlightOnce(force: Bool = false) {
+        // Throttle: skip if we checked within the last 0.5 seconds (unless forced)
+        let now = Date()
+        if !force {
+            guard now.timeIntervalSince(lastSpotlightCheckTime) > Self.spotlightCheckTTL else { return }
         }
-    }
-    
-    private func stopPollingTimer() {
-        ResourceManager.shared.unregister(timerIdentifier: "PerAppModeManagerEnhanced.pollingTimer")
-        pollingTimer = nil
-    }
-    
-    private func checkForSpecialPanelApp() {
-        let (appChanged, newBundleId, _) = SpecialPanelAppDetector.checkForAppChange()
-        
-        guard appChanged, let bundleId = newBundleId else { return }
-        
-        // Simulate app switch
-        if bundleId != currentBundleId {
-            Log.info("Special panel detected: \(bundleId)")
-            
-            // Create synthetic notification
-            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-                let userInfo: [AnyHashable: Any] = [
-                    NSWorkspace.applicationUserInfoKey: app
-                ]
-                let notification = Notification(
-                    name: NSWorkspace.didActivateApplicationNotification,
-                    object: NSWorkspace.shared,
-                    userInfo: userInfo
-                )
-                handleActivationNotification(notification)
-            }
-        }
-    }
-    
-    /// Lightweight check for Spotlight only - called on first keystroke.
-    /// Spotlight doesn't fire AX notifications consistently, so we need this fallback.
-    /// Uses flag to only check once per session (until next app switch).
-    private var spotlightChecked = false
-    private static let spotlightBundleId = "com.apple.Spotlight"
-    
-    func checkSpotlightOnce() {
-        // Skip if already checked in this session
-        guard !spotlightChecked else { return }
-        spotlightChecked = true
-        
-        // Quick check: is Spotlight the focused element?
+        lastSpotlightCheckTime = now
+
+        // Quick check: is the focused element owned by a panel app?
         let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05) // 50 ms — prevents indefinite hang
         var focusedElement: CFTypeRef?
-        
+
         guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
               let element = focusedElement else { return }
-        
+
         var pid: pid_t = 0
         guard AXUIElementGetPid(element as! AXUIElement, &pid) == .success, pid > 0,
               let app = NSRunningApplication(processIdentifier: pid),
               let bundleId = app.bundleIdentifier,
-              bundleId.hasPrefix(Self.spotlightBundleId) else { return }
-        
-        // Spotlight is active - handle app switch if not already tracked
+              // Check against all known panel apps: Spotlight, Raycast, Emoji panel, …
+              SpecialPanelAppDetector.isSpecialPanelApp(bundleId) else { return }
+
+        // Panel app is active — handle app switch if not already tracked
         if bundleId != currentBundleId {
-            Log.info("Spotlight detected via checkSpotlightOnce()")
+            Log.info("Panel app detected via checkSpotlightOnce(): \(bundleId)")
             let userInfo: [AnyHashable: Any] = [
                 NSWorkspace.applicationUserInfoKey: app
             ]
@@ -443,10 +482,12 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             handleActivationNotification(notification)
         }
     }
-    
-    /// Reset spotlight check flag - call when app switch occurs
-    func resetSpotlightCheck() {
-        spotlightChecked = false
+
+    /// Reset the panel-app detection cache — call on every app switch so the next
+    /// Spotlight/Raycast open is detected fresh rather than being throttled by the TTL.
+    /// Also called when Cmd/Opt+Space is pressed (likely opens a panel).
+    func resetSpotlightCache() {
+        lastSpotlightCheckTime = .distantPast
     }
 }
 

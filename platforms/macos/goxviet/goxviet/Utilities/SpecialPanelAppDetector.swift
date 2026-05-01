@@ -23,7 +23,8 @@ class SpecialPanelAppDetector {
     static let specialPanelApps: [String] = [
         "com.apple.Spotlight",
         "com.raycast.macos",
-        "com.apple.inputmethod.EmojiFunctionRowItem"
+        "com.runningwithcrayons.Alfred",           // Alfred launcher
+        "com.apple.inputmethod.EmojiFunctionRowItem",
     ]
 
     /// Last detected frontmost app (for tracking changes)
@@ -32,23 +33,15 @@ class SpecialPanelAppDetector {
     // MARK: - Cache
 
     /// PERFORMANCE: Uses CFAbsoluteTimeGetCurrent() instead of Date() for faster timestamp
-    /// THREAD-SAFETY: Protected by NSLock to prevent race conditions during concurrent access
+    /// TTL is 4.5s: polling fires every 5s, so cache expires between polls but not during.
+    /// Cache is also explicitly invalidated on app switch via invalidateCache().
     private enum Cache {
         static var result: String?
         static var timestamp: CFAbsoluteTime = 0
-        static let ttl: CFAbsoluteTime = 0.1  // 100ms
-        
-        // Statistics
-        static var hits: Int = 0
-        static var misses: Int = 0
+        static let ttl: CFAbsoluteTime = 4.5  // 4500ms — matches 5s polling interval
 
         static func get() -> String?? {  // Double optional: nil = miss, .some(nil) = cached nil
-            if CFAbsoluteTimeGetCurrent() - timestamp < ttl {
-                hits += 1
-                return .some(result)
-            }
-            misses += 1
-            return nil
+            CFAbsoluteTimeGetCurrent() - timestamp < ttl ? .some(result) : nil
         }
 
         static func set(_ value: String?) {
@@ -60,62 +53,64 @@ class SpecialPanelAppDetector {
             result = nil
             timestamp = 0
         }
-        
-        static func getStats() -> (hits: Int, misses: Int, hitRate: Double) {
-            let total = hits + misses
-            let hitRate = total > 0 ? Double(hits) / Double(total) : 0.0
-            return (hits, misses, hitRate)
-        }
-        
-        static func resetStats() {
-            hits = 0
-            misses = 0
-        }
     }
 
     // MARK: - Detection Methods
 
     /// Check if a bundle ID is a special panel app
     static func isSpecialPanelApp(_ bundleId: String?) -> Bool {
-        guard let bundleId = bundleId else { return false }
+        guard let bundleId else { return false }
         return specialPanelApps.contains { bundleId.hasPrefix($0) || bundleId == $0 }
     }
 
     /// Fast path: check focused element only (cheapest AX query)
-    /// Returns bundle ID if focused element belongs to a special panel app
-    private static func getFocusedSpecialPanelApp() -> String? {
+    /// Returns:
+    ///   - `.some(bundleId)` — focused element belongs to a special panel app
+    ///   - `.some(nil)`     — AX query succeeded, focused element is NOT a special panel app
+    ///   - `.none`          — AX query failed (permission denied, server timeout, etc.)
+    private static func getFocusedSpecialPanelApp() -> String?? {
         let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05) // 50ms cap — prevents hang
         var focusedElement: CFTypeRef?
 
-        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success,
-              let element = focusedElement else {
+        let axResult = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        guard axResult == .success, let element = focusedElement else {
+            // AX failed — caller should try slow path as fallback
             return nil
         }
 
         var pid: pid_t = 0
         guard AXUIElementGetPid(element as! AXUIElement, &pid) == .success, pid > 0,
               let app = NSRunningApplication(processIdentifier: pid),
-              let bundleId = app.bundleIdentifier,
-              isSpecialPanelApp(bundleId) else {
-            return nil
+              let bundleId = app.bundleIdentifier else {
+            // AX succeeded but couldn't resolve app — treat as "no panel"
+            return .some(nil)
         }
 
-        return bundleId
+        return .some(isSpecialPanelApp(bundleId) ? bundleId : nil)
     }
 
     /// Get the currently active special panel app (if any)
-    /// Uses caching and fast-path to avoid expensive operations on every call
+    /// Uses caching and fast-path to avoid expensive operations on every call.
+    ///
+    /// Slow path (CGWindowListCopyWindowInfo) is only used when the AX query itself
+    /// fails — if AX succeeds and the focused element isn't a panel app, we skip
+    /// the window scan entirely (no panel is active).
     static func getActiveSpecialPanelApp() -> String? {
-        // Check cache first
+        // Check cache first (4.5s TTL, invalidated on app switch)
         if let cached = Cache.get() { return cached }
 
-        // Fast path: check focused element (single AX query)
-        if let focusedApp = getFocusedSpecialPanelApp() {
-            Cache.set(focusedApp)
-            return focusedApp
+        switch getFocusedSpecialPanelApp() {
+        case .some(let bundleId):
+            // AX succeeded: cache whatever it found (panel app or nil "no panel")
+            Cache.set(bundleId)
+            return bundleId
+        case nil:
+            // AX failed: fall through to slow path as a last resort
+            break
         }
 
-        // Slow path: full window scan (only if fast path failed)
+        // Slow path: only reached when AX is unavailable (permission denied / server error)
         let result = getActiveSpecialPanelAppFullScan()
         Cache.set(result)
         return result
@@ -158,23 +153,13 @@ class SpecialPanelAppDetector {
     static func invalidateCache() {
         Cache.clear()
     }
-    
+
     /// Clear cache (called on memory pressure)
     static func clearCache() {
         Cache.clear()
         Log.info("SpecialPanelAppDetector cache cleared")
     }
-    
-    /// Get cache statistics for monitoring
-    static func getCacheStats() -> (hits: Int, misses: Int, hitRate: Double) {
-        return Cache.getStats()
-    }
-    
-    /// Reset cache statistics
-    static func resetCacheStats() {
-        Cache.resetStats()
-    }
-    
+
     // MARK: - Smart Switch Integration
     
     /// Check if a special panel app has become active or inactive
@@ -212,6 +197,6 @@ class SpecialPanelAppDetector {
     
     /// Get the last known frontmost app
     static func getLastFrontMostApp() -> String {
-        return lastFrontMostApp
+        lastFrontMostApp
     }
 }
