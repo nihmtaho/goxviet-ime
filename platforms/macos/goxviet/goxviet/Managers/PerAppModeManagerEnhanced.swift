@@ -19,9 +19,10 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
     private(set) var currentBundleId: String?
     private(set) var isRunning: Bool = false
     
-    // Polling timer for special panel apps
-    private var pollingTimer: Timer?
-    
+    // MARK: - Performance Stats
+
+    private var statsTimer: Timer?
+
     // MARK: - Caching
     
     /// LRU cache for app metadata (icon, name, etc.)
@@ -118,8 +119,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             Log.info("PerAppModeManagerEnhanced started")
         }
         
-        // Start polling for special panel apps
-        startPollingTimer()
+        // Start event-driven panel app detection and performance monitoring
+        startPanelAppObservers()
+        startStatsTimer()
     }
     
     func stop() {
@@ -130,8 +132,9 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
             center: NSWorkspace.shared.notificationCenter
         )
         
-        stopPollingTimer()
-        
+        stopPanelAppObservers()
+        stopStatsTimer()
+
         isRunning = false
         currentBundleId = nil
         
@@ -365,52 +368,64 @@ final class PerAppModeManagerEnhanced: LifecycleManaged {
         }
     }
     
-    // MARK: - Special Panel Detection
-    
-    private func startPollingTimer() {
-        stopPollingTimer()
-        
-        let timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+    // MARK: - Special Panel Detection (Event-Driven)
+
+    /// Replaces the 5-second polling timer. Listens for panel app launch events
+    /// and immediately handles them — no fixed interval needed.
+    /// For Spotlight (which doesn't launch a new process each open), the per-keystroke
+    /// checkSpotlightOnce() + resetSpotlightCache() on Cmd/Opt+Space covers detection.
+    private func startPanelAppObservers() {
+        let launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication,
+                  let bundleId = app.bundleIdentifier,
+                  SpecialPanelAppDetector.isSpecialPanelApp(bundleId) else { return }
+            Task { @MainActor [weak self, app] in
+                guard let self, bundleId != self.currentBundleId else { return }
+                Log.info("Panel app launched: \(bundleId)")
+                self.handleAppActivation(app)
+            }
+        }
+        ResourceManager.shared.register(
+            observer: launchObserver,
+            identifier: "PerAppModeManagerEnhanced.panelLaunchObserver",
+            center: NSWorkspace.shared.notificationCenter
+        )
+    }
+
+    private func stopPanelAppObservers() {
+        ResourceManager.shared.unregister(
+            observerIdentifier: "PerAppModeManagerEnhanced.panelLaunchObserver",
+            center: NSWorkspace.shared.notificationCenter
+        )
+    }
+
+    // MARK: - Performance Stats
+
+    private func startStatsTimer() {
+        let timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.checkForSpecialPanelApp()
+                self?.logPerformanceStats()
             }
         }
-        
-        ResourceManager.shared.register(timer: timer, identifier: "PerAppModeManagerEnhanced.pollingTimer")
-        pollingTimer = timer
-        
-        if let timer = pollingTimer {
-            RunLoop.current.add(timer, forMode: .common)
-        }
+        ResourceManager.shared.register(timer: timer, identifier: "PerAppModeManagerEnhanced.statsTimer")
+        statsTimer = timer
+        RunLoop.current.add(timer, forMode: .common)
     }
-    
-    private func stopPollingTimer() {
-        ResourceManager.shared.unregister(timerIdentifier: "PerAppModeManagerEnhanced.pollingTimer")
-        pollingTimer = nil
+
+    private func stopStatsTimer() {
+        ResourceManager.shared.unregister(timerIdentifier: "PerAppModeManagerEnhanced.statsTimer")
+        statsTimer = nil
     }
-    
-    private func checkForSpecialPanelApp() {
-        let (appChanged, newBundleId, _) = SpecialPanelAppDetector.checkForAppChange()
-        
-        guard appChanged, let bundleId = newBundleId else { return }
-        
-        // Simulate app switch
-        if bundleId != currentBundleId {
-            Log.info("Special panel detected: \(bundleId)")
-            
-            // Create synthetic notification
-            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-                let userInfo: [AnyHashable: Any] = [
-                    NSWorkspace.applicationUserInfoKey: app
-                ]
-                let notification = Notification(
-                    name: NSWorkspace.didActivateApplicationNotification,
-                    object: NSWorkspace.shared,
-                    userInfo: userInfo
-                )
-                handleActivationNotification(notification)
-            }
-        }
+
+    private func logPerformanceStats() {
+        let s = appMetadataCache.getStats()
+        Log.info("[Perf] AppMetadataCache — hits:\(s.hits) misses:\(s.misses) evictions:\(s.evictions) rate:\(String(format: "%.1f%%", s.hitRate * 100)) size:\(s.size)/\(s.capacity)")
+        appMetadataCache.resetStats()
     }
     
     /// Lightweight check for panel apps (Spotlight, Raycast, …) dispatched to the

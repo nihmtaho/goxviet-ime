@@ -542,7 +542,7 @@ class InputManager: LifecycleManaged {
 
         // 2. Ignore our own injected events
         let marker = event.getIntegerValueField(.eventSourceUserData)
-        if marker == 0x564E5F494D45 { // "VN_IME"
+        if marker == kEventMarker { // "GOXV"
             return Unmanaged.passUnretained(event)
         }
 
@@ -599,6 +599,7 @@ class InputManager: LifecycleManaged {
             if keyCode == 49 /* Space */ &&
                (flags.contains(.maskCommand) || flags.contains(.maskAlternate)) {
                 PerAppModeManagerEnhanced.shared.resetSpotlightCache()
+                clearDetectionCache() // Ensure next keystroke in panel gets fresh method detection
                 DispatchQueue.main.async {
                     PerAppModeManagerEnhanced.shared.checkSpotlightOnce(force: true)
                 }

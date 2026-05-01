@@ -58,6 +58,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Log.info("GoxViet starting in DEBUG mode (logging enabled)")
         }
         #endif
+
+        // Start checking for /tmp/goxviet_debug.log trigger file (every 5s)
+        Log.startDebugTriggerCheck()
         
         // Disable automatic window restoration to avoid className errors
         UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])

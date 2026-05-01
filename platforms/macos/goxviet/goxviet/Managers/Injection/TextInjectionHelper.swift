@@ -622,11 +622,11 @@ func detectMethod() -> (InjectionMethod, (UInt32, UInt32, UInt32)) {
     if role == "AXComboBox" { return cached(.selection, (0, 0, 0), "sel:combo") }
     if role == "AXSearchField" { return cached(.selection, (0, 0, 0), "sel:search") }
 
-    // Spotlight and systemUIServer - use autocomplete method
-    // axDirect causes focus loss, emptyCharPrefix causes duplicate chars
-    // Try autocomplete method which uses Forward Delete + backspace
+    // Spotlight and systemUIServer - use emptyCharPrefix (keyboard events via session tap)
+    // axDirect: AX write bypasses Spotlight's search delegate → hint/autocomplete doesn't update
+    // emptyCharPrefix: U+202F breaks autocomplete selection, then backspace+text fires search delegate
     if bundleId == BundleConstants.spotlight || bundleId == BundleConstants.systemUIServer {
-        return cached(.axDirect, (0, 0, 0), "ax:spotlight")
+        return cached(.emptyCharPrefix, (0, 0, 0), "emptyChar:spotlight")
     }
 
     // Safari: address bar uses emptyCharPrefix, content areas (Google Docs) use charByChar
