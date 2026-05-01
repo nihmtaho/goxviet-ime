@@ -49,4 +49,11 @@ enum SettingsKey {
     // MARK: - Services
     static let loggingEnabled         = "com.goxviet.ime.loggingEnabled"
 
+    // MARK: - Feature Gap US1–US5
+    static let escRestoreEnabled        = "com.goxviet.ime.escRestoreEnabled"
+    static let bracketShortcutsEnabled  = "com.goxviet.ime.bracketShortcutsEnabled"
+    static let foreignConsonantsEnabled = "com.goxviet.ime.foreignConsonantsEnabled"
+    static let autoCapitaliseEnabled    = "com.goxviet.ime.autoCapitaliseEnabled"
+    static let wordHistoryEnabled       = "com.goxviet.ime.wordHistoryEnabled"
+
 }

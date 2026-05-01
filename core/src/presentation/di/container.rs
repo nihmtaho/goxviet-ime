@@ -8,11 +8,11 @@ use crate::application::services::{ConfigService, ProcessorService};
 use crate::application::use_cases::manage_shortcuts::ManageShortcutsUseCase;
 use crate::domain::entities::input_method_config::InputMethodConfig;
 use crate::domain::ports::input::{InputMethod, InputMethodId};
-use crate::domain::ports::state::{BufferManager, HistoryTracker};
+use crate::domain::ports::state::BufferManager;
 use crate::domain::ports::transformation::{MarkTransformer, ToneTransformer};
 use crate::domain::ports::validation::{LanguageDetector, SyllableValidator};
 use crate::infrastructure::adapters::input::{TelexAdapter, VniAdapter};
-use crate::infrastructure::adapters::state::{MemoryBufferAdapter, SimpleHistoryAdapter};
+use crate::infrastructure::adapters::state::MemoryBufferAdapter;
 use crate::infrastructure::adapters::transformation::{
     VietnameseMarkAdapter, VietnameseToneAdapter,
 };
@@ -64,71 +64,53 @@ impl Container {
 
     /// Create ProcessorService with all wired dependencies
     fn create_processor_service(config: Arc<Mutex<EngineConfig>>) -> ProcessorService {
-        // Get config snapshot for construction
         let config_snapshot = config.lock().unwrap().clone();
-        let method_id = config_snapshot.input_method;
-
-        // Create input method box based on config
-        let input_method_box: Box<dyn InputMethod> = match method_id {
-            InputMethodId::Telex => Box::new(TelexAdapter::new()),
-            InputMethodId::Vni => Box::new(VniAdapter::new()),
-            InputMethodId::Plain => Box::new(TelexAdapter::new()), // Fallback
-        };
-
-        // ProcessorService takes domain ports directly (not use cases)
         ProcessorService::new(
-            input_method_box,
-            Box::new(SyllableStructureValidator::new()),
-            Box::new(VietnameseToneAdapter::new(
-                crate::domain::ports::transformation::ToneStrategy::default(),
-            )),
-            Box::new(VietnameseMarkAdapter::new()),
-            Box::new(MemoryBufferAdapter::new()),
-            Box::new(LanguageDetectorAdapter::new()),
+            Self::create_input_method(&config),
+            Self::create_syllable_validator(),
+            Self::create_tone_transformer(),
+            Self::create_mark_transformer(),
+            Self::create_buffer_manager(),
+            Self::create_language_detector(),
             &config_snapshot,
         )
     }
 
     /// Create input method based on configuration
-    fn create_input_method(config: &Arc<Mutex<EngineConfig>>) -> Arc<dyn InputMethod> {
+    fn create_input_method(config: &Arc<Mutex<EngineConfig>>) -> Box<dyn InputMethod> {
         let method_id = config.lock().unwrap().input_method;
         match method_id {
-            InputMethodId::Telex => Arc::new(TelexAdapter::new()),
-            InputMethodId::Vni => Arc::new(VniAdapter::new()),
-            InputMethodId::Plain => Arc::new(TelexAdapter::new()), // Fallback to Telex
+            InputMethodId::Telex => Box::new(TelexAdapter::new()),
+            InputMethodId::Vni => Box::new(VniAdapter::new()),
+            InputMethodId::Plain => Box::new(TelexAdapter::new()), // Fallback to Telex
         }
     }
 
     /// Create syllable validator (PAD/NA/PAC structure-based)
-    fn create_syllable_validator() -> Arc<dyn SyllableValidator> {
-        Arc::new(SyllableStructureValidator::new())
+    fn create_syllable_validator() -> Box<dyn SyllableValidator> {
+        Box::new(SyllableStructureValidator::new())
     }
 
     /// Create language detector
-    fn create_language_detector() -> Arc<dyn LanguageDetector> {
-        Arc::new(LanguageDetectorAdapter::new())
+    fn create_language_detector() -> Box<dyn LanguageDetector> {
+        Box::new(LanguageDetectorAdapter::new())
     }
 
     /// Create tone transformer
-    fn create_tone_transformer() -> Arc<dyn ToneTransformer> {
-        Arc::new(VietnameseToneAdapter::new(
+    fn create_tone_transformer() -> Box<dyn ToneTransformer> {
+        Box::new(VietnameseToneAdapter::new(
             crate::domain::ports::transformation::ToneStrategy::default(),
         ))
     }
 
     /// Create mark transformer
-    fn create_mark_transformer() -> Arc<dyn MarkTransformer> {
-        Arc::new(VietnameseMarkAdapter::new())
+    fn create_mark_transformer() -> Box<dyn MarkTransformer> {
+        Box::new(VietnameseMarkAdapter::new())
     }
 
     /// Create buffer manager (in-memory)
-    fn create_buffer_manager() -> Arc<dyn BufferManager> {
-        Arc::new(MemoryBufferAdapter::new())
-    }
-
-    /// Create history tracker
-    fn create_history_tracker() -> Arc<dyn HistoryTracker> {
-        Arc::new(SimpleHistoryAdapter::new(100)) // 100 capacity default
+    fn create_buffer_manager() -> Box<dyn BufferManager> {
+        Box::new(MemoryBufferAdapter::new())
     }
 
     /// Get config service
@@ -218,6 +200,10 @@ mod tests {
             enable_shortcuts: true,
             instant_restore_enabled: true,
             esc_restore_enabled: false,
+            bracket_shortcuts_enabled: false,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false,
         };
 
         let container = Container::with_config(custom_config.clone());
@@ -244,6 +230,10 @@ mod tests {
             enable_shortcuts: true,
             instant_restore_enabled: true,
             esc_restore_enabled: false,
+            bracket_shortcuts_enabled: false,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false,
         };
 
         container.update_config(new_config.clone());

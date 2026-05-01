@@ -57,7 +57,13 @@ impl TransformResult {
 /// Apply tone diacritic transformation (^, ơ, ư, ă)
 ///
 /// Pattern-based: scans buffer for matching vowels
-pub fn apply_tone(buf: &mut Buffer, key: u16, tone_value: u8, method: u8, modern: bool) -> TransformResult {
+pub fn apply_tone(
+    buf: &mut Buffer,
+    key: u16,
+    tone_value: u8,
+    method: u8,
+    modern: bool,
+) -> TransformResult {
     // Find target vowels based on key and method
     let targets = find_tone_targets(buf, key, tone_value, method);
 
@@ -199,7 +205,6 @@ pub fn apply_mark(buf: &mut Buffer, mark_value: u8, modern: bool) -> TransformRe
     // Modifier as u8 matches tone::NONE/CIRCUMFLEX/HORN constants (0/1/2).
     {
         use crate::data::chars as char_data;
-        use crate::infrastructure::adapters::validation::syllable_structure_validator;
         let vowel_cluster: String = vowels
             .iter()
             .filter_map(|v| char_data::to_char(v.key, false, v.modifier as u8, 0))

@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## [Unreleased]
+
+---
+
+## [2.0.15] - 2026-05-01
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.15.md](.release-notes/release_note_2.0.15.md)
+
+### ✨ Features
+
+- **ESC Restore (US1)**: Nhấn ESC khi đang gõ sẽ khôi phục lại chuỗi phím gốc (raw keystrokes), hoàn tác mọi biến đổi Telex/VNI. Hữu ích khi muốn gõ tên riêng hoặc chuỗi kỹ thuật mà không cần tắt IME. Bật/tắt qua Settings › Editing › ESC Restore. (PR #82)
+- **Bracket Shortcuts (US2)**: Hỗ trợ gõ `[` và `]` để tạo ngoặc vuông tiêu chuẩn trong khi đang ở chế độ Vietnamese — không còn bị transform thành ký tự khác. Bật/tắt qua Settings › Editing › Bracket Shortcuts. (PR #82)
+- **Foreign Consonants (US3)**: Phụ âm `f`, `j`, `w`, `z` khi đứng đầu âm tiết sẽ được pass-through nguyên vẹn (không bị xử lý như Telex modifier), hỗ trợ gõ từ nước ngoài và tên riêng. Bật/tắt qua Settings › Editing › Foreign Consonant Pass-Through. (PR #82)
+- **Auto-Capitalise (US4)**: Tự động viết hoa chữ cái đầu từ khi bắt đầu câu mới (sau dấu `.`, `!`, `?`). Tương thích với Smart Mode. Bật/tắt qua Settings › Editing › Auto-Capitalise. (PR #82)
+- **Word History / Backspace-After-Space (US5)**: Nhấn Backspace ngay sau khi Space sẽ khôi phục lại từ vừa commit vào buffer để tiếp tục chỉnh sửa. Lịch sử lưu tối đa 10 từ. Gõ phím bất kỳ (không phải Backspace) sau Space sẽ huỷ cơ hội khôi phục. Bật/tắt qua Settings › Editing › Backspace-After-Space Restore. (PR #82)
+
+### 🐛 Bug Fixes
+
+- **Block circumflex on V1+tone+V2+V2** (`tafoo → tàoo` thay vì `tàô`): Sửa lỗi Telex không chặn circumflex khi một nguyên âm khác trong buffer đã mang dấu thanh hoặc dấu phụ — thêm guard `!last_char.has_mark() && any_vowel_has_tone_or_mark` cho Telex circumflex. (PR #80)
+- **Doubled Telex tone-marker consonants at SPACE boundary** (`inffer → infer`, `caffe → cafe`): Thêm `try_correct_double_tone` — khi phím tone-marker (f/s/r/x/j) bị gõ hai lần, collapse `ff→f`, `ss→s`, `rr→r`, v.v. nếu dạng doubled không phải từ thực sự và dạng corrected có phonotactic confidence ≥ 80. (PR #80)
+- **Capitalized Vietnamese dictionary lookup** (`Trường`, `Không` không bị restore về English): `is_valid_vietnamese_syllable()` giờ lowercase trước khi tra TuDien lần hai — tránh false English auto-restore khi từ đầu câu hoặc danh từ riêng được viết hoa. (PR #80)
+- **macOS input pipeline bug fixes & optimization** (PR #84): Cải thiện độ ổn định và hiệu suất của CGEventTap pipeline, PerAppModeManagerEnhanced, và TextInjectionHelper; tăng cường logging.
+
+### 🔧 Refactor/Chores
+
+- **DI factory functions & dead code removal** (PR #83): Wire dependency-injection factory functions đúng cách trong SOLID container; xóa dead code không sử dụng trong `presentation/ffi/api.rs` và `infrastructure/engine/mod.rs`.
+- **Remove Claude workflow files** (PR #361b893): Dọn dẹp workflow CI cũ.
+
+---
+
 ## [2.0.14] - 2026-03-23
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.14.md](.release-notes/release_note_2.0.14.md)

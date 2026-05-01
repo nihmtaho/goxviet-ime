@@ -4,11 +4,7 @@
 //! 2. "uu" → "ưu" ordering: typing "u-u-w" produces "ưu" (horn on first u)
 //! 3. CTRL commit: CTRL+key outputs key literally, commits current buffer as-is
 
-use goxviet_core::{
-    data::keys,
-    engine::Engine,
-    shared::types::Action,
-};
+use goxviet_core::{data::keys, engine::Engine, shared::types::Action};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -97,21 +93,30 @@ fn apply_result(screen: &mut String, r: &goxviet_core::shared::types::Result, fa
 fn test_core_restored_at_space() {
     // "core" + space triggers word-boundary English detection
     let result = type_telex("core ");
-    assert_eq!(result, "core ", "typing 'core ' should give 'core ', got '{result}'");
+    assert_eq!(
+        result, "core ",
+        "typing 'core ' should give 'core ', got '{result}'"
+    );
 }
 
 /// "score" has the same pattern: 'r' absorbed mid-word, final output "scôẻ" is invalid.
 #[test]
 fn test_score_restored_at_space() {
     let result = type_telex("score ");
-    assert_eq!(result, "score ", "typing 'score ' should give 'score ', got '{result}'");
+    assert_eq!(
+        result, "score ",
+        "typing 'score ' should give 'score ', got '{result}'"
+    );
 }
 
 /// "more" → 'r' absorbed mid-word giving "moẻ" (invalid) → restore to "more ".
 #[test]
 fn test_more_restored_at_space() {
     let result = type_telex("more ");
-    assert_eq!(result, "more ", "typing 'more ' should give 'more ', got '{result}'");
+    assert_eq!(
+        result, "more ",
+        "typing 'more ' should give 'more ', got '{result}'"
+    );
 }
 
 /// "khoẻ" is a REAL Vietnamese word (kh+oe+hỏi) — must NOT be restored.
@@ -119,7 +124,10 @@ fn test_more_restored_at_space() {
 fn test_khoe_kept_as_vietnamese() {
     // khoer = kh+o+e+r(hỏi) → "khoẻ"
     let result = type_telex("khoer ");
-    assert_eq!(result, "khoẻ ", "typing 'khoer ' should give 'khoẻ ' (valid Vietnamese)");
+    assert_eq!(
+        result, "khoẻ ",
+        "typing 'khoer ' should give 'khoẻ ' (valid Vietnamese)"
+    );
 }
 
 /// Regression: "dỉ" (typing "dir") is a valid Vietnamese structure — must NOT be restored.
@@ -128,7 +136,10 @@ fn test_khoe_kept_as_vietnamese() {
 fn test_dir_kept_as_diphthong() {
     let result = type_telex("dir ");
     // "dỉ" is the Vietnamese result of d+i+r(hỏi); not an English restore case
-    assert_eq!(result, "dỉ ", "typing 'dir ' should give 'dỉ ' (valid Vietnamese structure)");
+    assert_eq!(
+        result, "dỉ ",
+        "typing 'dir ' should give 'dỉ ' (valid Vietnamese structure)"
+    );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -178,9 +189,12 @@ fn test_uw_gives_single_horn_u() {
 #[test]
 fn test_ctrl_prevents_sac_tone_telex() {
     let mut e = Engine::new(); // Telex
-    // &[("chars", is_ctrl)]
+                               // &[("chars", is_ctrl)]
     let result = type_with_ctrl(&mut e, &[("a", false), ("s", true), ("k", false)]);
-    assert_eq!(result, "ask", "CTRL+s should output 's' literally, got '{result}'");
+    assert_eq!(
+        result, "ask",
+        "CTRL+s should output 's' literally, got '{result}'"
+    );
 }
 
 /// "a" + CTRL+8 → "a8"  (VNI: '8' normally = ngã tone, CTRL prevents it)
@@ -189,7 +203,10 @@ fn test_ctrl_prevents_nga_tone_vni() {
     let mut e = Engine::new();
     e.set_method(1); // VNI
     let result = type_with_ctrl(&mut e, &[("a", false), ("8", true)]);
-    assert_eq!(result, "a8", "CTRL+8 (VNI) should output '8' literally, got '{result}'");
+    assert_eq!(
+        result, "a8",
+        "CTRL+8 (VNI) should output '8' literally, got '{result}'"
+    );
 }
 
 /// "a" + CTRL+f → "af" (Telex: 'f' = huyền, CTRL prevents)
@@ -197,7 +214,10 @@ fn test_ctrl_prevents_nga_tone_vni() {
 fn test_ctrl_prevents_huyen_tone_telex() {
     let mut e = Engine::new();
     let result = type_with_ctrl(&mut e, &[("a", false), ("f", true)]);
-    assert_eq!(result, "af", "CTRL+f should output 'f' literally, got '{result}'");
+    assert_eq!(
+        result, "af",
+        "CTRL+f should output 'f' literally, got '{result}'"
+    );
 }
 
 /// Empty buffer + CTRL: no char output (pass through to OS), engine clears.
@@ -207,17 +227,23 @@ fn test_ctrl_on_empty_buffer_does_nothing() {
     // No prior typing; CTRL+s on empty buffer should produce nothing visible
     let result = type_with_ctrl(&mut e, &[("s", true)]);
     // ctrl with empty buffer → pass-through → nothing appended to screen
-    assert_eq!(result, "", "CTRL on empty buffer should produce no output, got '{result}'");
+    assert_eq!(
+        result, "",
+        "CTRL on empty buffer should produce no output, got '{result}'"
+    );
 }
 
 /// "việt" (typed correctly) + CTRL+s → "việts" (keeps Vietnamese transforms, adds 's')
 #[test]
 fn test_ctrl_commits_vietnamese_buffer() {
     let mut e = Engine::new(); // Telex
-    // "viet" in Telex = v-i-e-t (no tone, simple structure)
-    // Then CTRL+s should keep "viet" as displayed and add 's'
+                               // "viet" in Telex = v-i-e-t (no tone, simple structure)
+                               // Then CTRL+s should keep "viet" as displayed and add 's'
     let result = type_with_ctrl(&mut e, &[("viet", false), ("s", true)]);
     // "viet" in Telex: v→v, i→i, e→e (no Telex transform for this sequence), t→t → "viet"
     // Then CTRL+s → commit "viet" + 's' → "viets"
-    assert_eq!(result, "viets", "CTRL+s after 'viet' should give 'viets', got '{result}'");
+    assert_eq!(
+        result, "viets",
+        "CTRL+s after 'viet' should give 'viets', got '{result}'"
+    );
 }

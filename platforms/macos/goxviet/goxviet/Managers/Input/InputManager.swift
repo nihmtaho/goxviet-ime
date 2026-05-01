@@ -66,6 +66,7 @@ class InputManager: LifecycleManaged {
     // The next keyDown will be forwarded to the engine with ctrl=true,
     // preventing tone application on the buffered Vietnamese text.
     private var ctrlOneShotPending = false
+
     
     init() {
         // Initialize Rust bridge v2
@@ -119,6 +120,14 @@ class InputManager: LifecycleManaged {
         // Apply saved instant restore setting
         ime_instant_restore_v2(settings.instantRestoreEnabled)
         Log.info("Loaded instant restore: \(settings.instantRestoreEnabled ? "enabled" : "disabled")")
+
+        // Feature Gap US1–US5 settings
+        ime_esc_restore_v2(settings.escRestoreEnabled)
+        ime_bracket_shortcuts_v2(settings.bracketShortcutsEnabled)
+        ime_foreign_consonants_v2(settings.foreignConsonantsEnabled)
+        ime_auto_capitalise_v2(settings.autoCapitaliseEnabled)
+        ime_word_history_v2(settings.wordHistoryEnabled)
+        Log.info("Feature Gap settings loaded")
         
         // Apply saved text expansion and sync shortcuts
         _ = ime_set_shortcuts_enabled_v2(settings.textExpansionEnabled)
@@ -191,12 +200,12 @@ class InputManager: LifecycleManaged {
         
         if let runLoopSource = self.runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-            self.runLoopSource = nil
+            self.runLoopSource = nil // Swift ARC releases the CFRunLoopSource retain here
         }
-        
+
         if let eventTap = self.eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
-            self.eventTap = nil
+            self.eventTap = nil // Swift ARC releases the CFMachPort retain here
         }
         
         // Unregister all observers via ResourceManager
@@ -226,9 +235,12 @@ class InputManager: LifecycleManaged {
     /// Track if focused element is text input (AXTextField, AXTextArea, AXComboBox)
     private var isFocusedOnTextInput: Bool = false
     
-    /// Check if current focused element is a text input field
+    /// Check if current focused element is a text input field.
+    /// Must be called on the main thread; apply a short timeout so a sluggish
+    /// AX server never hangs the caller.
     private func checkFocusedElementIsTextInput() -> Bool {
         let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.05) // 50 ms — prevents indefinite hang
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
               let element = focusedRef else {
@@ -357,7 +369,48 @@ class InputManager: LifecycleManaged {
             }
         }
         ResourceManager.shared.register(observer: instantRestoreObserver, identifier: "InputManager.instantRestoreObserver")
-        
+
+        // Feature Gap US1–US5 observers
+        let escRestoreObserver = NotificationCenter.default.addObserver(
+            forName: .escRestoreChanged, object: nil, queue: .main
+        ) { notification in
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_esc_restore_v2(fromObject ?? SettingsManager.shared.escRestoreEnabled) }
+        }
+        ResourceManager.shared.register(observer: escRestoreObserver, identifier: "InputManager.escRestoreObserver")
+
+        let bracketShortcutsObserver = NotificationCenter.default.addObserver(
+            forName: .bracketShortcutsChanged, object: nil, queue: .main
+        ) { notification in
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_bracket_shortcuts_v2(fromObject ?? SettingsManager.shared.bracketShortcutsEnabled) }
+        }
+        ResourceManager.shared.register(observer: bracketShortcutsObserver, identifier: "InputManager.bracketShortcutsObserver")
+
+        let foreignConsonantsObserver = NotificationCenter.default.addObserver(
+            forName: .foreignConsonantsChanged, object: nil, queue: .main
+        ) { notification in
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_foreign_consonants_v2(fromObject ?? SettingsManager.shared.foreignConsonantsEnabled) }
+        }
+        ResourceManager.shared.register(observer: foreignConsonantsObserver, identifier: "InputManager.foreignConsonantsObserver")
+
+        let autoCapitaliseObserver = NotificationCenter.default.addObserver(
+            forName: .autoCapitaliseChanged, object: nil, queue: .main
+        ) { notification in
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_auto_capitalise_v2(fromObject ?? SettingsManager.shared.autoCapitaliseEnabled) }
+        }
+        ResourceManager.shared.register(observer: autoCapitaliseObserver, identifier: "InputManager.autoCapitaliseObserver")
+
+        let wordHistoryObserver = NotificationCenter.default.addObserver(
+            forName: .wordHistoryChanged, object: nil, queue: .main
+        ) { notification in
+            let fromObject = notification.object as? Bool
+            Task { @MainActor in ime_word_history_v2(fromObject ?? SettingsManager.shared.wordHistoryEnabled) }
+        }
+        ResourceManager.shared.register(observer: wordHistoryObserver, identifier: "InputManager.wordHistoryObserver")
+
         // Add observer for shortcut changes
         let shortcutObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("shortcutChanged"),
@@ -489,7 +542,7 @@ class InputManager: LifecycleManaged {
 
         // 2. Ignore our own injected events
         let marker = event.getIntegerValueField(.eventSourceUserData)
-        if marker == 0x564E5F494D45 { // "VN_IME"
+        if marker == kEventMarker { // "GOXV"
             return Unmanaged.passUnretained(event)
         }
 
@@ -503,14 +556,16 @@ class InputManager: LifecycleManaged {
             return Unmanaged.passUnretained(event)
         }
         
-        // Check for Spotlight on first keystroke (Spotlight doesn't fire AX notifications)
-        PerAppModeManagerEnhanced.shared.checkSpotlightOnce()
-        
+        // Dispatch AX-based checks to the main thread so they never block the IOKit
+        // event tap callback. Both functions read/write @MainActor state only.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            PerAppModeManagerEnhanced.shared.checkSpotlightOnce()
+            self.updateFocusState()
+        }
+
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
-        
-        // Update focus state to track if we're in text input
-        updateFocusState()
         
         // 4. Check for toggle shortcut (default: Control+Space)
         if currentShortcut.matches(keyCode: keyCode, flags: flags) {
@@ -537,6 +592,19 @@ class InputManager: LifecycleManaged {
             // This prevents stale buffer content from appearing after selection operations
             ctrlOneShotPending = false
             ime_clear_all_v2()
+
+            // Cmd+Space (Spotlight) or Option+Space (Raycast/Alfred):
+            // Spotlight/Raycast opens on keyDown — by the time this async block runs on the
+            // main thread, macOS has already processed the shortcut and the panel has focus.
+            if keyCode == 49 /* Space */ &&
+               (flags.contains(.maskCommand) || flags.contains(.maskAlternate)) {
+                PerAppModeManagerEnhanced.shared.resetSpotlightCache()
+                clearDetectionCache() // Ensure next keystroke in panel gets fresh method detection
+                DispatchQueue.main.async {
+                    PerAppModeManagerEnhanced.shared.checkSpotlightOnce(force: true)
+                }
+            }
+
             return Unmanaged.passUnretained(event)
         }
 
@@ -787,8 +855,12 @@ class InputManager: LifecycleManaged {
         )
         
         // FIX: Clear buffer after break keys (punctuation) to prevent issues like "d-d" -> "dđ"
-        // Break keys reset composition context, so buffer should be cleared
-        if keyCode.isBreakKey {
+        // Break keys reset composition context, so buffer should be cleared.
+        // EXCEPTION: bracket keys ([, ]) must NOT clear when handled as shortcuts — the engine
+        // stores `last_bracket_key` to detect double-press ([[ → [, ]] → ]). Calling
+        // ime_clear_v2() after the first [ would wipe that state before the second [ arrives.
+        let isBracketKey = (keyCode == KeyCodes.lbracket || keyCode == KeyCodes.rbracket)
+        if keyCode.isBreakKey && !isBracketKey {
             ime_clear_v2()
             Log.info("Cleared buffer after break key: \(keyCode)")
         }

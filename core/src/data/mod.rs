@@ -6,6 +6,7 @@
 //! - `vowel`: Vietnamese vowel phonology system
 //! - `double_consonant`: English words with tone-marker double consonants (ff/ss/rr/xx/jj)
 
+pub mod auto_capitalise;
 pub mod chars;
 pub mod constants;
 pub mod double_consonant;

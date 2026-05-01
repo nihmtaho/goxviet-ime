@@ -220,6 +220,14 @@ pub struct FfiConfig_v2 {
     pub esc_restore_enabled: bool,
     /// Enable text expansion shortcuts
     pub enable_shortcuts: bool,
+    /// Enable bracket shortcuts (`[`→ơ, `]`→ư) in Telex mode
+    pub bracket_shortcuts_enabled: bool,
+    /// Enable foreign consonants (z, w, j, f) as valid word-initial consonants
+    pub foreign_consonants_enabled: bool,
+    /// Enable auto-capitalise after sentence-ending punctuation
+    pub auto_capitalise_enabled: bool,
+    /// Enable backspace-after-space word history restore
+    pub word_history_enabled: bool,
 }
 
 impl Default for FfiConfig_v2 {
@@ -231,6 +239,10 @@ impl Default for FfiConfig_v2 {
             instant_restore_enabled: true,
             esc_restore_enabled: false,
             enable_shortcuts: true,
+            bracket_shortcuts_enabled: false,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false,
         }
     }
 }

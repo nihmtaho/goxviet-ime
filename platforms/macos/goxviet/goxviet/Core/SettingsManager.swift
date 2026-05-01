@@ -115,6 +115,43 @@ final class SettingsManager: ObservableObject {
             Log.info("Text Expansion \(textExpansionEnabled ? "enabled" : "disabled") (v2 pending)")
         }
     }
+
+    // MARK: - Feature Gap US1–US5 Settings
+
+    @Published var escRestoreEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.escRestoreEnabled, value: escRestoreEnabled)
+            postNotification(.escRestoreChanged, value: escRestoreEnabled)
+        }
+    }
+
+    @Published var bracketShortcutsEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.bracketShortcutsEnabled, value: bracketShortcutsEnabled)
+            postNotification(.bracketShortcutsChanged, value: bracketShortcutsEnabled)
+        }
+    }
+
+    @Published var foreignConsonantsEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.foreignConsonantsEnabled, value: foreignConsonantsEnabled)
+            postNotification(.foreignConsonantsChanged, value: foreignConsonantsEnabled)
+        }
+    }
+
+    @Published var autoCapitaliseEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.autoCapitaliseEnabled, value: autoCapitaliseEnabled)
+            postNotification(.autoCapitaliseChanged, value: autoCapitaliseEnabled)
+        }
+    }
+
+    @Published var wordHistoryEnabled: Bool = false {
+        didSet {
+            saveToDefaults(SettingsKey.wordHistoryEnabled, value: wordHistoryEnabled)
+            postNotification(.wordHistoryChanged, value: wordHistoryEnabled)
+        }
+    }
     
     // MARK: - Shortcuts (Text Expansion)
     
@@ -302,6 +339,11 @@ final class SettingsManager: ObservableObject {
         outputEncoding = .unicode
         shiftBackspaceEnabled = false
         textExpansionEnabled = true
+        escRestoreEnabled = false
+        bracketShortcutsEnabled = false
+        foreignConsonantsEnabled = false
+        autoCapitaliseEnabled = false
+        wordHistoryEnabled = false
         
         // Save to defaults
         saveAllToDefaults()
@@ -355,17 +397,25 @@ final class SettingsManager: ObservableObject {
 
     /// Maximum number of per-app settings to store (prevents unbounded memory growth)
     private static let MAX_PER_APP_ENTRIES = 100
-    
+
+    /// In-memory LRU access-time tracker for per-app mode entries.
+    /// Not persisted — rebuilt from usage at runtime.  Used to evict the
+    /// least-recently-used entry when the dictionary reaches MAX_PER_APP_ENTRIES.
+    private var perAppLastAccess: [String: Date] = [:]
+
     /// Get the saved mode for a specific app
     /// Returns false (disabled/English) by default if no specific setting exists
     func getPerAppMode(bundleId: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        
+
+        // Stamp access time for LRU eviction decisions
+        perAppLastAccess[bundleId] = Date()
+
         guard let dict = userDefaults.dictionary(forKey: SettingsKey.perAppModes) as? [String: Bool] else {
             return false  // Default: disabled (English mode)
         }
-        
+
         return dict[bundleId] ?? false
     }
     
@@ -385,13 +435,24 @@ final class SettingsManager: ObservableObject {
             return
         }
         
-        // For a new app with enabled == true, enforce capacity before saving
-        if isNewApp {
-            if dict.count >= Self.MAX_PER_APP_ENTRIES {
-                Log.warning("Per-app settings at capacity (\(Self.MAX_PER_APP_ENTRIES)). Not saving new entry for: \(bundleId)")
-                return
+        // For a new app with enabled == true, enforce capacity via LRU eviction
+        if isNewApp && dict.count >= Self.MAX_PER_APP_ENTRIES {
+            // Evict the least-recently-used entry instead of silently dropping the new one
+            if let lruKey = perAppLastAccess.min(by: { $0.value < $1.value })?.key {
+                dict.removeValue(forKey: lruKey)
+                perAppLastAccess.removeValue(forKey: lruKey)
+                Log.info("Per-app LRU eviction: removed \(lruKey) to make room for \(bundleId)")
+            } else {
+                // Fallback: evict the first arbitrary entry if no access history exists
+                if let firstKey = dict.keys.first {
+                    dict.removeValue(forKey: firstKey)
+                    Log.info("Per-app eviction (no history): removed \(firstKey)")
+                }
             }
         }
+
+        // Stamp access time for LRU tracking
+        perAppLastAccess[bundleId] = Date()
         
         // Store/update the state
         dict[bundleId] = enabled
@@ -808,7 +869,14 @@ final class SettingsManager: ObservableObject {
         }
         shiftBackspaceEnabled = userDefaults.bool(forKey: SettingsKey.shiftBackspaceEnabled)
         textExpansionEnabled = userDefaults.bool(forKey: SettingsKey.textExpansionEnabled)
-        
+
+        // Feature Gap US1–US5 settings (all default false)
+        escRestoreEnabled = userDefaults.bool(forKey: SettingsKey.escRestoreEnabled)
+        bracketShortcutsEnabled = userDefaults.bool(forKey: SettingsKey.bracketShortcutsEnabled)
+        foreignConsonantsEnabled = userDefaults.bool(forKey: SettingsKey.foreignConsonantsEnabled)
+        autoCapitaliseEnabled = userDefaults.bool(forKey: SettingsKey.autoCapitaliseEnabled)
+        wordHistoryEnabled = userDefaults.bool(forKey: SettingsKey.wordHistoryEnabled)
+
         loadShortcutsFromDefaults()
 
         // Mark as launched after loading
@@ -820,8 +888,29 @@ final class SettingsManager: ObservableObject {
         }
     }
     
+    // Pending debounce work items keyed by UserDefaults key.
+    // Writes are coalesced within a 300 ms window to keep the hot path
+    // (e.g. didSet observers firing during active typing) free of sync I/O.
+    private var saveWorkItems: [String: DispatchWorkItem] = [:]
+
     private func saveToDefaults(_ key: String, value: Any) {
-        userDefaults.set(value, forKey: key)
+        saveWorkItems[key]?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.userDefaults.set(value, forKey: key)
+        }
+        saveWorkItems[key] = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
+    }
+
+    /// Flush all pending debounced writes immediately.
+    /// Call from applicationWillTerminate so no settings are lost on quit.
+    func flushPendingSaves() {
+        // Cancel all pending items to prevent double-writes after the synchronous flush
+        saveWorkItems.values.forEach { $0.cancel() }
+        saveWorkItems.removeAll()
+        // Write the current in-memory state for every key in one shot
+        saveAllToDefaults()
+        userDefaults.synchronize()
     }
     
     private func saveAllToDefaults() {
@@ -836,6 +925,11 @@ final class SettingsManager: ObservableObject {
         saveToDefaults(SettingsKey.hideFromDock, value: hideFromDock)
         saveToDefaults(SettingsKey.outputEncoding, value: outputEncoding.rawValue)
         saveToDefaults(SettingsKey.shiftBackspaceEnabled, value: shiftBackspaceEnabled)
+        saveToDefaults(SettingsKey.escRestoreEnabled, value: escRestoreEnabled)
+        saveToDefaults(SettingsKey.bracketShortcutsEnabled, value: bracketShortcutsEnabled)
+        saveToDefaults(SettingsKey.foreignConsonantsEnabled, value: foreignConsonantsEnabled)
+        saveToDefaults(SettingsKey.autoCapitaliseEnabled, value: autoCapitaliseEnabled)
+        saveToDefaults(SettingsKey.wordHistoryEnabled, value: wordHistoryEnabled)
     }
     
     private func syncToCore() {

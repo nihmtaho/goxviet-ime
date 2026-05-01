@@ -815,8 +815,7 @@ impl VietnameseSyllableValidator {
         for i in 0..len.saturating_sub(2) {
             if keys[i] == keys::E && tones[i] == tone::CIRCUMFLEX {
                 // Check if preceded by I or Y → part of iê/yê compound → valid
-                let preceded_by_glide = i > 0
-                    && matches!(keys[i - 1], keys::I | keys::Y);
+                let preceded_by_glide = i > 0 && matches!(keys[i - 1], keys::I | keys::Y);
                 if !preceded_by_glide {
                     return false; // standalone ê before -ng is invalid
                 }

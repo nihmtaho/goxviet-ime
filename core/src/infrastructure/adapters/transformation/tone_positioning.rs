@@ -414,8 +414,16 @@ mod tests {
             vowel_with_modifier(keys::A, tone::NONE, 0),
             vowel_with_modifier(keys::I, tone::NONE, 1),
         ];
-        assert_eq!(find_mark_position(&vowels_ai, false, false), 1, "ai old: mark on i");
-        assert_eq!(find_mark_position(&vowels_ai, false, true), 1, "ai new: mark on i");
+        assert_eq!(
+            find_mark_position(&vowels_ai, false, false),
+            1,
+            "ai old: mark on i"
+        );
+        assert_eq!(
+            find_mark_position(&vowels_ai, false, true),
+            1,
+            "ai new: mark on i"
+        );
     }
 
     #[test]

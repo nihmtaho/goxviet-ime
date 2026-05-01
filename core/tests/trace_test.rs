@@ -21,6 +21,7 @@ mod test {
             enable_shortcuts: false,
             instant_restore_enabled: true,
             esc_restore_enabled: true,
+            ..Default::default()
         };
         let mut container = Container::new();
         container.update_config(config);
@@ -79,6 +80,7 @@ fn test_hoax_debug() {
         enable_shortcuts: false,
         instant_restore_enabled: true,
         esc_restore_enabled: true,
+        ..Default::default()
     };
     let mut container = Container::new();
     container.update_config(config);
@@ -136,6 +138,7 @@ fn test_tone_compound_debug() {
         enable_shortcuts: false,
         instant_restore_enabled: true,
         esc_restore_enabled: true,
+        ..Default::default()
     };
     for (expected, input) in &[
         ("quyển", "quyenr "),
@@ -199,6 +202,7 @@ fn type_word_trace(input: &str) -> String {
         enable_shortcuts: false,
         instant_restore_enabled: true,
         esc_restore_enabled: true,
+        ..Default::default()
     };
     let mut container = Container::new();
     container.update_config(config);

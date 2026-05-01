@@ -93,6 +93,40 @@ use crate::data::{
 use crate::input::{self, ToneType};
 use crate::utils;
 
+/// Fixed-capacity ASCII buffer for sentence-boundary context (US4).
+///
+/// Replaces `String` to avoid heap allocation in the DOT key handler.
+/// The longest abbreviation entry is 7 bytes ("pgsts."), and the accumulated
+/// context across multiple dots is always within this bound.
+/// 32-byte capacity is a safe upper limit for any conceivable abbreviation.
+#[derive(Clone, Copy, Default)]
+struct AbbrevBuf {
+    data: [u8; 32],
+    len: u8,
+}
+
+impl AbbrevBuf {
+    #[inline]
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    #[inline]
+    fn as_str(&self) -> &str {
+        // SAFETY: `data[..len]` is populated exclusively by `push_str` / `push_byte`
+        // which only accept ASCII bytes produced by `key_to_char`.
+        unsafe { core::str::from_utf8_unchecked(&self.data[..self.len as usize]) }
+    }
+
+    #[inline]
+    fn push_byte(&mut self, b: u8) {
+        if self.len < 32 {
+            self.data[self.len as usize] = b;
+            self.len += 1;
+        }
+    }
+}
+
 /// Main Vietnamese IME engine
 pub struct Engine {
     buf: Buffer,
@@ -126,6 +160,17 @@ pub struct Engine {
     /// Enable instant auto-restore for English words
     /// When true (default), restores English words immediately upon detection
     instant_restore_enabled: bool,
+    /// Enable bracket shortcuts: `[` → ơ, `]` → ư in Telex mode
+    bracket_shortcuts_enabled: bool,
+    /// Tracks the last bracket key pressed for double-press escape:
+    /// `[[` → `[`, `]]` → `]`
+    last_bracket_key: Option<u16>,
+    /// Enable foreign consonants (z, w, j, f) as valid word-initial consonants
+    foreign_consonants_enabled: bool,
+    /// Enable auto-capitalise after sentence-ending punctuation
+    auto_capitalise_enabled: bool,
+    /// Enable backspace-after-space word history restore
+    word_history_enabled: bool,
     /// Word history for backspace-after-space feature
     word_history: WordHistory,
     /// Number of spaces typed after committing a word (for backspace tracking)
@@ -142,6 +187,15 @@ pub struct Engine {
     break_after_commit: u8,
     /// True if the last keystroke was a suppressed triple-tone marker
     triple_tone_suppressed: bool,
+    /// True when the engine is at a sentence boundary (after `.`/`!`/`?` + space)
+    /// and the next lowercase letter should be auto-capitalised
+    at_sentence_boundary: bool,
+    /// True when a sentence-ending punct (./?/!) has been typed and we are waiting for SPACE
+    sentence_punct_pending: bool,
+    /// Accumulated raw token before the last sentence-ending dot (for abbreviation detection)
+    /// e.g. "v.v." is built incrementally across multiple DOT break events.
+    /// Stack-allocated (32 bytes) — no heap allocation on the hot path.
+    pending_punct_context: AbbrevBuf,
 }
 
 impl Default for Engine {
@@ -180,6 +234,66 @@ fn try_correct_triple_consonant(word: &str) -> Option<String> {
     None
 }
 
+/// Correct doubled Telex tone-marker consonants when the result is a single-consonant English word.
+///
+/// Handles words where the user typed one extra tone-marker key: e.g. typing "i-n-f-f-e-r"
+/// (double-f) intending to write "infer" (single-f). The double-key revert mechanism
+/// sometimes fails when `is_english_word` is already true before the first modifier,
+/// resulting in "inffer" on screen. This function detects and collapses those doubles.
+///
+/// Distinct from `try_correct_triple_consonant`: only collapses ff→f, ss→s, etc. when the
+/// doubled-consonant version is NOT in the double_consonant_words dictionary (real double-
+/// consonant words like "offer"/"differ" are handled by the triple-tone correction instead).
+///
+/// # Examples
+/// - "inffer" → contains "ff", "inffer" not in dict, "infer" phonotactic ≥80 → Some("infer")
+/// - "caffe" → contains "ff", "caffe" not in dict, "cafe" phonotactic ≥80 → Some("cafe")
+/// - "offer" → contains "ff", "offer" IS in dict → None (handled by triple correction)
+fn try_correct_double_tone(word: &str) -> Option<String> {
+    const DOUBLE_PATTERNS: &[(&str, &str)] = &[
+        ("ff", "f"),
+        ("ss", "s"),
+        ("rr", "r"),
+        ("xx", "x"),
+        ("jj", "j"),
+    ];
+    for &(double_pat, single) in DOUBLE_PATTERNS {
+        if let Some(idx) = word.find(double_pat) {
+            // If the word WITH the double consonant is in the dictionary, it's an
+            // intentional double — handled by the triple-tone correction instead.
+            if crate::data::is_double_consonant_word(word) {
+                continue;
+            }
+            let corrected = format!(
+                "{}{}{}",
+                &word[..idx],
+                single,
+                &word[idx + double_pat.len()..]
+            );
+            // Validate: corrected word must have high English phonotactic confidence.
+            let corrected_keys: Vec<(u16, bool)> = corrected
+                .chars()
+                .filter_map(|c| {
+                    let k = crate::utils::char_to_key(c);
+                    if k != 255 {
+                        Some((k, c.is_uppercase()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let phonotactic =
+                crate::infrastructure::external::english::phonotactic::PhonotacticEngine::analyze(
+                    &corrected_keys,
+                );
+            if phonotactic.english_confidence >= 80 {
+                return Some(corrected);
+            }
+        }
+    }
+    None
+}
+
 impl Engine {
     pub fn new() -> Self {
         Self {
@@ -197,12 +311,20 @@ impl Engine {
             free_tone_enabled: true,
             modern_tone: true, // Default: modern style (hoà, thuý)
             instant_restore_enabled: true,
+            bracket_shortcuts_enabled: false,
+            last_bracket_key: None,
+            foreign_consonants_enabled: false,
+            auto_capitalise_enabled: false,
+            word_history_enabled: false,
             word_history: WordHistory::new(),
             spaces_after_commit: 0,
             break_after_commit: 0,
             cached_syllable_boundary: None,
             is_english_word: false,
             triple_tone_suppressed: false,
+            at_sentence_boundary: false,
+            sentence_punct_pending: false,
+            pending_punct_context: AbbrevBuf::default(),
         }
     }
 
@@ -249,6 +371,33 @@ impl Engine {
         self.instant_restore_enabled = enabled;
     }
 
+    /// Set whether bracket shortcuts are enabled ([→ơ, ]→ư in Telex mode)
+    pub fn set_bracket_shortcuts(&mut self, enabled: bool) {
+        self.bracket_shortcuts_enabled = enabled;
+    }
+
+    /// Set whether foreign consonants (z, w, j, f) are allowed as initials
+    pub fn set_foreign_consonants(&mut self, enabled: bool) {
+        self.foreign_consonants_enabled = enabled;
+    }
+
+    /// Set whether auto-capitalise after sentence end is enabled
+    pub fn set_auto_capitalise(&mut self, enabled: bool) {
+        self.auto_capitalise_enabled = enabled;
+    }
+
+    /// Set whether word history backspace-after-space restore is enabled
+    pub fn set_word_history_enabled(&mut self, enabled: bool) {
+        self.word_history_enabled = enabled;
+    }
+
+    /// Return the number of words currently stored in the word history ring buffer.
+    ///
+    /// Exposed for integration-test assertions (e.g. verifying capacity = 10).
+    pub fn word_history_len(&self) -> usize {
+        self.word_history.len()
+    }
+
     pub fn shortcuts(&self) -> &ShortcutTable {
         &self.shortcuts
     }
@@ -270,7 +419,9 @@ impl Engine {
     fn commit_and_break_sequence(&mut self) -> Result {
         // FIX: Save history before clearing so we can restore on backspace
         if !self.buf.is_empty() {
-            self.word_history.push(&self.buf, &self.raw_input);
+            if self.word_history_enabled {
+                self.word_history.push(&self.buf, &self.raw_input);
+            }
             self.break_after_commit = 1;
         } else if self.break_after_commit > 0 {
             // If we are continuing a break sequence (e.g. 123), increment
@@ -305,17 +456,19 @@ impl Engine {
                 let spaces_to_delete = self.spaces_after_commit as u8;
                 self.spaces_after_commit = 0;
 
-                // Restore previous word from history
-                if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
-                    // Calculate the full word length to delete
-                    // SAFETY: Clamp to u8::MAX to prevent overflow
-                    let word_len = restored_buf
-                        .to_full_string()
-                        .chars()
-                        .count()
-                        .min(u8::MAX as usize) as u8;
-                    // Don't restore - just return total delete count (spaces + word)
-                    return Result::send(spaces_to_delete + word_len, &[]);
+                // Restore previous word from history (only if feature is enabled)
+                if self.word_history_enabled {
+                    if let Some((restored_buf, _restored_raw)) = self.word_history.pop() {
+                        // Calculate the full word length to delete
+                        // SAFETY: Clamp to u8::MAX to prevent overflow
+                        let word_len = restored_buf
+                            .to_full_string()
+                            .chars()
+                            .count()
+                            .min(u8::MAX as usize) as u8;
+                        // Don't restore - just return total delete count (spaces + word)
+                        return Result::send(spaces_to_delete + word_len, &[]);
+                    }
                 }
 
                 return Result::send(spaces_to_delete, &[]);
@@ -326,14 +479,16 @@ impl Engine {
                 let breaks_to_delete = self.break_after_commit;
                 self.break_after_commit = 0;
 
-                if let Some((restored_buf, _)) = self.word_history.pop() {
-                    // SAFETY: Clamp to u8::MAX to prevent overflow
-                    let word_len = restored_buf
-                        .to_full_string()
-                        .chars()
-                        .count()
-                        .min(u8::MAX as usize) as u8;
-                    return Result::send(breaks_to_delete + word_len, &[]);
+                if self.word_history_enabled {
+                    if let Some((restored_buf, _)) = self.word_history.pop() {
+                        // SAFETY: Clamp to u8::MAX to prevent overflow
+                        let word_len = restored_buf
+                            .to_full_string()
+                            .chars()
+                            .count()
+                            .min(u8::MAX as usize) as u8;
+                        return Result::send(breaks_to_delete + word_len, &[]);
+                    }
                 }
 
                 return Result::send(breaks_to_delete, &[]);
@@ -416,7 +571,9 @@ impl Engine {
             if !self.buf.is_empty() {
                 if let Some(ctrl_char) = crate::utils::key_to_char(key, caps || shift) {
                     let result = Result::send(0, &[ctrl_char]);
-                    self.word_history.push(&self.buf, &self.raw_input);
+                    if self.word_history_enabled {
+                        self.word_history.push(&self.buf, &self.raw_input);
+                    }
                     self.clear();
                     self.spaces_after_commit = 0;
                     self.is_english_word = false;
@@ -428,6 +585,33 @@ impl Engine {
             self.word_history.clear();
             self.spaces_after_commit = 0;
             return Result::none();
+        }
+
+        // Auto-capitalise: if at sentence boundary and a letter key is pressed,
+        // emit the uppercase character immediately and clear the flag.
+        // We return early here so only the first letter is capitalised.
+        if self.auto_capitalise_enabled
+            && self.at_sentence_boundary
+            && keys::is_letter(key)
+            && !caps
+            && !shift
+            && !ctrl
+        {
+            self.at_sentence_boundary = false;
+            // Clear both word-restore counters: the sentence boundary starts a new editing
+            // context. Without this, the next Backspace would enter the word-restore path
+            // (via spaces_after_commit or break_after_commit) and pop the word committed
+            // before the sentence-ending punct — instead of deleting the capitalised letter.
+            // (US4 × US5 interaction bug)
+            self.spaces_after_commit = 0;
+            self.break_after_commit = 0;
+            if let Some(upper_ch) = crate::utils::key_to_char(key, true) {
+                return Result::send(0, &[upper_ch]);
+            }
+        } else if self.at_sentence_boundary && key != keys::SPACE && !keys::is_letter(key) {
+            // Clear the boundary flag if a non-space, non-letter key is typed
+            // (e.g. user types another punct before starting the next sentence)
+            self.at_sentence_boundary = false;
         }
 
         // TEMP DISABLED: Raw mode prefix detection
@@ -446,7 +630,9 @@ impl Engine {
             // Must run BEFORE shortcuts so shortcut handling sees the already-restored buffer.
             if let Some(english_result) = self.check_and_restore_english_at_boundary() {
                 if !self.buf.is_empty() {
-                    self.word_history.push(&self.buf, &self.raw_input);
+                    if self.word_history_enabled {
+                        self.word_history.push(&self.buf, &self.raw_input);
+                    }
                     self.spaces_after_commit = 1;
                 }
                 self.clear();
@@ -459,7 +645,9 @@ impl Engine {
 
             // Push to history before clearing (for backspace-after-space feature)
             if !self.buf.is_empty() {
-                self.word_history.push(&self.buf, &self.raw_input);
+                if self.word_history_enabled {
+                    self.word_history.push(&self.buf, &self.raw_input);
+                }
                 self.spaces_after_commit = 1;
             } else if self.spaces_after_commit > 0 {
                 self.spaces_after_commit = self.spaces_after_commit.saturating_add(1);
@@ -470,6 +658,18 @@ impl Engine {
             self.clear();
             self.is_english_word = false;
             self.raw_input.clear();
+
+            // Auto-capitalise: promote pending sentence-boundary flag to active boundary.
+            // If a sentence-ending punct (./?/!) was typed before this space, set the flag
+            // so the next letter will be capitalised.
+            if self.auto_capitalise_enabled {
+                if self.sentence_punct_pending {
+                    self.at_sentence_boundary = true;
+                }
+                self.sentence_punct_pending = false;
+                self.pending_punct_context.clear();
+            }
+
             return shortcut_result;
         }
 
@@ -489,6 +689,65 @@ impl Engine {
             return result;
         }
 
+        // Bracket shortcuts: [ → ơ, ] → ư in Telex mode.
+        // Double-press escapes: [[ → [, ]] → ]
+        if self.bracket_shortcuts_enabled
+            && self.method == 0
+            && (key == keys::LBRACKET || key == keys::RBRACKET)
+        {
+            // Double-press: undo the previous ơ/ư and emit literal bracket
+            if self.last_bracket_key == Some(key) {
+                self.last_bracket_key = None;
+                // Pop the ơ/ư char that was pushed to the buffer on the first press
+                if !self.buf.is_empty() {
+                    self.buf.pop();
+                }
+                let literal = if key == keys::LBRACKET { '[' } else { ']' };
+                // Backspace = 1 to delete the ơ/ư emitted on the first press
+                return Result::send(1, &[literal]);
+            }
+
+            // Commit the current buffer first (if any).
+            //
+            // Design note: if the user presses a bracket shortcut mid-composition
+            // (e.g. "vie["), the in-progress syllable is silently released from the
+            // engine's internal tracking. The screen already shows the composed text
+            // (each character was sent as typed), so no backspaces are needed — we
+            // just orphan the engine's copy of that text and start fresh with ơ/ư.
+            // Consequence: the orphaned syllable is not recoverable via backspace-after-
+            // bracket; only the shortcut character itself is tracked in the buffer.
+            if !self.buf.is_empty() {
+                if self.word_history_enabled {
+                    self.word_history.push(&self.buf, &self.raw_input);
+                }
+                self.buf.clear();
+                self.raw_input.clear();
+                self.spaces_after_commit = 0;
+            }
+            // Push the shortcut character into the buffer so tone marks work later.
+            // [ → ơ (O + horn), ] → ư (U + horn)
+            let (base_key, vowel_char) = if key == keys::LBRACKET {
+                (
+                    keys::O,
+                    chars::to_char(keys::O, caps, tone::HORN, 0).unwrap(),
+                )
+            } else {
+                (
+                    keys::U,
+                    chars::to_char(keys::U, caps, tone::HORN, 0).unwrap(),
+                )
+            };
+            let mut c = Char::new(base_key, caps);
+            c.tone = tone::HORN;
+            self.buf.push(c);
+            // Record this bracket for potential double-press escape
+            self.last_bracket_key = Some(key);
+            return Result::send(0, &[vowel_char]);
+        }
+
+        // Any key that reaches here is not a bracket shortcut — clear the escape state
+        self.last_bracket_key = None;
+
         // Other break keys (punctuation, arrows, numbers, etc.) just clear buffer
         // Only if NOT a modifier key (to allow VNI number-based modifiers)
         let m = input::get(self.method);
@@ -496,6 +755,58 @@ impl Engine {
             m.stroke(key) || m.remove(key) || m.tone(key).is_some() || m.mark(key).is_some();
 
         if !is_modifier && (keys::is_break(key) || keys::is_number(key)) {
+            // Auto-capitalise: detect sentence-ending punctuation before committing.
+            if self.auto_capitalise_enabled {
+                if key == keys::DOT && !shift {
+                    // DOT key: could be decimal separator or sentence-end.
+                    // If raw_input is empty and a number break was just committed,
+                    // this is a decimal dot (e.g. "3.14") – do not set pending.
+                    if self.raw_input.is_empty() && self.break_after_commit > 0 {
+                        self.sentence_punct_pending = false;
+                        self.pending_punct_context.clear();
+                    } else {
+                        // Build token in a stack buffer: pending_context + current_raw + '.'
+                        // No heap allocation — uses AbbrevBuf (fixed 32-byte array).
+                        let mut token = self.pending_punct_context;
+                        for ch in self
+                            .raw_input
+                            .iter()
+                            .filter_map(|(k, c)| crate::utils::key_to_char(k, c))
+                        {
+                            // key_to_char returns ASCII chars only for raw key codes
+                            token.push_byte(ch as u8);
+                        }
+                        token.push_byte(b'.');
+                        if crate::data::auto_capitalise::is_abbreviation(token.as_str()) {
+                            // Known abbreviation (e.g. "v.v.", "tr.") – suppress boundary
+                            self.sentence_punct_pending = false;
+                            self.pending_punct_context.clear();
+                        } else {
+                            // Possible sentence end – keep accumulating (multi-dot abbreviations)
+                            self.pending_punct_context = token;
+                            self.sentence_punct_pending = true;
+                        }
+                    }
+                } else if (key == keys::N1 && shift) || (key == keys::SLASH && shift) {
+                    // ! (Shift+1) or ? (Shift+/) – always a sentence-ending punct
+                    self.sentence_punct_pending = true;
+                    self.pending_punct_context.clear();
+                } else if key == keys::RETURN || key == keys::ENTER {
+                    // Enter starts a new sentence immediately — no SPACE is needed after it.
+                    // We must set at_sentence_boundary AFTER commit_and_break_sequence()
+                    // because that function calls clear(), and we cannot add the flag to
+                    // clear() without breaking the DOT/!/? pending-→-boundary promotion.
+                    let result = self.commit_and_break_sequence();
+                    self.at_sentence_boundary = true;
+                    self.sentence_punct_pending = false;
+                    self.pending_punct_context.clear();
+                    return result;
+                } else {
+                    // Any other break key (comma, semicolon, number, …) – clear pending
+                    self.sentence_punct_pending = false;
+                    self.pending_punct_context.clear();
+                }
+            }
             return self.commit_and_break_sequence();
         }
 
@@ -513,8 +824,8 @@ impl Engine {
             // Backspace-after-space feature: restore previous word when all spaces deleted
             if self.spaces_after_commit > 0 && self.buf.is_empty() {
                 self.spaces_after_commit -= 1;
-                if self.spaces_after_commit == 0 {
-                    // All spaces deleted - restore the word buffer
+                if self.spaces_after_commit == 0 && self.word_history_enabled {
+                    // All spaces deleted - restore the word buffer (if feature enabled)
                     if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
                         self.buf = restored_buf;
                         self.raw_input = restored_raw;
@@ -532,7 +843,7 @@ impl Engine {
             // Corresponds to break_after_commit logic (numbers, etc)
             if self.break_after_commit > 0 && self.buf.is_empty() {
                 self.break_after_commit -= 1;
-                if self.break_after_commit == 0 {
+                if self.break_after_commit == 0 && self.word_history_enabled {
                     if let Some((restored_buf, restored_raw)) = self.word_history.pop() {
                         self.buf = restored_buf;
                         self.raw_input = restored_raw;
@@ -579,6 +890,18 @@ impl Engine {
         // AND if applying the mark would result in valid Vietnamese
         // If buffer is empty, these are just regular letters
         let _m_method = input::get(self.method);
+
+        // T023 (FR-009): Invalidate the word-history restore opportunity when any
+        // non-Backspace key is typed while at word-start position.
+        //
+        // "Word-start position" = buffer is empty AND there is a recent committed
+        // word tracked by spaces_after_commit > 0.  Once the user starts a new word
+        // (or types any key) after the space, the previous word is no longer
+        // restorable via Backspace.
+        if self.word_history_enabled && self.buf.is_empty() && self.spaces_after_commit > 0 {
+            self.word_history.invalidate_last();
+            self.spaces_after_commit = 0;
+        }
 
         // CRITICAL FIX for English word detection:
         // We MUST always add all keys to raw_input, even if they're treated as modifiers.
@@ -732,7 +1055,8 @@ impl Engine {
         {
             // LAYER 0: Words starting with F, J, W, Z are ALWAYS English
             // W is never a Vietnamese initial consonant (only used as Telex modifier)
-            if self.raw_input.len() == 1 {
+            // Exception: when foreign_consonants_enabled, z/j/f/w are valid Vietnamese initials
+            if self.raw_input.len() == 1 && !self.foreign_consonants_enabled {
                 let first_key = self.raw_input.iter().next().map(|(k, _)| k).unwrap_or(0);
                 if matches!(first_key, keys::F | keys::J | keys::W | keys::Z) {
                     self.is_english_word = true;
@@ -1076,7 +1400,16 @@ impl Engine {
         // Modifier keys (w=horn, f=huyền, j=nặng, s=sắc, etc.) bypass the English detection
         // block above because that block requires `!_is_modifier`. Without this guard,
         // "jow" → "jơ" (horn on 'o') and "window" → "windơ" instead of staying as typed.
-        if (self.method == 0 || self.method == 1) && !self.raw_input.is_empty() {
+        //
+        // Exception: skip this guard when the buffer already has Vietnamese transforms.
+        // This handles bracket shortcuts ([ → ơ, ] → ư) which push to the buffer but NOT
+        // to raw_input. When a mark key like 'f' follows ']', raw_input=[F] so first_key=F
+        // would incorrectly trigger the guard. Since ơ/ư are already in the buffer (with
+        // tone=HORN), we skip the guard and let try_mark apply the accent normally.
+        if (self.method == 0 || self.method == 1)
+            && !self.raw_input.is_empty()
+            && !self.has_vietnamese_transforms()
+        {
             let first_key = self.raw_input.iter().next().map(|(k, _)| k).unwrap_or(0);
             if matches!(first_key, keys::F | keys::J | keys::W | keys::Z) {
                 return self.handle_normal_letter(key, caps, shift);
@@ -1377,8 +1710,7 @@ impl Engine {
                 // no intermediate "mỉc"/"mìc"/"mĩc" is ever produced.
                 let is_1c_english = if self.method == 0 {
                     use crate::data::keys as k;
-                    let raw_1c: Vec<u16> =
-                        self.raw_input.iter().map(|(rk, _)| rk).collect();
+                    let raw_1c: Vec<u16> = self.raw_input.iter().map(|(rk, _)| rk).collect();
                     const MIC_MODS: &[u16] = &[k::R, k::F, k::X, k::W];
                     (raw_1c.len() >= 4
                         && raw_1c[0] == k::M
@@ -1500,6 +1832,12 @@ impl Engine {
     fn try_w_as_vowel(&mut self, caps: bool) -> Option<Result> {
         // CRITICAL: Skip Vietnamese transform if English word detected
         if self.is_english_word {
+            return None;
+        }
+
+        // Foreign consonants: when enabled, 'w' at word-start is a literal consonant,
+        // not a ư shortcut. Mid-word 'w' after a vowel still applies the horn modifier.
+        if self.foreign_consonants_enabled && self.buf.is_empty() {
             return None;
         }
 
@@ -2070,7 +2408,29 @@ impl Engine {
                         // CRITICAL: For doubling patterns (aa, ee, oo), only apply if ADJACENT
                         // i.e., the key being pressed is the same as the last char
                         // This is already guaranteed because we're checking the last buffer char
-                        target_positions.push(last_buf_idx);
+                        //
+                        // For Telex circumflex doubling (aa→â, ee→ê, oo→ô): block if ANY vowel
+                        // in the buffer already has a tone mark/diacritical AND the last char
+                        // (the circumflex target) itself has no mark. This prevents invalid
+                        // V1+tone+V2+V2 patterns like "tafoo" → "tàô" (wrong; should be "tàoo")
+                        // and "chaofo" → "chàô" (wrong; should be "chàoo").
+                        //
+                        // The `!last_char.has_mark()` guard preserves intentional combining:
+                        // "vies" + "e" → "viế" (é already has sắc, second 'e' adds circumflex
+                        // to the SAME vowel → 'ế' = ê+sắc is correct and must not be blocked).
+                        //
+                        // Restricted to Telex (method==0); VNI '6' circumflex is always intentional.
+                        let blocked_by_existing_tone = tone_type == ToneType::Circumflex
+                            && self.method == 0
+                            && !last_char.has_mark()
+                            && self
+                                .buf
+                                .iter()
+                                .filter(|c| keys::is_vowel(c.key))
+                                .any(|c| c.has_tone() || c.has_mark());
+                        if !blocked_by_existing_tone {
+                            target_positions.push(last_buf_idx);
+                        }
                     }
                 }
 
@@ -2617,16 +2977,6 @@ impl Engine {
     fn normalize_uo_compound(&mut self) -> Option<usize> {
         vowel_compound::normalize_uo_compound(&mut self.buf)
     }
-
-    /// Find positions of U+O or O+U compound (adjacent vowels)
-    /// Returns Some((first_pos, second_pos)) if found, None otherwise
-    /// Delegates to vowel_compound module.
-    fn find_uo_compound_positions(&self) -> Option<(usize, usize)> {
-        vowel_compound::find_uo_compound_positions(&self.buf)
-    }
-
-    /// Check for uo compound in buffer (any tone state)
-    /// Delegates to vowel_compound module.
 
     /// Check for complete ươ compound (both u and o have horn)
     /// Delegates to vowel_compound module.
@@ -3459,6 +3809,12 @@ impl Engine {
         self.cached_syllable_boundary = None;
         self.is_english_word = false;
         self.triple_tone_suppressed = false;
+        self.last_bracket_key = None;
+        // Note: Do NOT reset at_sentence_boundary, sentence_punct_pending, or
+        // pending_punct_context here. These are set by the DOT/!/? or SPACE/ENTER
+        // handlers *before* or *after* commit_and_break_sequence() calls clear();
+        // resetting them here would erase them at the wrong time. They are reset
+        // explicitly by the auto-capitalise handlers and by clear_all().
         // Note: Do NOT reset skip_w_shortcut here - it's a user config, not state
         // Note: Do NOT reset spaces_after_commit here - managed by on_key_ext
     }
@@ -3471,6 +3827,11 @@ impl Engine {
         self.clear();
         self.word_history.clear();
         self.spaces_after_commit = 0;
+        // Also reset auto-capitalise boundary state so a stale boundary from before
+        // the cursor jump does not capitalise the first letter at the new cursor position.
+        self.at_sentence_boundary = false;
+        self.sentence_punct_pending = false;
+        self.pending_punct_context.clear();
     }
 
     /// Restore buffer from a Vietnamese word string
@@ -3828,8 +4189,7 @@ impl Engine {
         }
 
         // Render the last vowel's base character (diacritic modifier only, no tone accent)
-        let last_char =
-            chars::to_char(last_vowel.key, false, last_vowel.tone, 0)?;
+        let last_char = chars::to_char(last_vowel.key, false, last_vowel.tone, 0)?;
         let new_char = crate::utils::key_to_char(new_key, false)?;
 
         // Special case: ư + o is the intermediate state for the ươ compound.
@@ -4016,10 +4376,32 @@ impl Engine {
                 return Some(result);
             }
 
-            // If a triple tone was suppressed during typing but the corrected word wasn't in
-            // the dictionary (e.g. "offfet" → "offet" is not a known word), the word is still
-            // definitely English — the user would only type a triple tone-marker while typing
-            // English. Skip all further Vietnamese detection and just commit with SPACE.
+            // Double-tone Telex correction:
+            // When the user types a doubled Telex tone-marker consonant (ff/ss/rr/xx/jj),
+            // the raw_input contains e.g. "inffer"/"conffer" but the intended word is
+            // "infer"/"confer". Two paths lead here:
+            // - Triple-tone-guard path: is_english_word was set early, buf="infer" (correct),
+            //   raw_str="inffer" → corrected=="buf" → just add SPACE.
+            // - Double-key-revert path: buf synced to "conffer" via raw restore →
+            //   corrected≠buf → rewrite with backspaces.
+            if let Some(corrected) = try_correct_double_tone(&raw_str) {
+                let buf_rendered = self.buf.to_full_string();
+                if corrected == buf_rendered {
+                    // Buffer already shows the correct word — just commit with SPACE.
+                    self.clear();
+                    return Some(Result::send(0, &[' ']));
+                }
+                // Buffer shows the wrong word — erase and rewrite.
+                let backspace = self.buf.len().min(u8::MAX as usize) as u8;
+                let mut chars: Vec<char> = corrected.chars().collect();
+                chars.push(' ');
+                self.clear();
+                return Some(Result::send(backspace, &chars));
+            }
+
+            // If a triple tone was suppressed during typing but neither triple-consonant
+            // nor double-consonant correction fired (e.g. "offfet" → "offet" is not a
+            // known word), the word is still definitely English. Commit with SPACE.
             if self.triple_tone_suppressed {
                 self.clear();
                 return Some(Result::send(0, &[' ']));
@@ -4060,7 +4442,8 @@ impl Engine {
                 // where the 'r' is consumed as a tone modifier but the result isn't
                 // a real Vietnamese word.
                 let output = self.buf.to_full_string();
-                let is_real_vietnamese = crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
+                let is_real_vietnamese =
+                    crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
 
                 let has_explicit_viet_tone = if is_real_vietnamese {
                     // Only check for explicit tone if the result IS a real Vietnamese word
@@ -4525,18 +4908,6 @@ impl Engine {
         }
 
         None
-    }
-
-    /// Rebuild output from entire buffer (used after transform when we need full rebuild)
-    fn rebuild_output_from_entire_buffer(&self) -> Result {
-        let buf_len = self.buf.len();
-        if buf_len == 0 {
-            return Result::none();
-        }
-
-        let chars: Vec<char> = self.buf.to_full_string().chars().collect();
-        // SAFETY: Clamp to u8::MAX to prevent overflow
-        Result::send(buf_len.min(u8::MAX as usize) as u8, &chars)
     }
 
     /// Advanced phonotactic analysis for English detection

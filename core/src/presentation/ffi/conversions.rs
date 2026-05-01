@@ -101,6 +101,10 @@ pub fn to_engine_config(config: FfiConfig) -> EngineConfig {
         enable_shortcuts: config.enable_shortcuts,
         instant_restore_enabled: true,
         esc_restore_enabled: false,
+        bracket_shortcuts_enabled: false,
+        foreign_consonants_enabled: false,
+        auto_capitalise_enabled: false,
+        word_history_enabled: false,
     }
 }
 
@@ -133,6 +137,10 @@ pub fn to_engine_config_v2(config: &FfiConfig_v2) -> EngineConfig {
         enable_shortcuts: config.enable_shortcuts,
         instant_restore_enabled: config.instant_restore_enabled,
         esc_restore_enabled: config.esc_restore_enabled,
+        bracket_shortcuts_enabled: config.bracket_shortcuts_enabled,
+        foreign_consonants_enabled: config.foreign_consonants_enabled,
+        auto_capitalise_enabled: config.auto_capitalise_enabled,
+        word_history_enabled: config.word_history_enabled,
     }
 }
 
@@ -149,6 +157,10 @@ pub fn from_engine_config_v2(config: &EngineConfig) -> FfiConfig_v2 {
         instant_restore_enabled: config.instant_restore_enabled,
         esc_restore_enabled: config.esc_restore_enabled,
         enable_shortcuts: config.enable_shortcuts,
+        bracket_shortcuts_enabled: config.bracket_shortcuts_enabled,
+        foreign_consonants_enabled: config.foreign_consonants_enabled,
+        auto_capitalise_enabled: config.auto_capitalise_enabled,
+        word_history_enabled: config.word_history_enabled,
     }
 }
 
