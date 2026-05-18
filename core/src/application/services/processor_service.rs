@@ -386,6 +386,11 @@ impl ProcessorService {
             .add(Shortcut::new(trigger, expansion))
     }
 
+    /// Add a shortcut with full field control (condition, case mode, input method)
+    pub fn add_shortcut_full(&mut self, shortcut: crate::features::shortcut::Shortcut) -> bool {
+        self.engine.shortcuts_mut().add(shortcut)
+    }
+
     /// Remove a text expansion shortcut from the engine
     pub fn remove_shortcut(&mut self, trigger: &str) -> bool {
         self.engine.shortcuts_mut().remove(trigger).is_some()

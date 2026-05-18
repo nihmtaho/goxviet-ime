@@ -14,7 +14,7 @@ use std::os::raw::{c_char, c_int};
 // ============================================================================
 
 use crate::presentation::ffi::types::{
-    FfiConfig_v2, FfiProcessResult_v2, FfiStatusCode, FfiVersionInfo,
+    FfiConfig_v2, FfiProcessResult_v2, FfiShortcutExt_v2, FfiStatusCode, FfiVersionInfo,
 };
 
 /// Create engine with optional config (v2 API)
@@ -428,6 +428,90 @@ pub extern "C" fn ime_add_shortcut_v2(
         let processor = container.processor_service();
         let mut locked = processor.lock().unwrap();
         if locked.add_shortcut(trigger_str, expansion_str) {
+            FfiStatusCode::Success
+        } else {
+            FfiStatusCode::ErrorAlreadyExists
+        }
+    }));
+
+    match result {
+        Ok(status) => status,
+        Err(_) => FfiStatusCode::ErrorUnknown,
+    }
+}
+
+/// Add a shortcut with extended fields: smart case, trigger condition, input method filter.
+///
+/// # Arguments
+/// * `engine` - Engine pointer (must not be NULL)
+/// * `ext` - Extended shortcut descriptor (must not be NULL)
+///
+/// # Returns
+/// * `FfiStatusCode::Success` on success
+/// * `FfiStatusCode::ErrorInvalidArgument` if any pointer is NULL or strings are invalid UTF-8
+/// * `FfiStatusCode::ErrorAlreadyExists` if shortcut table is at capacity and trigger is new
+///
+/// # Safety
+/// `engine` and `ext` must not be null. Pointer fields in `ext` must be valid null-terminated UTF-8.
+#[no_mangle]
+pub extern "C" fn ime_add_shortcut_ext_v2(
+    engine: *mut c_void,
+    ext: *const FfiShortcutExt_v2,
+) -> FfiStatusCode {
+    use crate::features::shortcut::{CaseMode, InputMethod, Shortcut, TriggerCondition};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    if engine.is_null() || ext.is_null() {
+        return FfiStatusCode::ErrorInvalidArgument;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let ext_ref = unsafe { &*ext };
+
+        if ext_ref.trigger.is_null() || ext_ref.replacement.is_null() {
+            return FfiStatusCode::ErrorInvalidArgument;
+        }
+
+        let trigger_str = match unsafe { std::ffi::CStr::from_ptr(ext_ref.trigger).to_str() } {
+            Ok(s) => s,
+            Err(_) => return FfiStatusCode::ErrorInvalidArgument,
+        };
+
+        let replacement_str =
+            match unsafe { std::ffi::CStr::from_ptr(ext_ref.replacement).to_str() } {
+                Ok(s) => s,
+                Err(_) => return FfiStatusCode::ErrorInvalidArgument,
+            };
+
+        let condition = match ext_ref.trigger_condition {
+            1 => TriggerCondition::Immediate,
+            _ => TriggerCondition::OnWordBoundary,
+        };
+
+        let case_mode = match ext_ref.case_mode {
+            1 => CaseMode::Exact,
+            _ => CaseMode::MatchCase,
+        };
+
+        let input_method = match ext_ref.input_method {
+            1 => InputMethod::Telex,
+            2 => InputMethod::Vni,
+            _ => InputMethod::All,
+        };
+
+        let shortcut = Shortcut {
+            trigger: trigger_str.to_string(),
+            replacement: Shortcut::new(trigger_str, replacement_str).replacement, // validates length
+            condition,
+            case_mode,
+            enabled: ext_ref.enabled,
+            input_method,
+        };
+
+        let container = unsafe { &*(engine as *const crate::presentation::di::Container) };
+        let processor = container.processor_service();
+        let mut locked = processor.lock().unwrap();
+        if locked.add_shortcut_full(shortcut) {
             FfiStatusCode::Success
         } else {
             FfiStatusCode::ErrorAlreadyExists

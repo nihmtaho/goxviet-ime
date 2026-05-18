@@ -250,6 +250,23 @@ impl Default for FfiConfig_v2 {
     }
 }
 
+/// Extended shortcut descriptor for `ime_add_shortcut_ext_v2`.
+/// All pointer fields are owned by the caller — not freed by Rust.
+#[repr(C)]
+pub struct FfiShortcutExt_v2 {
+    /// Null-terminated UTF-8 trigger string (caller owns)
+    pub trigger: *const std::os::raw::c_char,
+    /// Null-terminated UTF-8 replacement string (caller owns)
+    pub replacement: *const std::os::raw::c_char,
+    /// 0 = OnWordBoundary (default), 1 = Immediate
+    pub trigger_condition: u8,
+    /// 0 = MatchCase (default), 1 = Exact
+    pub case_mode: u8,
+    pub enabled: bool,
+    /// 0 = All (default), 1 = TelexOnly, 2 = VniOnly
+    pub input_method: u8,
+}
+
 /// Version information
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
