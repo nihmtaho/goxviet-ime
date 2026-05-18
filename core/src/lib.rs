@@ -86,12 +86,13 @@ pub mod updater; // Auto-update functionality
 
 // Re-export main types from presentation layer
 pub use presentation::ffi::types::{
-    FfiConfig_v2, FfiProcessResult_v2, FfiStatusCode, FfiVersionInfo,
+    FfiConfig_v2, FfiProcessResult_v2, FfiShortcutExt_v2, FfiStatusCode, FfiVersionInfo,
 };
 
 // Re-export v2 FFI API
 pub use presentation::ffi::api::{
     // Shortcut API
+    ime_add_shortcut_ext_v2,
     ime_add_shortcut_v2,
     ime_clear_shortcuts_v2,
     ime_create_engine_v2,

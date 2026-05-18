@@ -501,7 +501,7 @@ pub extern "C" fn ime_add_shortcut_ext_v2(
 
         let shortcut = Shortcut {
             trigger: trigger_str.to_string(),
-            replacement: Shortcut::new(trigger_str, replacement_str).replacement, // validates length
+            replacement: Shortcut::validate_replacement(replacement_str),
             condition,
             case_mode,
             enabled: ext_ref.enabled,
