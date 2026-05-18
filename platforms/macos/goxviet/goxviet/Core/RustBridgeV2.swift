@@ -74,6 +74,17 @@ struct FfiVersionInfo {
     var api_version: UInt32
 }
 
+// MARK: - Extended Shortcut FFI Type
+
+struct FfiShortcutExt_v2 {
+    var trigger: UnsafePointer<CChar>?
+    var replacement: UnsafePointer<CChar>?
+    var trigger_condition: UInt8   // 0=OnWordBoundary, 1=Immediate
+    var case_mode: UInt8           // 0=MatchCase, 1=Exact
+    var enabled: Bool
+    var input_method: UInt8        // 0=All, 1=TelexOnly, 2=VniOnly
+}
+
 // MARK: - FFI v2 Functions
 
 @_silgen_name("ime_create_engine_v2")
@@ -130,6 +141,17 @@ func ime_reset_all_v2(_ engine: FfiEnginePtr?) -> Int32
 
 @_silgen_name("ime_load_input_config_v2")
 func ime_load_input_config_v2(_ engine: FfiEnginePtr?, _ json: UnsafePointer<UInt8>, _ len: Int) -> Int32
+
+// MARK: - Feature Integration FFI Functions
+
+@_silgen_name("ime_add_shortcut_ext_v2")
+func ime_add_shortcut_ext_v2(_ engine: FfiEnginePtr?, _ ext: UnsafePointer<FfiShortcutExt_v2>) -> Int32
+
+@_silgen_name("ime_get_buffer_v2")
+func ime_get_buffer_v2(_ engine: FfiEnginePtr?, _ out_buf: UnsafeMutablePointer<UInt32>, _ capacity: Int64) -> Int64
+
+@_silgen_name("ime_restore_word_v2")
+func ime_restore_word_v2(_ engine: FfiEnginePtr?, _ word: UnsafePointer<CChar>?) -> Int32
 
 // MARK: - Swift Bridge Error
 
@@ -519,6 +541,65 @@ final class RustBridgeV2 {
         }
     }
     
+    // MARK: - Extended Shortcut (Feature Integration)
+
+    /// Add a shortcut with smart-case and trigger condition support.
+    func addShortcutExt(
+        trigger: String,
+        replacement: String,
+        triggerCondition: UInt8 = 0,  // 0=OnWordBoundary, 1=Immediate
+        caseMode: UInt8 = 0,          // 0=MatchCase, 1=Exact
+        enabled: Bool = true,
+        inputMethod: UInt8 = 0        // 0=All, 1=TelexOnly, 2=VniOnly
+    ) throws {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let ptr = enginePtr else { throw RustBridgeV2Error.invalidEngine }
+
+        let status = trigger.withCString { tPtr in
+            replacement.withCString { rPtr in
+                var ext = FfiShortcutExt_v2(
+                    trigger: tPtr,
+                    replacement: rPtr,
+                    trigger_condition: triggerCondition,
+                    case_mode: caseMode,
+                    enabled: enabled,
+                    input_method: inputMethod
+                )
+                return ime_add_shortcut_ext_v2(ptr, &ext)
+            }
+        }
+        guard status == FfiStatusCode.success.rawValue else {
+            throw RustBridgeV2Error.configError
+        }
+    }
+
+    // MARK: - Buffer Export (for Selection injection method)
+
+    /// Export current raw input buffer as UTF-32 codepoints.
+    /// Returns empty array on error or empty buffer.
+    func getBuffer(capacity: Int = 256) -> [UInt32] {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let ptr = enginePtr else { return [] }
+
+        var buf = [UInt32](repeating: 0, count: capacity)
+        let count = ime_get_buffer_v2(ptr, &buf, Int64(capacity))
+        guard count > 0 else { return [] }
+        return Array(buf.prefix(Int(count)))
+    }
+
+    /// Restore a Vietnamese word into the buffer (for backspace-into-word feature).
+    func restoreWord(_ word: String) throws {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let ptr = enginePtr else { throw RustBridgeV2Error.invalidEngine }
+        let status = word.withCString { ime_restore_word_v2(ptr, $0) }
+        guard status == FfiStatusCode.success.rawValue else {
+            throw RustBridgeV2Error.ffiCallFailed("ime_restore_word_v2")
+        }
+    }
+
     // MARK: - Buffer Reset (preserves shortcuts and config)
     
     /// Reset buffer state without destroying engine
