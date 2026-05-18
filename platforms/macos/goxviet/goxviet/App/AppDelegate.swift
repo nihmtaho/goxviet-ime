@@ -78,7 +78,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Apply Dock visibility from user preference
         applyActivationPolicyFromPreference()
-        
+
+        // Show first-launch onboarding wizard if not yet completed
+        if !SettingsManager.shared.hasCompletedOnboarding {
+            showOnboarding()
+        }
+
         // Create Status Bar Item first (before permission check)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -419,8 +424,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 
     
+    // MARK: - Onboarding
+
+    private func showOnboarding() {
+        let view = OnboardingView {
+            NSApp.windows.first(where: { $0.title == "Chào mừng" })?.close()
+        }
+        let controller = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: controller)
+        window.title = "Chào mừng"
+        window.styleMask = [.titled, .closable]
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+    }
+
     // MARK: - Settings Window
-    
+
     @objc func openSettings() {
         // Prevent opening settings during termination
         guard !isTerminating else {
