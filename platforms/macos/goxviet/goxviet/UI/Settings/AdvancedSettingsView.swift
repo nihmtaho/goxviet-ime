@@ -231,9 +231,9 @@ struct AdvancedSettingsView: View {
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
-                                get: { SettingsManager.shared.remoteDesktopMode },
+                                get: { settingsManager.remoteDesktopMode },
                                 set: {
-                                    SettingsManager.shared.remoteDesktopMode = $0
+                                    settingsManager.remoteDesktopMode = $0
                                     InputManager.shared.useSessionTap = $0
                                 }
                             ))
@@ -261,15 +261,15 @@ struct AdvancedSettingsView: View {
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
-                                get: { SettingsManager.shared.debugLogEnabled },
-                                set: { SettingsManager.shared.debugLogEnabled = $0 }
+                                get: { settingsManager.debugLogEnabled },
+                                set: { settingsManager.debugLogEnabled = $0 }
                             ))
                             .toggleStyle(.switch)
                             .labelsHidden()
                             .controlSize(.small)
                         }
 
-                        if SettingsManager.shared.debugLogEnabled {
+                        if settingsManager.debugLogEnabled {
                             Divider()
                             DebugLogView()
                         }
