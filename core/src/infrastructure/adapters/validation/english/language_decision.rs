@@ -1,5 +1,5 @@
-use crate::data::is_english_word;
 use crate::data::viet_syllables::is_valid_vietnamese_syllable;
+use crate::infrastructure::adapters::validation::english::english_dict_adapter::EnglishDictAdapter;
 use crate::infrastructure::adapters::validation::english::phonotactic::PhonotacticEngine;
 use crate::infrastructure::adapters::validation::vietnamese_validator::ValidationResult;
 
@@ -15,7 +15,7 @@ impl LanguageDecisionEngine {
     ///
     /// Pipeline (high-level, in order):
     /// 1. **Vietnamese dictionary** – if `output_str` is in TuDien → not English.
-    /// 2. **English dictionary** – if `output_str` is a known English word (and not Vietnamese) → English, confidence 100.
+    /// 2. **English dictionary** – if `output_str` is a known English word (via `EnglishDictAdapter`) → English, confidence 100.
     /// 3. **Vietnamese validator** – adjust english/vietnamese scores based on syllable validity.
     /// 4. **Phonotactic analysis** – add English confidence from phonotactic signals.
     /// 5. **Diacritics penalty** – heavy penalty for Vietnamese-specific characters.
@@ -48,8 +48,9 @@ impl LanguageDecisionEngine {
 
         // PRIORITY 2: English Dictionary Lookup (O(1))
         // Only reached if output is NOT a valid Vietnamese syllable.
+        let dict = EnglishDictAdapter::new();
         if let Some(output) = output_str {
-            if is_english_word(output) {
+            if dict.is_english(output) {
                 return DecisionResult {
                     is_english: true,
                     confidence: 100,
@@ -57,7 +58,7 @@ impl LanguageDecisionEngine {
             }
         }
 
-        // PRIORITY 2: Vietnamese Validator — adjust scores based on syllable validity
+        // PRIORITY 3: Vietnamese Validator — adjust scores based on syllable validity
         let mut english_score = 0i16;
         let mut vietnamese_score = 0i16;
 
@@ -73,11 +74,11 @@ impl LanguageDecisionEngine {
             }
         }
 
-        // PRIORITY 3: Phonotactic Analysis (keeps PhonotacticEngine for English detection)
+        // PRIORITY 4: Phonotactic Analysis (keeps PhonotacticEngine for English detection)
         let phonotactic = PhonotacticEngine::analyze(keys);
         english_score += phonotactic.english_confidence as i16;
 
-        // PRIORITY 4: Diacritics Penalty
+        // PRIORITY 5: Diacritics Penalty
         // If the word already has Vietnamese-specific characters (ê, ư, ơ, tone marks),
         // it is extremely unlikely to be English.
         if has_diacritics {

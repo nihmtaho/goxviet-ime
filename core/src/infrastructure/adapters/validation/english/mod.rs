@@ -1,8 +1,11 @@
 //! English language detection — phonotactic analysis and Vietnamese-first language decision.
 //!
-//! The English dictionary (dictionary.rs / dictionary_data.rs) was removed in Sprint C.
-//! Language detection now uses the Vietnamese TuDien dictionary (Priority 1) and the
-//! PhonotacticEngine (Priority 2). See `language_decision.rs`.
+//! Language detection pipeline (see `language_decision.rs`):
+//! - Priority 1 — Vietnamese TuDien dictionary (Vietnamese-first policy)
+//! - Priority 2 — English dictionary (18k words via `EnglishDictAdapter`)
+//! - Priority 3 — Vietnamese structure validator
+//! - Priority 4 — Phonotactic analysis
+//! - Priority 5 — Diacritics penalty
 
 pub mod english_dict_adapter;
 pub mod language_decision;
