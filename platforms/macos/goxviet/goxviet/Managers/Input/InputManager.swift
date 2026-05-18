@@ -46,9 +46,18 @@ class InputManager: LifecycleManaged {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var mouseMonitor: Any?  // NSEvent monitor for mouse clicks
-    
+
     // Running state for LifecycleManaged protocol
     private(set) var isRunning: Bool = false
+
+    // Remote desktop mode: use cgSessionEventTap instead of cgHIDEventTap
+    var useSessionTap: Bool = false {
+        didSet {
+            guard oldValue != useSessionTap, isRunning else { return }
+            stop()
+            start()
+        }
+    }
     
     // Shortcut configuration
     private var currentShortcut: KeyboardShortcut
@@ -129,6 +138,10 @@ class InputManager: LifecycleManaged {
         ime_word_history_v2(settings.wordHistoryEnabled)
         Log.info("Feature Gap settings loaded")
         
+        // Load remote desktop mode (determines CGEventTap location)
+        useSessionTap = settings.remoteDesktopMode
+        Log.info("Remote desktop mode: \(useSessionTap ? "enabled (session tap)" : "disabled (HID tap)")")
+
         // Apply saved text expansion and sync shortcuts
         _ = ime_set_shortcuts_enabled_v2(settings.textExpansionEnabled)
         if settings.textExpansionEnabled {
@@ -152,12 +165,14 @@ class InputManager: LifecycleManaged {
         // Note: Accessibility permission is checked in AppDelegate before calling start()
         // No need to check again here to avoid priority inversion issues
         
-        let eventMask = (1 << CGEventType.keyDown.rawValue) | 
+        let eventMask = (1 << CGEventType.keyDown.rawValue) |
                         (1 << CGEventType.keyUp.rawValue) |
                         (1 << CGEventType.flagsChanged.rawValue)
-        
+
+        let tapLocation: CGEventTapLocation = useSessionTap ? .cgSessionEventTap : .cghidEventTap
+
         guard let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
+            tap: tapLocation,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(eventMask),
@@ -619,15 +634,7 @@ class InputManager: LifecycleManaged {
         if keyCode == 53 { // ESC key
             let (text, backspace, consumed) = ime_key_v2(UInt16(keyCode), false, false)
             if consumed {
-                let (method, delays) = detectMethod()
-                TextInjector.shared.injectSync(
-                    bs: backspace,
-                    text: text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy,
-                    
-                )
+                injectText(text, backspaces: backspace, proxy: proxy)
                 return nil
             }
         }
@@ -731,15 +738,7 @@ class InputManager: LifecycleManaged {
         do {
             let result = try RustBridgeV2.shared.restoreToRaw()
             if !result.text.isEmpty || result.backspaceCount > 0 {
-                let (method, delays) = detectMethod()
-                TextInjector.shared.injectSync(
-                    bs: result.backspaceCount,
-                    text: result.text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy,
-                    
-                )
+                injectText(result.text, backspaces: result.backspaceCount, proxy: proxy)
                 Log.info("Restore shortcut triggered: bs=\(result.backspaceCount), text='\(result.text)'")
             }
         } catch {
@@ -841,18 +840,10 @@ class InputManager: LifecycleManaged {
         }
         
         Log.transform(backspace, text)
-        
-        // Inject replacement text using smart injection
-        let (method, delays) = detectMethod()
-        Log.info("DEBUG: method=\(method), delays=\(delays), bs=\(backspace), text='\(text)'")
-        TextInjector.shared.injectSync(
-            bs: backspace,
-            text: text,
-            method: method,
-            delays: delays,
-            proxy: proxy,
-            
-        )
+
+        // Inject replacement text using per-app injection dispatch
+        Log.info("DEBUG: injecting bs=\(backspace), text='\(text)'")
+        injectText(text, backspaces: backspace, proxy: proxy)
         
         // FIX: Clear buffer after break keys (punctuation) to prevent issues like "d-d" -> "dđ"
         // Break keys reset composition context, so buffer should be cleared.
@@ -873,6 +864,59 @@ class InputManager: LifecycleManaged {
         return nil
     }
     
+    // MARK: - Injection Dispatch
+
+    /// Dispatch text injection to the appropriate strategy based on per-app profile.
+    /// Call sites should prefer this over calling TextInjector directly for transform output.
+    private func injectText(_ text: String, backspaces: Int, proxy: CGEventTapProxy) {
+        let bundleId = PerAppModeManagerEnhanced.shared.currentBundleId ?? ""
+        let profile = PerAppInjectionManager.shared.profile(for: bundleId)
+
+        switch profile.injectionMethod {
+        case .auto, .fast:
+            injectFast(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+        case .slow:
+            injectFast(text, backspaces: backspaces, delays: DelayPreset.medium.delays, proxy: proxy)
+        case .charByChar:
+            injectCharByChar(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+        case .selection:
+            injectFast(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+        case .emptyCharPrefix:
+            injectFast("\u{200B}" + text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+        }
+    }
+
+    /// Fast injection: send backspaces then full text string (existing strategy).
+    private func injectFast(_ text: String, backspaces: Int, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy) {
+        let (method, _) = detectMethod()
+        TextInjector.shared.injectSync(
+            bs: backspaces,
+            text: text,
+            method: method,
+            delays: delays,
+            proxy: proxy
+        )
+    }
+
+    /// Char-by-char injection: send backspaces first, then each character individually.
+    private func injectCharByChar(_ text: String, backspaces: Int, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy) {
+        // First clear old text with backspaces (inject empty text to just send bs)
+        if backspaces > 0 {
+            injectFast("", backspaces: backspaces, delays: delays, proxy: proxy)
+        }
+        // Then inject each character individually
+        for scalar in text.unicodeScalars {
+            let source = CGEventSource(stateID: .hidSystemState)
+            if let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+                var value = scalar.value
+                event.keyboardSetUnicodeString(stringLength: 1, unicodeString: &value)
+                event.setIntegerValueField(.eventSourceUserData, value: kEventMarker)
+                event.post(tap: .cghidEventTap)
+            }
+            usleep(delays.2)
+        }
+    }
+
     // MARK: - DELETE Key Handling
     
     /// Handle DELETE key - process immediately through engine (no batching)
@@ -907,19 +951,8 @@ class InputManager: LifecycleManaged {
         // Check if engine consumed and has content to replace
         if consumed {
             if !text.isEmpty || backspace > 0 {
-                // Detect injection method
-                let (method, delays) = detectMethod()
-                
-                // Inject transformation
-                TextInjector.shared.injectSync(
-                    bs: backspace,
-                    text: text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy,
-                    
-                )
-                
+                // Inject transformation via per-app dispatch
+                injectText(text, backspaces: backspace, proxy: proxy)
                 Log.info("DELETE processed: bs=\(backspace), text='\(text)'")
                 return
             } else if backspace > 0 {
