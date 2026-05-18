@@ -492,6 +492,51 @@ struct GeneralSettingsView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
 
+                // Feedback & Onboarding Section
+                GroupBox {
+                    VStack(spacing: 6) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Âm thanh phản hồi")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Phát âm thanh khi bật/tắt chế độ tiếng Việt")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { SettingsManager.shared.soundEnabled },
+                                set: { SettingsManager.shared.soundEnabled = $0 }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .controlSize(.small)
+                        }
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Hướng dẫn ban đầu")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Xem lại màn hình giới thiệu khi lần đầu mở app")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Button("Xem lại hướng dẫn ban đầu") {
+                                SettingsManager.shared.hasCompletedOnboarding = false
+                                NotificationCenter.default.post(name: Notification.Name("ShowOnboarding"), object: nil)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(8)
+                } label: {
+                    Label("Phản hồi & Giới thiệu", systemImage: "bell")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
                 // Quick Actions
                 GroupBox {
                     HStack(spacing: 12) {

@@ -11,13 +11,15 @@ import UniformTypeIdentifiers
 
 struct AdvancedSettingsView: View {
     let openLogAction: () -> Void
-    
+
     @EnvironmentObject var settingsManager: SettingsManager
-    
+
     @State private var showLegacyEncodingWarning = false
     @State private var pendingEncoding: OutputEncoding?
     @State private var loggingEnabled: Bool = Log.isEnabled
-    
+    @State private var showAppPicker = false
+    @State private var injectionProfiles: [PerAppInjectionProfile] = []
+
     init(openLogAction: @escaping () -> Void) {
         self.openLogAction = openLogAction
     }
@@ -216,6 +218,128 @@ struct AdvancedSettingsView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 
+                // Remote Desktop Mode Section
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Remote Desktop Mode (SessionTap)")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Dùng cho RustDesk, AnyDesk, TeamViewer.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { SettingsManager.shared.remoteDesktopMode },
+                                set: {
+                                    SettingsManager.shared.remoteDesktopMode = $0
+                                    InputManager.shared.useSessionTap = $0
+                                }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .controlSize(.small)
+                        }
+                    }
+                    .padding(12)
+                } label: {
+                    Label("Chế độ kết nối từ xa", systemImage: "display.2")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                // Debug Log Section
+                GroupBox {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Bật debug log")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Ghi log chi tiết cho mục đích gỡ lỗi")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { SettingsManager.shared.debugLogEnabled },
+                                set: { SettingsManager.shared.debugLogEnabled = $0 }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .controlSize(.small)
+                        }
+
+                        if SettingsManager.shared.debugLogEnabled {
+                            Divider()
+                            DebugLogView()
+                        }
+                    }
+                    .padding(12)
+                } label: {
+                    Label("Debug Log", systemImage: "ladybug")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                // Per-App Injection Section
+                GroupBox {
+                    VStack(spacing: 12) {
+                        if injectionProfiles.isEmpty {
+                            HStack {
+                                Text("Chưa có cấu hình nào")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+                        } else {
+                            ForEach(injectionProfiles, id: \.bundleId) { profile in
+                                HStack {
+                                    Text(profile.bundleId)
+                                        .font(.body)
+                                    Spacer()
+                                    Picker("", selection: Binding(
+                                        get: { PerAppInjectionManager.shared.profile(for: profile.bundleId).injectionMethod },
+                                        set: { method in
+                                            var p = PerAppInjectionManager.shared.profile(for: profile.bundleId)
+                                            p.injectionMethod = method
+                                            PerAppInjectionManager.shared.setProfile(p)
+                                            injectionProfiles = PerAppInjectionManager.shared.allProfiles
+                                        }
+                                    )) {
+                                        ForEach(InjectionOverride.allCases, id: \.self) { method in
+                                            Text(method.displayName).tag(method)
+                                        }
+                                    }
+                                    .frame(width: 120)
+
+                                    Button {
+                                        PerAppInjectionManager.shared.removeProfile(for: profile.bundleId)
+                                        injectionProfiles = PerAppInjectionManager.shared.allProfiles
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .foregroundColor(.red)
+                                }
+                                Divider()
+                            }
+                        }
+
+                        Button("Thêm app") { showAppPicker = true }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding(12)
+                    .sheet(isPresented: $showAppPicker) {
+                        AppPickerSheet(isPresented: $showAppPicker) { bundleId, _ in
+                            let p = PerAppInjectionProfile(bundleId: bundleId)
+                            PerAppInjectionManager.shared.setProfile(p)
+                            injectionProfiles = PerAppInjectionManager.shared.allProfiles
+                        }
+                    }
+                } label: {
+                    Label("Cấu hình inject theo app", systemImage: "app.badge.checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
                 Spacer()
             }
             .padding(24)
@@ -224,6 +348,7 @@ struct AdvancedSettingsView: View {
         .onAppear {
             // Sync logging state on appear
             loggingEnabled = Log.isEnabled
+            injectionProfiles = PerAppInjectionManager.shared.allProfiles
         }
         .onReceive(NotificationCenter.default.publisher(for: .loggingStateChanged)) { notification in
             if let enabled = notification.object as? Bool {

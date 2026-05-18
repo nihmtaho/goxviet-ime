@@ -38,6 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let settingsClose = "AppDelegate.settingsCloseObserver"
         static let settingsCleanup = "AppDelegate.settingsCleanupObserver"
         static let accessibilityRevoked = "AppDelegate.accessibilityRevokedObserver"
+        static let showOnboarding = "AppDelegate.showOnboardingObserver"
     }
     
     var isEnabled: Bool {
@@ -642,6 +643,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ResourceManager.shared.register(observer: revokedToken, identifier: ObserverKey.accessibilityRevoked, center: notificationCenter)
 
+        // Listen for onboarding replay requests from Settings
+        let onboardingToken = notificationCenter.addObserver(
+            forName: Notification.Name("ShowOnboarding"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.showOnboarding()
+            }
+        }
+        ResourceManager.shared.register(observer: onboardingToken, identifier: ObserverKey.showOnboarding, center: notificationCenter)
+
     }
     
     private func cleanupObservers() {
@@ -653,7 +666,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ObserverKey.inputMethod,
             ObserverKey.settingsClose,
             ObserverKey.settingsCleanup,
-            ObserverKey.accessibilityRevoked
+            ObserverKey.accessibilityRevoked,
+            ObserverKey.showOnboarding
         ]
         identifiers.forEach { identifier in
             ResourceManager.shared.unregister(observerIdentifier: identifier, center: notificationCenter)
