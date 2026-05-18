@@ -6,7 +6,7 @@ final class PerAppInjectionManager {
     private let key = "perAppInjectionProfiles"
     private var profiles: [String: PerAppInjectionProfile] = [:]
 
-    nonisolated private init() {
+    nonisolated init() {
         load()
     }
 

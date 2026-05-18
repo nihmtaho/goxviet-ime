@@ -26,7 +26,7 @@ final class DebugLogger {
         return logsDir.appendingPathComponent("debug.log")
     }()
 
-    nonisolated private init() {}
+    nonisolated init() {}
 
     func log(_ message: String, level: String = "INFO") {
         guard isEnabled else { return }
