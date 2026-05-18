@@ -87,6 +87,7 @@ pub fn from_tone_style(style: TonePlacementStyle) -> FfiToneStyle {
 }
 
 /// Convert FfiConfig to EngineConfig
+// Legacy v1 path: FfiConfig has no free_tone_enabled; always defaults to false after round-trip.
 pub fn to_engine_config(config: FfiConfig) -> EngineConfig {
     EngineConfig {
         input_method: to_input_method_id(config.input_method),
@@ -110,6 +111,7 @@ pub fn to_engine_config(config: FfiConfig) -> EngineConfig {
 }
 
 /// Convert EngineConfig to FfiConfig
+// Legacy v1 path: FfiConfig has no free_tone_enabled; always defaults to false after round-trip.
 pub fn from_engine_config(config: &EngineConfig) -> FfiConfig {
     FfiConfig {
         input_method: from_input_method_id(config.input_method),
@@ -279,6 +281,28 @@ mod tests {
         let back = from_engine_config(&engine_config);
         assert_eq!(back.input_method, ffi_config.input_method);
         assert_eq!(back.smart_mode, ffi_config.smart_mode);
+    }
+
+    #[test]
+    fn free_tone_round_trips_v2() {
+        // true → EngineConfig → FfiConfig_v2 → EngineConfig should preserve true
+        let ffi = FfiConfig_v2 {
+            free_tone_enabled: true,
+            ..Default::default()
+        };
+        let engine_cfg = to_engine_config_v2(&ffi);
+        assert!(engine_cfg.free_tone_enabled, "true should round-trip");
+
+        let ffi_back = from_engine_config_v2(&engine_cfg);
+        assert!(ffi_back.free_tone_enabled, "true should survive back-conversion");
+
+        // false path
+        let ffi_false = FfiConfig_v2 {
+            free_tone_enabled: false,
+            ..Default::default()
+        };
+        let cfg_false = to_engine_config_v2(&ffi_false);
+        assert!(!cfg_false.free_tone_enabled, "false should round-trip");
     }
 
     #[test]
