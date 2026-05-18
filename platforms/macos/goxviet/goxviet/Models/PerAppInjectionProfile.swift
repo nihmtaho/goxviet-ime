@@ -6,7 +6,6 @@ struct PerAppInjectionProfile: Codable, Equatable {
     var bundleId: String
     var delayPreset: DelayPreset = .none
     var injectionMethod: InjectionOverride = .auto
-    var inputMethodOverride: Int? = nil  // nil = use global, 0 = Telex, 1 = VNI
     var isEnabled: Bool = true
 
     init(bundleId: String) {

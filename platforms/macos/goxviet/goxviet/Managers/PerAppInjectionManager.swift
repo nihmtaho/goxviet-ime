@@ -1,12 +1,12 @@
 import Foundation
 
 final class PerAppInjectionManager {
-    static let shared = PerAppInjectionManager()
+    nonisolated(unsafe) static var shared: PerAppInjectionManager!
 
     private let key = "perAppInjectionProfiles"
     private var profiles: [String: PerAppInjectionProfile] = [:]
 
-    private init() {
+    nonisolated private init() {
         load()
     }
 

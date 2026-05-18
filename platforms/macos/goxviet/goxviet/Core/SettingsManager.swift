@@ -378,26 +378,20 @@ final class SettingsManager: ObservableObject {
     /// Set enabled state and notify observers
     /// Debounced to reduce overhead during rapid toggles
     func setEnabled(_ enabled: Bool) {
+        let wasChanged: Bool
         lock.lock()
-        defer { lock.unlock() }
-        
-        guard enabled != isEnabled else { return }
-        
-        isEnabled = enabled
-
-        // Sound feedback on toggle
-        if enabled {
-            SoundFeedbackService.shared.playEnable()
-        } else {
-            SoundFeedbackService.shared.playDisable()
+        if enabled == isEnabled {
+            lock.unlock()
+            return
         }
+        isEnabled = enabled
 
         // Persist to UserDefaults
         userDefaults.set(enabled, forKey: SettingsKey.isEnabled)
 
         // Cancel pending debounce work
         setEnabledDebounceWork?.cancel()
-        
+
         // Create new debounced notification (50ms delay)
         let work = DispatchWorkItem {
             // Post notification for UI update
@@ -408,9 +402,20 @@ final class SettingsManager: ObservableObject {
 
             Log.info("Gõ Việt input: \(enabled ? "enabled" : "disabled")")
         }
-        
+
         setEnabledDebounceWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        wasChanged = true
+        lock.unlock()
+
+        // Sound feedback outside the lock (NSSound must not be called while holding a lock)
+        if wasChanged {
+            if enabled {
+                SoundFeedbackService.shared.playEnable()
+            } else {
+                SoundFeedbackService.shared.playDisable()
+            }
+        }
     }
     
     /// Set enabled state without posting notification (used during app switching)

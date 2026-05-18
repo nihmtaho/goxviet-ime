@@ -68,6 +68,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize settings — must happen before InputManager is created
         SettingsManager.shared.initialize()
 
+        // Initialize service singletons that depend on MainActor
+        SoundFeedbackService.shared = SoundFeedbackService()
+        PerAppInjectionManager.shared = PerAppInjectionManager()
+
         // Create InputManager singleton on main actor (init has @MainActor dependencies)
         InputManager.shared = InputManager()
 

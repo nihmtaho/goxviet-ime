@@ -1,7 +1,7 @@
 import AppKit
 
 final class SoundFeedbackService {
-    static let shared = SoundFeedbackService()
+    nonisolated(unsafe) static var shared: SoundFeedbackService!
 
     private let enableSound: NSSound?
     private let disableSound: NSSound?
