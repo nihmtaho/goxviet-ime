@@ -6,7 +6,7 @@ final class SoundFeedbackService {
     private let enableSound: NSSound?
     private let disableSound: NSSound?
 
-    private init() {
+    init() {
         // Cache at init to avoid first-play latency
         enableSound = NSSound(named: "Tink")
         disableSound = NSSound(named: "Pop")
