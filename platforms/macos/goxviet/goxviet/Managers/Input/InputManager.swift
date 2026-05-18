@@ -95,7 +95,25 @@ class InputManager: LifecycleManaged {
         setupObservers()
     }
     
-    deinit {}
+    deinit {
+        // Observers are unregistered here (not in stop()) so they survive tap restarts
+        // triggered by useSessionTap toggles. Unregistering in stop() caused settings
+        // change notifications (input method, tone style, etc.) to be silently dropped
+        // after a remote-desktop mode toggle because setupObservers() is NOT idempotent
+        // (each call adds a new observer without removing the old one).
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.inputMethodObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toneStyleObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.restoreShortcutObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.instantRestoreObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.textExpansionObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.escRestoreObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.bracketShortcutsObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.foreignConsonantsObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.autoCapitaliseObserver")
+        ResourceManager.shared.unregister(observerIdentifier: "InputManager.wordHistoryObserver")
+    }
     
     private func loadSavedSettings() {
         let settings = SettingsManager.shared
@@ -223,15 +241,9 @@ class InputManager: LifecycleManaged {
             self.eventTap = nil // Swift ARC releases the CFMachPort retain here
         }
         
-        // Unregister all observers via ResourceManager
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.inputMethodObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toneStyleObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.restoreShortcutObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.instantRestoreObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.textExpansionObserver")
-        
+        // NOTE: Observers are intentionally NOT unregistered here — see deinit for explanation.
+        // Observers must persist across stop()/start() cycles (e.g. remote desktop mode toggle).
+
         // Stop mouse monitor
         if let monitor = mouseMonitor {
             NSEvent.removeMonitor(monitor)
@@ -880,6 +892,8 @@ class InputManager: LifecycleManaged {
         case .charByChar:
             injectCharByChar(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
         case .selection:
+            // TODO: Implement select-previous-word + replace via buffer export (ime_get_buffer_v2)
+            // For now, falls back to fast injection
             injectFast(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
         case .emptyCharPrefix:
             injectFast("\u{200B}" + text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
@@ -911,7 +925,8 @@ class InputManager: LifecycleManaged {
                 var value = scalar.value
                 event.keyboardSetUnicodeString(stringLength: 1, unicodeString: &value)
                 event.setIntegerValueField(.eventSourceUserData, value: kEventMarker)
-                event.post(tap: .cghidEventTap)
+                let targetTap: CGEventTapLocation = useSessionTap ? .cgSessionEventTap : .cghidEventTap
+                event.post(tap: targetTap)
             }
             usleep(delays.2)
         }
