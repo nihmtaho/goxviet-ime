@@ -71,6 +71,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize service singletons that depend on MainActor
         SoundFeedbackService.shared = SoundFeedbackService()
         PerAppInjectionManager.shared = PerAppInjectionManager()
+        DebugLogger.shared = DebugLogger()
 
         // Create InputManager singleton on main actor (init has @MainActor dependencies)
         InputManager.shared = InputManager()
