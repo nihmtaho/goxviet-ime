@@ -685,6 +685,67 @@ pub extern "C" fn ime_restore_to_raw_v2(
 }
 
 // ============================================================================
+// Buffer Export and Word Restore API
+// ============================================================================
+
+/// Export the current displayed buffer as UTF-32 codepoints.
+///
+/// `out_buf` must be caller-allocated with at least `capacity` elements.
+/// Returns the number of codepoints written, or -1 on error.
+///
+/// # Safety
+/// - `engine` must be a valid pointer from `ime_create_engine_v2`
+/// - `out_buf` must point to a writable array of at least `capacity` u32 values
+#[no_mangle]
+pub extern "C" fn ime_get_buffer_v2(
+    engine: *mut c_void,
+    out_buf: *mut u32,
+    capacity: i64,
+) -> i64 {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() || out_buf.is_null() || capacity <= 0 {
+            return -1i64;
+        }
+        let container = unsafe { &*(engine as *const Container) };
+        let chars = container.get_buffer_chars();
+        let count = chars.len().min(capacity as usize);
+        let buf_slice = unsafe { std::slice::from_raw_parts_mut(out_buf, count) };
+        for (i, ch) in chars.iter().take(count).enumerate() {
+            buf_slice[i] = *ch as u32;
+        }
+        count as i64
+    })
+    .unwrap_or(-1i64)
+}
+
+/// Parse a Vietnamese word back into the engine buffer (for backspace-into-word).
+///
+/// `word` must be null-terminated UTF-8. Clears the current buffer and re-populates
+/// it from `word` so that subsequent keystrokes continue from the restored state.
+///
+/// # Safety
+/// - `engine` must be a valid pointer from `ime_create_engine_v2`
+/// - `word` must be a valid null-terminated UTF-8 C string
+#[no_mangle]
+pub extern "C" fn ime_restore_word_v2(engine: *mut c_void, word: *const c_char) -> c_int {
+    std::panic::catch_unwind(|| {
+        if engine.is_null() {
+            return FfiStatusCode::ErrorNullEngine.to_c_int();
+        }
+        if word.is_null() {
+            return FfiStatusCode::ErrorInvalidArgument.to_c_int();
+        }
+        let container = unsafe { &mut *(engine as *mut Container) };
+        let text = unsafe { std::ffi::CStr::from_ptr(word) }
+            .to_str()
+            .unwrap_or("");
+        container.restore_word(text);
+        FfiStatusCode::Success.to_c_int()
+    })
+    .unwrap_or(FfiStatusCode::ErrorPanic.to_c_int())
+}
+
+// ============================================================================
 // Input Method Config API (T6.2)
 // ============================================================================
 

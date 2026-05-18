@@ -165,6 +165,22 @@ impl Container {
     pub fn get_input_method_config(&self) -> Option<InputMethodConfig> {
         self.input_method_config.lock().unwrap().clone()
     }
+
+    /// Returns the current displayed buffer as a Vec<char>.
+    pub fn get_buffer_chars(&self) -> Vec<char> {
+        if let Ok(svc) = self.processor_service.lock() {
+            svc.get_raw_buffer()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Parse a Vietnamese word back into the engine buffer.
+    pub fn restore_word(&mut self, word: &str) {
+        if let Ok(mut svc) = self.processor_service.lock() {
+            svc.restore_word_to_buffer(word);
+        }
+    }
 }
 
 impl Default for Container {

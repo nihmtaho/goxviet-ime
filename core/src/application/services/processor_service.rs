@@ -420,6 +420,22 @@ impl ProcessorService {
     pub fn reset_all(&mut self) {
         self.engine.clear_all();
     }
+
+    /// Return the current displayed buffer as a Vec<char>.
+    ///
+    /// Uses the legacy engine's `get_buffer()` which returns the fully-transformed
+    /// Vietnamese string (e.g. "việt" not the raw keystrokes).
+    pub fn get_raw_buffer(&self) -> Vec<char> {
+        self.engine.get_buffer().chars().collect()
+    }
+
+    /// Parse a Vietnamese word back into the engine buffer.
+    ///
+    /// Clears the current buffer and re-populates it from `word`, so that
+    /// subsequent keystrokes continue from the restored state.
+    pub fn restore_word_to_buffer(&mut self, word: &str) {
+        self.engine.restore_word(word);
+    }
 }
 
 #[cfg(test)]
