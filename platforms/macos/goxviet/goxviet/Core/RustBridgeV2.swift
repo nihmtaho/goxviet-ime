@@ -58,6 +58,7 @@ struct FfiConfig_v2 {
     var foreign_consonants_enabled: Bool
     var auto_capitalise_enabled: Bool
     var word_history_enabled: Bool
+    var free_tone_enabled: Bool
 }
 
 struct FfiProcessResult_v2 {
@@ -186,7 +187,8 @@ final class RustBridgeV2 {
             bracket_shortcuts_enabled: false,
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
-            word_history_enabled: false
+            word_history_enabled: false,
+            free_tone_enabled: false
         )
     }
     
@@ -372,7 +374,7 @@ final class RustBridgeV2 {
             throw RustBridgeV2Error.invalidEngine
         }
         
-        var config = FfiConfig_v2(input_method: .telex, tone_style: .modern, smart_mode: true, instant_restore_enabled: true, esc_restore_enabled: false, enable_shortcuts: true, bracket_shortcuts_enabled: false, foreign_consonants_enabled: false, auto_capitalise_enabled: false, word_history_enabled: false)
+        var config = FfiConfig_v2(input_method: .telex, tone_style: .modern, smart_mode: true, instant_restore_enabled: true, esc_restore_enabled: false, enable_shortcuts: true, bracket_shortcuts_enabled: false, foreign_consonants_enabled: false, auto_capitalise_enabled: false, word_history_enabled: false, free_tone_enabled: false)
         let status = ime_get_config_v2(ptr, &config)
         
         guard status == FfiStatusCode.success.rawValue else {

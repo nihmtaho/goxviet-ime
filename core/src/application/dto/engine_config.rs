@@ -80,6 +80,9 @@ pub struct EngineConfig {
 
     /// Enable backspace-after-space word history restore
     pub word_history_enabled: bool,
+
+    /// Enable free tone mode (allow any tone on any vowel without FSM restrictions)
+    pub free_tone_enabled: bool,
 }
 
 impl Default for EngineConfig {
@@ -101,6 +104,7 @@ impl Default for EngineConfig {
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
+            free_tone_enabled: false,
         }
     }
 }
@@ -231,6 +235,20 @@ impl EngineConfig {
     /// ```
     pub fn with_smart_mode(mut self, enabled: bool) -> Self {
         self.smart_mode = enabled;
+        self
+    }
+
+    /// Builder pattern: Set free tone mode
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use goxviet_core::application::dto::EngineConfig;
+    /// let config = EngineConfig::new().with_free_tone(true);
+    /// assert!(config.free_tone_enabled);
+    /// ```
+    pub fn with_free_tone(mut self, enabled: bool) -> Self {
+        self.free_tone_enabled = enabled;
         self
     }
 

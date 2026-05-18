@@ -228,6 +228,8 @@ pub struct FfiConfig_v2 {
     pub auto_capitalise_enabled: bool,
     /// Enable backspace-after-space word history restore
     pub word_history_enabled: bool,
+    /// Enable free tone mode (allow any tone on any vowel without FSM restrictions)
+    pub free_tone_enabled: bool,
 }
 
 impl Default for FfiConfig_v2 {
@@ -243,6 +245,7 @@ impl Default for FfiConfig_v2 {
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
+            free_tone_enabled: false,
         }
     }
 }
