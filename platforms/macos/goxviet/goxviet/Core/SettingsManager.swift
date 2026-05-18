@@ -384,10 +384,17 @@ final class SettingsManager: ObservableObject {
         guard enabled != isEnabled else { return }
         
         isEnabled = enabled
-        
+
+        // Sound feedback on toggle
+        if enabled {
+            SoundFeedbackService.shared.playEnable()
+        } else {
+            SoundFeedbackService.shared.playDisable()
+        }
+
         // Persist to UserDefaults
         userDefaults.set(enabled, forKey: SettingsKey.isEnabled)
-        
+
         // Cancel pending debounce work
         setEnabledDebounceWork?.cancel()
         
