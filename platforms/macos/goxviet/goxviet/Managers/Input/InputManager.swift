@@ -96,23 +96,27 @@ class InputManager: LifecycleManaged {
     }
     
     deinit {
-        // Observers are unregistered here (not in stop()) so they survive tap restarts
-        // triggered by useSessionTap toggles. Unregistering in stop() caused settings
-        // change notifications (input method, tone style, etc.) to be silently dropped
-        // after a remote-desktop mode toggle because setupObservers() is NOT idempotent
-        // (each call adds a new observer without removing the old one).
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.inputMethodObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toneStyleObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.restoreShortcutObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.instantRestoreObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.textExpansionObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.escRestoreObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.bracketShortcutsObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.foreignConsonantsObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.autoCapitaliseObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.wordHistoryObserver")
+        // deinit is nonisolated in Swift 6 — schedule cleanup on MainActor.
+        // Capture identifier strings (Sendable) rather than self.
+        let ids: [String] = [
+            "InputManager.toggleObserver",
+            "InputManager.shortcutObserver",
+            "InputManager.inputMethodObserver",
+            "InputManager.toneStyleObserver",
+            "InputManager.restoreShortcutObserver",
+            "InputManager.instantRestoreObserver",
+            "InputManager.textExpansionObserver",
+            "InputManager.escRestoreObserver",
+            "InputManager.bracketShortcutsObserver",
+            "InputManager.foreignConsonantsObserver",
+            "InputManager.autoCapitaliseObserver",
+            "InputManager.wordHistoryObserver",
+        ]
+        Task { @MainActor in
+            for id in ids {
+                ResourceManager.shared.unregister(observerIdentifier: id)
+            }
+        }
     }
     
     private func loadSavedSettings() {
@@ -922,8 +926,9 @@ class InputManager: LifecycleManaged {
         for scalar in text.unicodeScalars {
             let source = CGEventSource(stateID: .hidSystemState)
             if let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
-                var value = scalar.value
-                event.keyboardSetUnicodeString(stringLength: 1, unicodeString: &value)
+                // keyboardSetUnicodeString expects UniChar (UInt16 / UTF-16), not UInt32
+                var utf16 = Array(String(scalar).utf16)
+                event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
                 event.setIntegerValueField(.eventSourceUserData, value: kEventMarker)
                 let targetTap: CGEventTapLocation = useSessionTap ? .cgSessionEventTap : .cghidEventTap
                 event.post(tap: targetTap)

@@ -47,7 +47,8 @@ final class RustEngineV2 {
             bracket_shortcuts_enabled: false,
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
-            word_history_enabled: false
+            word_history_enabled: false,
+            free_tone_enabled: false
         )
     }
     
