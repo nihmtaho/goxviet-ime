@@ -1,3 +1,4 @@
+use crate::data::is_english_word;
 use crate::data::viet_syllables::is_valid_vietnamese_syllable;
 use crate::infrastructure::adapters::validation::english::phonotactic::PhonotacticEngine;
 use crate::infrastructure::adapters::validation::vietnamese_validator::ValidationResult;
@@ -14,9 +15,10 @@ impl LanguageDecisionEngine {
     ///
     /// Pipeline (high-level, in order):
     /// 1. **Vietnamese dictionary** – if `output_str` is in TuDien → not English.
-    /// 2. **Vietnamese validator** – adjust english/vietnamese scores based on syllable validity.
-    /// 3. **Phonotactic analysis** – add English confidence from phonotactic signals.
-    /// 4. **Diacritics penalty** – heavy penalty for Vietnamese-specific characters.
+    /// 2. **English dictionary** – if `output_str` is a known English word (and not Vietnamese) → English, confidence 100.
+    /// 3. **Vietnamese validator** – adjust english/vietnamese scores based on syllable validity.
+    /// 4. **Phonotactic analysis** – add English confidence from phonotactic signals.
+    /// 5. **Diacritics penalty** – heavy penalty for Vietnamese-specific characters.
     ///
     /// Decision: `is_english` only when `english_score > vietnamese_score && confidence >= 80`.
     pub fn decide_with_validation(
@@ -34,11 +36,23 @@ impl LanguageDecisionEngine {
 
         // PRIORITY 1: Vietnamese Dictionary Lookup (O(1))
         // If the rendered output is a valid Vietnamese syllable, it is definitely not English.
+        // This runs before English dict to ensure Vietnamese-first policy.
         if let Some(output) = output_str {
             if is_valid_vietnamese_syllable(output) {
                 return DecisionResult {
                     is_english: false,
                     confidence: 0,
+                };
+            }
+        }
+
+        // PRIORITY 2: English Dictionary Lookup (O(1))
+        // Only reached if output is NOT a valid Vietnamese syllable.
+        if let Some(output) = output_str {
+            if is_english_word(output) {
+                return DecisionResult {
+                    is_english: true,
+                    confidence: 100,
                 };
             }
         }
