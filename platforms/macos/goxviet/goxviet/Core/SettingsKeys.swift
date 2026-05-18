@@ -56,4 +56,10 @@ enum SettingsKey {
     static let autoCapitaliseEnabled    = "com.goxviet.ime.autoCapitaliseEnabled"
     static let wordHistoryEnabled       = "com.goxviet.ime.wordHistoryEnabled"
 
+    // MARK: - Feedback & Onboarding
+    static let soundEnabled             = "com.goxviet.ime.soundEnabled"
+    static let remoteDesktopMode        = "com.goxviet.ime.remoteDesktopMode"
+    static let hasCompletedOnboarding   = "com.goxviet.ime.hasCompletedOnboarding"
+    static let debugLogEnabled          = "com.goxviet.ime.debugLogEnabled"
+
 }

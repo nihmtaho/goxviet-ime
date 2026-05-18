@@ -153,8 +153,30 @@ final class SettingsManager: ObservableObject {
         }
     }
     
+    // MARK: - Feedback & Onboarding Settings
+
+    var soundEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.soundEnabled) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.soundEnabled) }
+    }
+
+    var remoteDesktopMode: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.remoteDesktopMode) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.remoteDesktopMode) }
+    }
+
+    var hasCompletedOnboarding: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.hasCompletedOnboarding) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.hasCompletedOnboarding) }
+    }
+
+    var debugLogEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.debugLogEnabled) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.debugLogEnabled) }
+    }
+
     // MARK: - Shortcuts (Text Expansion)
-    
+
     /// Source of truth for shortcuts - stored in UserDefaults and synced to Rust engine
     @Published var shortcuts: [TextShortcutItem] = []
     
