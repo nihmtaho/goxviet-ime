@@ -19,3 +19,6 @@ pub use constants::*;
 pub use double_consonant::is_double_consonant_word;
 pub use keys::{is_break, is_letter, is_vowel};
 pub use vowel::{Modifier, Phonology, Role, Vowel};
+
+pub mod english_dict;
+pub use english_dict::is_english_word;
