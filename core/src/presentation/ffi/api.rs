@@ -702,7 +702,7 @@ pub extern "C" fn ime_get_buffer_v2(
     out_buf: *mut u32,
     capacity: i64,
 ) -> i64 {
-    std::panic::catch_unwind(|| {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if engine.is_null() || out_buf.is_null() || capacity <= 0 {
             return -1i64;
         }
@@ -714,7 +714,7 @@ pub extern "C" fn ime_get_buffer_v2(
             buf_slice[i] = *ch as u32;
         }
         count as i64
-    })
+    }))
     .unwrap_or(-1i64)
 }
 
@@ -728,7 +728,7 @@ pub extern "C" fn ime_get_buffer_v2(
 /// - `word` must be a valid null-terminated UTF-8 C string
 #[no_mangle]
 pub extern "C" fn ime_restore_word_v2(engine: *mut c_void, word: *const c_char) -> c_int {
-    std::panic::catch_unwind(|| {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if engine.is_null() {
             return FfiStatusCode::ErrorNullEngine.to_c_int();
         }
@@ -736,12 +736,13 @@ pub extern "C" fn ime_restore_word_v2(engine: *mut c_void, word: *const c_char) 
             return FfiStatusCode::ErrorInvalidArgument.to_c_int();
         }
         let container = unsafe { &mut *(engine as *mut Container) };
-        let text = unsafe { std::ffi::CStr::from_ptr(word) }
-            .to_str()
-            .unwrap_or("");
+        let text = match unsafe { std::ffi::CStr::from_ptr(word) }.to_str() {
+            Ok(s) => s,
+            Err(_) => return FfiStatusCode::ErrorInvalidArgument.to_c_int(),
+        };
         container.restore_word(text);
         FfiStatusCode::Success.to_c_int()
-    })
+    }))
     .unwrap_or(FfiStatusCode::ErrorPanic.to_c_int())
 }
 
