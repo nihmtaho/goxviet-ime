@@ -22,6 +22,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionGrantedWhileModalActive = false
     private var isModalAlertActive = false
 
+    // Retained reference to the onboarding window to prevent deallocation
+    private var onboardingWindow: NSWindow?
+
     // Flag: app was launched right after an auto-update
     private var isPostUpdateLaunch: Bool = false
     private let notificationCenter = NotificationCenter.default
@@ -428,7 +431,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         let view = OnboardingView {
-            NSApp.windows.first(where: { $0.title == "Chào mừng" })?.close()
+            self.onboardingWindow?.close()
+            self.onboardingWindow = nil
         }
         let controller = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: controller)
@@ -436,6 +440,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.styleMask = [.titled, .closable]
         window.center()
         window.makeKeyAndOrderFront(nil)
+        self.onboardingWindow = window
     }
 
     // MARK: - Settings Window

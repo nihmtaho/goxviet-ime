@@ -35,9 +35,9 @@ struct DebugLogView: View {
                 .background(Color(NSColor.textBackgroundColor))
                 .cornerRadius(6)
                 .frame(minHeight: 200, maxHeight: 400)
-                .onChange(of: logContent) { _, _ in
+                .onChange(of: logContent, perform: { _ in
                     proxy.scrollTo("bottom", anchor: .bottom)
-                }
+                })
             }
         }
         .onAppear {

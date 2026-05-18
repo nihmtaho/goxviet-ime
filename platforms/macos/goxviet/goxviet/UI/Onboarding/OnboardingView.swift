@@ -11,6 +11,7 @@ import ApplicationServices
 struct OnboardingView: View {
     @State private var step: Int = 0
     @State private var accessibilityGranted: Bool = false
+    @State private var selectedMethod: Int = SettingsManager.shared.inputMethod
     var onComplete: () -> Void
 
     var body: some View {
@@ -111,6 +112,7 @@ struct OnboardingView: View {
     @ViewBuilder
     private func methodButton(title: String, subtitle: String, method: Int) -> some View {
         Button {
+            selectedMethod = method
             SettingsManager.shared.inputMethod = method
         } label: {
             VStack(alignment: .leading, spacing: 4) {
@@ -121,7 +123,7 @@ struct OnboardingView: View {
             .padding(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(SettingsManager.shared.inputMethod == method ? Color.accentColor : Color.secondary.opacity(0.3))
+                    .stroke(selectedMethod == method ? Color.accentColor : Color.secondary.opacity(0.3))
             )
         }
         .buttonStyle(.plain)

@@ -19,12 +19,12 @@ final class DebugLogger {
         }
     }
 
-    var logFileURL: URL {
+    lazy var logFileURL: URL = {
         let logsDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/GoxViet", isDirectory: true)
         try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
         return logsDir.appendingPathComponent("debug.log")
-    }
+    }()
 
     nonisolated private init() {}
 
@@ -36,9 +36,9 @@ final class DebugLogger {
 
         if FileManager.default.fileExists(atPath: logFileURL.path) {
             if let handle = try? FileHandle(forWritingTo: logFileURL) {
+                defer { try? handle.close() }
                 handle.seekToEndOfFile()
                 handle.write(data)
-                try? handle.close()
             }
         } else {
             try? data.write(to: logFileURL, options: .atomic)
