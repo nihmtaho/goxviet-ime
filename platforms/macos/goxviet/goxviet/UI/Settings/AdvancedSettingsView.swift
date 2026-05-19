@@ -338,34 +338,17 @@ struct AdvancedSettingsView: View {
                             }
                         } else {
                             ForEach(injectionProfiles, id: \.bundleId) { profile in
-                                HStack {
-                                    Text(profile.bundleId)
-                                        .font(.body)
-                                    Spacer()
-                                    Picker("", selection: Binding(
-                                        get: { PerAppInjectionManager.shared.profile(for: profile.bundleId).injectionMethod },
-                                        set: { method in
-                                            var p = PerAppInjectionManager.shared.profile(for: profile.bundleId)
-                                            p.injectionMethod = method
-                                            PerAppInjectionManager.shared.setProfile(p)
-                                            injectionProfiles = PerAppInjectionManager.shared.allProfiles
-                                        }
-                                    )) {
-                                        ForEach(InjectionOverride.allCases, id: \.self) { method in
-                                            Text(method.displayName).tag(method)
-                                        }
-                                    }
-                                    .frame(width: 120)
-
-                                    Button {
+                                PerAppProfileRow(
+                                    profile: profile,
+                                    onChange: { updated in
+                                        PerAppInjectionManager.shared.setProfile(updated)
+                                        injectionProfiles = PerAppInjectionManager.shared.allProfiles
+                                    },
+                                    onDelete: {
                                         PerAppInjectionManager.shared.removeProfile(for: profile.bundleId)
                                         injectionProfiles = PerAppInjectionManager.shared.allProfiles
-                                    } label: {
-                                        Image(systemName: "trash")
                                     }
-                                    .buttonStyle(.borderless)
-                                    .foregroundColor(.red)
-                                }
+                                )
                                 Divider()
                             }
                         }
@@ -428,4 +411,111 @@ struct AdvancedSettingsView: View {
         openLogAction: { }
     )
     .frame(width: 700, height: 700)
+}
+
+private struct PerAppProfileRow: View {
+    let profile: PerAppInjectionProfile
+    let onChange: (PerAppInjectionProfile) -> Void
+    let onDelete: () -> Void
+
+    @State private var resetHovered = false
+    @State private var deleteHovered = false
+
+    private var delayBinding: Binding<Double> {
+        Binding(
+            get: { Double(profile.delayPreset.rawValue) },
+            set: { val in
+                var p = profile
+                p.delayPreset = DelayPreset(rawValue: Int(val.rounded())) ?? .none
+                onChange(p)
+            }
+        )
+    }
+
+    private var appName: String {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: profile.bundleId) {
+            return FileManager.default.displayName(atPath: url.path)
+                .replacingOccurrences(of: ".app", with: "")
+        }
+        return profile.bundleId.components(separatedBy: ".").last ?? profile.bundleId
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header row: app name + reset + delete
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(appName)
+                        .font(.system(size: 12, weight: .medium))
+                    Text(profile.bundleId)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                Button {
+                    PerAppInjectionManager.shared.reset(bundleId: profile.bundleId)
+                    onChange(PerAppInjectionProfile(bundleId: profile.bundleId))
+                } label: {
+                    Image(systemName: "arrow.counterclockwise.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(resetHovered ? .accentColor : Color(NSColor.quaternaryLabelColor))
+                }
+                .buttonStyle(.plain)
+                .onHover { resetHovered = $0 }
+                .help("Reset về mặc định")
+
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(deleteHovered ? .red : Color(NSColor.quaternaryLabelColor))
+                }
+                .buttonStyle(.plain)
+                .onHover { deleteHovered = $0 }
+            }
+
+            // Delay slider
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("Delay")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .frame(width: 40, alignment: .leading)
+                    Slider(value: delayBinding, in: 0...4, step: 1)
+                    Text(profile.delayPreset.displayName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(profile.delayPreset.color)
+                        .frame(width: 48, alignment: .trailing)
+                }
+                Text("Tăng nếu bị nuốt chữ · Giảm nếu app phản hồi nhanh")
+                    .font(.system(size: 10))
+                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                    .padding(.leading, 46)
+            }
+
+            // Injection method picker
+            HStack(spacing: 4) {
+                Text("Kiểu inject")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                Picker("", selection: Binding(
+                    get: { profile.injectionMethod },
+                    set: { method in
+                        var p = profile
+                        p.injectionMethod = method
+                        onChange(p)
+                    }
+                )) {
+                    ForEach(InjectionOverride.allCases, id: \.self) { method in
+                        Text(method.displayName).tag(method)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 130)
+                Spacer()
+            }
+        }
+        .padding(.vertical, 8)
+    }
 }

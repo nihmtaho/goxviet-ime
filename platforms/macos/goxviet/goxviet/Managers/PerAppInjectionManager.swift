@@ -26,6 +26,11 @@ final class PerAppInjectionManager {
         save()
     }
 
+    func reset(bundleId: String) {
+        profiles[bundleId] = PerAppInjectionProfile(bundleId: bundleId)
+        save()
+    }
+
     var allProfiles: [PerAppInjectionProfile] {
         Array(profiles.values).sorted { $0.bundleId < $1.bundleId }
     }
