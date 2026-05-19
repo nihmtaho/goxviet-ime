@@ -812,6 +812,15 @@ impl Engine {
                     self.pending_punct_context.clear();
                 }
             }
+            // Check if this break char extends an immediate shortcut sequence
+            if let Some(break_char) = crate::utils::key_to_char_ext(key, caps, shift) {
+                if !break_char.is_alphanumeric() {
+                    let shortcut_result = self.try_break_char_shortcut(break_char);
+                    if shortcut_result.action == Action::Send as u8 {
+                        return shortcut_result;
+                    }
+                }
+            }
             return self.commit_and_break_sequence();
         }
 
@@ -1026,6 +1035,11 @@ impl Engine {
         // The revert handling below will add revert keys to raw_input explicitly.
         if (keys::is_letter(key) || keys::is_number(key)) && !should_skip {
             self.raw_input.push(key, caps);
+        }
+
+        // Clear stale shortcut prefix when a new word starts
+        if keys::is_letter(key) && self.buf.is_empty() {
+            self.shortcut_prefix.clear();
         }
 
         self.process(key, caps, shift)
@@ -1838,6 +1852,34 @@ impl Engine {
 
     /// Try word boundary shortcuts (triggered by space, punctuation, etc.)
     #[inline]
+    /// Accumulates `ch` in `shortcut_prefix` and checks for an immediate shortcut match.
+    /// Returns `Result::send(...)` with FLAG_KEY_CONSUMED bit set on match, or `Result::none()`.
+    fn try_break_char_shortcut(&mut self, ch: char) -> Result {
+        self.shortcut_prefix.push(ch);
+
+        if !self.shortcuts_enabled {
+            return Result::none();
+        }
+
+        let method = self.current_input_method();
+        let prefix_chars: Vec<char> = self.shortcut_prefix.chars().collect();
+        for start in 0..prefix_chars.len() {
+            let suffix: String = prefix_chars[start..].iter().collect();
+            if let Some(m) = self
+                .shortcuts
+                .try_match_for_method(&suffix, None, false, method)
+            {
+                let bs = (suffix.chars().count().saturating_sub(1)) as u8;
+                let output: Vec<char> = m.output.chars().collect();
+                let mut result = Result::send(bs, &output);
+                result.flags |= 0x01; // FLAG_KEY_CONSUMED
+                self.shortcut_prefix.clear();
+                return result;
+            }
+        }
+        Result::none()
+    }
+
     fn try_word_boundary_shortcut(&mut self) -> Result {
         if self.buf.is_empty() {
             return Result::none();
@@ -6758,5 +6800,46 @@ mod tests {
             .filter_map(|i| unsafe { char::from_u32(*r3.chars.offset(i as isize)) })
             .collect();
         assert_eq!(out, "✅");
+    }
+
+    #[test]
+    fn test_break_char_immediate_shortcut() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        let r1 = e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+        assert_eq!(r1.action, 0, "- should pass through (action=None)");
+
+        // Shift+. = >
+        let r2 = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r2.action, 1, "-> should trigger shortcut");
+        assert_eq!(r2.backspace, 1, "backspace 1 to remove -");
+        assert!(r2.key_consumed(), "> should be consumed by shortcut");
+        let out: String = (0..r2.count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r2.chars.offset(i as isize)) })
+            .collect();
+        assert_eq!(out, "→");
+    }
+
+    #[test]
+    fn test_break_char_shortcut_after_word_commit() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        for key in [crate::data::keys::A, crate::data::keys::B, crate::data::keys::C] {
+            e.on_key_ext(key, false, false, false);
+        }
+
+        let r1 = e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+        assert_eq!(r1.action, 0);
+
+        let r2 = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r2.action, 1);
+        assert_eq!(r2.backspace, 1);
+        assert!(r2.key_consumed());
     }
 }
