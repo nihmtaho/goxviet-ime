@@ -90,14 +90,24 @@ struct SettingsWindowCoordinator: View {
             perAppModes.removeAll()
             showClearConfirmation = false
             selectedTab = 0
-            
+
             // Post memory cleanup notification
             NotificationCenter.default.post(name: NSNotification.Name("settingsWindowCleanup"), object: nil)
         }
-        
+
         // Force UI update to release views
         DispatchQueue.main.async {
             // Additional cleanup on next runloop
+        }
+
+        if SettingsManager.shared.restartOnClose {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard let bundleURL = Bundle.main.bundleURL as URL? else { return }
+                let config = NSWorkspace.OpenConfiguration()
+                NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in
+                    NSApplication.shared.terminate(nil)
+                }
+            }
         }
     }
 }
