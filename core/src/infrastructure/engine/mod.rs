@@ -558,6 +558,36 @@ impl Engine {
     /// * `shift` - true if Shift key is pressed (for symbols like @, #, $)
     pub fn on_key_ext(&mut self, key: u16, caps: bool, ctrl: bool, shift: bool) -> Result {
         if !self.enabled {
+            // When disabled, immediate shortcuts still fire via shortcut_prefix accumulation.
+            // Only Vietnamese transforms are skipped.
+            if ctrl {
+                self.shortcut_prefix.clear();
+                self.clear();
+                self.word_history.clear();
+                self.spaces_after_commit = 0;
+                return Result::none();
+            }
+
+            // Break char — check for immediate shortcut (uses try_break_char_shortcut from Task 7)
+            let is_modifier = {
+                let m = crate::input::get(self.method);
+                m.stroke(key) || m.remove(key) || m.tone(key).is_some() || m.mark(key).is_some()
+            };
+            if !is_modifier && crate::data::keys::is_break(key) {
+                if let Some(break_char) = crate::utils::key_to_char_ext(key, caps, shift) {
+                    if !break_char.is_alphanumeric() {
+                        let result = self.try_break_char_shortcut(break_char);
+                        if result.action == Action::Send as u8 {
+                            return result;
+                        }
+                        // Prefix accumulating — pass through without clearing
+                        return Result::none();
+                    }
+                }
+            }
+
+            // Any other key — clear state and pass through
+            self.shortcut_prefix.clear();
             self.clear();
             self.word_history.clear();
             self.spaces_after_commit = 0;
@@ -6821,6 +6851,23 @@ mod tests {
             .filter_map(|i| unsafe { char::from_u32(*r2.chars.offset(i as isize)) })
             .collect();
         assert_eq!(out, "→");
+    }
+
+    #[test]
+    fn test_immediate_shortcut_works_when_ime_disabled() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.set_enabled(false);
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        // Type "-"
+        e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+
+        // Type ">" (Shift+DOT) — shortcut should fire even though IME is disabled
+        let r = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r.action, 1, "immediate shortcut should fire when IME disabled");
+        assert!(r.key_consumed());
     }
 
     #[test]
