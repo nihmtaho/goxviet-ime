@@ -182,7 +182,7 @@ public final class TextInjector {
     /// Selection injection: Shift+Left to select, then type replacement (for browser address bars)
     /// For backspace-only (text empty): use backspace to properly delete spaces/punctuation
     /// For text replacement: use Shift+Left to select (normal behavior)
-    private func injectViaSelection(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
+    func injectViaSelection(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
         guard let src = CGEventSource(stateID: .privateState) else { return }
 
         let selDelay = delays.0 > 0 ? delays.0 : 1000
