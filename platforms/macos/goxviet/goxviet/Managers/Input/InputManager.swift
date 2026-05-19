@@ -804,35 +804,6 @@ class InputManager: LifecycleManaged {
         // Cancel any pending coalesced deletes when non-delete key is pressed
         // Clear engine buffer on non-DELETE keys
         
-        // Old backspace handling (kept for reference, now replaced by coalescing)
-        if false && keyCode == 51 && !ctrl { // 51 = backspace
-            // First try Rust engine
-            let (text, backspace, consumed) = ime_key_v2(UInt16(keyCode), caps, ctrl)
-            if consumed {
-                Log.transform(backspace, text)
-                
-                let (method, delays) = detectMethod()
-                TextInjector.shared.injectSync(
-                    bs: backspace,
-                    text: text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy
-                )
-                return nil
-            }
-            
-            // Engine returned none - try to restore word from screen
-            if let word = getWordToRestoreOnBackspace() {
-                // TODO: Add ime_restore_word function to Rust bridge
-                Log.info("Restored word from screen: \(word)")
-                // For now, just log - will implement restoration in next iteration
-            }
-            
-            // Pass through backspace to delete the character
-            return Unmanaged.passUnretained(event)
-        }
-        
         // Call Rust engine for other keys (use extended API to preserve Shift state)
         // Respect SettingsManager: only treat Shift as special for engine when user enabled Shift+Backspace
         // Only let the Rust engine treat Shift specially when the user enabled Shift+Backspace.
@@ -894,9 +865,11 @@ class InputManager: LifecycleManaged {
         case .charByChar:
             injectCharByChar(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
         case .selection:
-            // TODO: Implement select-previous-word + replace via buffer export (ime_get_buffer_v2)
-            // For now, falls back to fast injection
-            injectFast(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+            if backspaces == 0 {
+                injectFast(text, backspaces: 0, delays: profile.delayPreset.delays, proxy: proxy)
+            } else {
+                TextInjector.shared.injectViaSelection(bs: backspaces, text: text, delays: profile.delayPreset.delays)
+            }
         case .emptyCharPrefix:
             injectFast("\u{200B}" + text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
         }
@@ -985,7 +958,17 @@ class InputManager: LifecycleManaged {
             }
         }
         
-        // Engine has no content - pass through single backspace
+        // Engine has no content - try to restore word from screen into Rust buffer
+        if let word = getWordToRestoreOnBackspace() {
+            do {
+                try RustBridgeV2.shared.restoreWord(word)
+                Log.info("Restored word into engine buffer: \(word)")
+            } catch {
+                Log.info("restoreWord failed: \(error)")
+            }
+        }
+
+        // Pass through single backspace
         guard let src = CGEventSource(stateID: .privateState) else { return }
         TextInjector.shared.postKey(51, source: src, proxy: proxy)
         Log.info("DELETE: passthrough (engine empty)")
