@@ -361,15 +361,22 @@ impl ProcessorService {
 
     /// Process keystroke with an optional Unicode character override.
     /// Used for Option-modified keys on macOS (e.g. Option+V → √).
-    /// NOTE: on_key_with_char will be added to Engine in Task 6.
-    /// For now, this delegates to on_key_ext (ch parameter is ignored).
     pub fn process_key_with_char(
         &mut self,
         key_event: crate::domain::entities::key_event::KeyEvent,
-        _ch: Option<char>,
+        ch: Option<char>,
     ) -> std::result::Result<(TransformResult, bool), ProcessorError> {
-        // TODO: replace with self.engine.on_key_with_char(..., ch) after Task 6
-        self.process_key_ext(key_event)
+        let result = self.engine.on_key_with_char(
+            key_event.keycode,
+            key_event.caps,
+            key_event.ctrl,
+            key_event.shift,
+            ch,
+        );
+        let key_consumed = result.key_consumed();
+        let output_text = Self::chars_from_result(&result);
+        let action = Self::action_from_result(&result);
+        Ok((TransformResult::new(action, output_text), key_consumed))
     }
 
     /// Return the full composed buffer as a UTF-8 string.
