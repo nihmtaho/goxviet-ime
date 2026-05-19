@@ -345,4 +345,17 @@ mod tests {
         assert!(!cfg.free_tone_enabled);
         assert!(!cfg.skip_w_shortcut);
     }
+
+    #[test]
+    fn test_ffi_process_result_v2_size_stable() {
+        // This test guards the ABI layout of FfiProcessResult_v2.
+        // If this fails, the Swift bridge structs must be updated to match.
+        // Current layout: *mut c_char (8) + u8 (1) + bool (1) + bool (1) + padding = 16 bytes
+        let actual = std::mem::size_of::<FfiProcessResult_v2>();
+        assert!(
+            actual == 16,
+            "FfiProcessResult_v2 size changed to {} bytes — update Swift bridge structs",
+            actual
+        );
+    }
 }
