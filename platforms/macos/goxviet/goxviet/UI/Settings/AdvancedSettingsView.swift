@@ -257,6 +257,13 @@ struct AdvancedSettingsView: View {
                                     .foregroundColor(.orange)
                             }
                         }
+
+                        if loggingEnabled {
+                            Divider()
+                            InlineDebugLogView()
+                                .padding(.horizontal, 12)
+                                .padding(.bottom, 12)
+                        }
                     }
                     .padding(8)
                 } label: {
@@ -517,5 +524,86 @@ private struct PerAppProfileRow: View {
             }
         }
         .padding(.vertical, 8)
+    }
+}
+
+private struct InlineDebugLogView: View {
+    @State private var lines: [String] = []
+    @State private var timer: Timer?
+
+    private func logColor(_ line: String) -> Color {
+        if line.contains("[KEY]")    { return .blue }
+        if line.contains("[METHOD]") { return .orange }
+        if line.contains("[QUEUE]")  { return .purple }
+        if line.contains("[PERF]")   { return Color(NSColor.systemGreen) }
+        return Color(NSColor.labelColor)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Live Log")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11))
+
+                Button("Clear") {
+                    DebugLogger.shared.clear()
+                    lines = []
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11))
+                .foregroundColor(.red)
+            }
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 1) {
+                        if lines.isEmpty {
+                            Text("(no log entries)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .padding(4)
+                        } else {
+                            ForEach(Array(lines.enumerated()), id: \.offset) { idx, line in
+                                Text(line)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(logColor(line))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id(idx)
+                            }
+                        }
+                    }
+                    .padding(6)
+                }
+                .background(Color(NSColor.textBackgroundColor))
+                .cornerRadius(4)
+                .frame(minHeight: 120, maxHeight: 200)
+                .onChange(of: lines.count) { _ in
+                    if let last = lines.indices.last {
+                        proxy.scrollTo(last, anchor: .bottom)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            reload()
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in reload() }
+        }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    private func reload() {
+        let raw = DebugLogger.shared.readLog()
+        lines = raw.components(separatedBy: "\n").filter { !$0.isEmpty }
     }
 }
