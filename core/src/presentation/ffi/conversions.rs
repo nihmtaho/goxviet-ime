@@ -105,6 +105,8 @@ pub fn to_engine_config(config: FfiConfig) -> EngineConfig {
         foreign_consonants_enabled: false,
         auto_capitalise_enabled: false,
         word_history_enabled: false,
+        free_tone_enabled: false,
+        skip_w_shortcut: false,
     }
 }
 
@@ -141,6 +143,8 @@ pub fn to_engine_config_v2(config: &FfiConfig_v2) -> EngineConfig {
         foreign_consonants_enabled: config.foreign_consonants_enabled,
         auto_capitalise_enabled: config.auto_capitalise_enabled,
         word_history_enabled: config.word_history_enabled,
+        free_tone_enabled: false,
+        skip_w_shortcut: false,
     }
 }
 

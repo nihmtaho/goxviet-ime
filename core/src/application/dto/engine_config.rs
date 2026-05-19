@@ -80,6 +80,14 @@ pub struct EngineConfig {
 
     /// Enable backspace-after-space word history restore
     pub word_history_enabled: bool,
+
+    /// Enable free tone placement (skip spelling validation)
+    /// When true, allows placing diacritics anywhere (e.g. "Zìa" is accepted)
+    pub free_tone_enabled: bool,
+
+    /// Skip w→ư shortcut at word start in Telex mode
+    /// When true, typing 'w' stays as 'w'; horn modifier "ow"→"ơ" still works
+    pub skip_w_shortcut: bool,
 }
 
 impl Default for EngineConfig {
@@ -101,6 +109,8 @@ impl Default for EngineConfig {
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
+            free_tone_enabled: false,
+            skip_w_shortcut: false,
         }
     }
 }
@@ -410,5 +420,12 @@ mod tests {
         let config1 = EngineConfig::new();
         let config2 = config1.clone();
         assert_eq!(config1, config2);
+    }
+
+    #[test]
+    fn test_config_new_fields_default() {
+        let config = EngineConfig::default();
+        assert!(!config.free_tone_enabled, "free_tone_enabled defaults false");
+        assert!(!config.skip_w_shortcut, "skip_w_shortcut defaults false");
     }
 }

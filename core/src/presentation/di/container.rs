@@ -204,6 +204,8 @@ mod tests {
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
+            free_tone_enabled: false,
+            skip_w_shortcut: false,
         };
 
         let container = Container::with_config(custom_config.clone());
@@ -234,6 +236,8 @@ mod tests {
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
+            free_tone_enabled: false,
+            skip_w_shortcut: false,
         };
 
         container.update_config(new_config.clone());
