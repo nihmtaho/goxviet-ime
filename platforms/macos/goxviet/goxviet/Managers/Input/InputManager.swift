@@ -494,12 +494,10 @@ class InputManager: LifecycleManaged {
         // Update Rust engine
         ime_enabled_v2(enabled)
         
-        // TEMPORARY: Disable buffer clear to prevent crash
-        // TODO: Re-enable after fixing the root cause
         // Clear buffer when toggling (only if InputManager is running)
-        // if isRunning {
-        //     ime_clear_v2()
-        // }
+        if isRunning {
+            ime_clear_v2()
+        }
         
         Log.info("IME \(enabled ? "enabled" : "disabled")")
         
