@@ -47,6 +47,15 @@ struct SettingsWindowCoordinator: View {
             }
             .tag(2)
             
+            // Advanced Tab - Lazy load
+            LazyView {
+                AdvancedSettingsTab()
+            }
+            .tabItem {
+                Label("Advanced", systemImage: "slider.horizontal.3")
+            }
+            .tag(3)
+
             // About Tab - Lazy load
             LazyView {
                 AboutSettingsTab()
@@ -54,7 +63,7 @@ struct SettingsWindowCoordinator: View {
             .tabItem {
                 Label("About", systemImage: "info.circle")
             }
-            .tag(3)
+            .tag(4)
         }
         .frame(minWidth: 680, minHeight: 540)
         .onAppear {
@@ -193,7 +202,10 @@ struct TextExpansionSettingsTab: View {
 
 struct AdvancedSettingsTab: View {
     var body: some View {
-        EmptyView()
+        AdvancedSettingsView(openLogAction: {
+            // Log viewer is shown inline in AdvancedSettingsView when debugLogEnabled is true
+        })
+        .environmentObject(SettingsManager.shared)
     }
 }
 

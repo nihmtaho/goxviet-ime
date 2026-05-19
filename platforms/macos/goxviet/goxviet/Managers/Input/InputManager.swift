@@ -812,8 +812,13 @@ class InputManager: LifecycleManaged {
         
         // Check if engine consumed the key
         if !consumed {
-            // Engine is not transforming this key (e.g., arrow keys, non-Vietnamese input)
-            // Just pass through and let system handle naturally
+            // Break keys (space, punctuation) always reset composition context even when
+            // the engine didn't transform them — prevents stale "d" causing "dd"→"đ" on
+            // the next word. Bracket keys are excluded (double-press detection needs state).
+            let isBracketKey = (keyCode == KeyCodes.lbracket || keyCode == KeyCodes.rbracket)
+            if keyCode.isBreakKey && !isBracketKey {
+                ime_clear_v2()
+            }
             Log.skip()
             return Unmanaged.passUnretained(event)
         }
