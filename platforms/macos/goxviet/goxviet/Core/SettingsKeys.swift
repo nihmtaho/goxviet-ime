@@ -61,5 +61,7 @@ enum SettingsKey {
     static let remoteDesktopMode        = "com.goxviet.ime.remoteDesktopMode"
     static let hasCompletedOnboarding   = "com.goxviet.ime.hasCompletedOnboarding"
     static let debugLogEnabled          = "com.goxviet.ime.debugLogEnabled"
+    static let disablePanelDetection    = "com.goxviet.ime.disablePanelDetection"
+    static let restartOnClose           = "com.goxviet.ime.restartOnClose"
 
 }

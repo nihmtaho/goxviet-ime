@@ -37,6 +37,52 @@ struct AdvancedSettingsView: View {
                 }
                 .padding(.bottom, 8)
                 
+                // Performance Section
+                GroupBox {
+                    VStack(spacing: 0) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Tắt phát hiện Spotlight/Raycast")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Bỏ qua panel app, giảm CPU/RAM sử dụng")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { settingsManager.disablePanelDetection },
+                                set: { settingsManager.disablePanelDetection = $0 }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                        }
+                        .padding(12)
+
+                        Divider()
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Khởi động lại khi đóng cài đặt")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Tự động giải phóng RAM của cài đặt khi đóng")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { settingsManager.restartOnClose },
+                                set: { settingsManager.restartOnClose = $0 }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                        }
+                        .padding(12)
+                    }
+                } label: {
+                    Label("Hiệu suất", systemImage: "gauge.with.dots.needle.bottom.50percent")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
                 // Output Encoding Section
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {

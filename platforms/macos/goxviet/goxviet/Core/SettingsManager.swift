@@ -175,6 +175,16 @@ final class SettingsManager: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: SettingsKey.debugLogEnabled) }
     }
 
+    var disablePanelDetection: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.disablePanelDetection) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.disablePanelDetection) }
+    }
+
+    var restartOnClose: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.restartOnClose) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.restartOnClose) }
+    }
+
     // MARK: - Shortcuts (Text Expansion)
 
     /// Source of truth for shortcuts - stored in UserDefaults and synced to Rust engine
