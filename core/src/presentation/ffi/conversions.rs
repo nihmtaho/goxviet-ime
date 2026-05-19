@@ -165,6 +165,8 @@ pub fn from_engine_config_v2(config: &EngineConfig) -> FfiConfig_v2 {
         foreign_consonants_enabled: config.foreign_consonants_enabled,
         auto_capitalise_enabled: config.auto_capitalise_enabled,
         word_history_enabled: config.word_history_enabled,
+        free_tone_enabled: false,
+        skip_w_shortcut: false,
     }
 }
 
@@ -186,6 +188,7 @@ pub fn to_ffi_process_result_v2(result: TransformResult) -> FfiProcessResult_v2 
             text: std::ptr::null_mut(),
             backspace_count: 0,
             consumed: false,
+            key_consumed: false,
         }
     } else {
         let ffi_str = to_ffi_string(text_seq.as_str());
@@ -193,6 +196,7 @@ pub fn to_ffi_process_result_v2(result: TransformResult) -> FfiProcessResult_v2 
             text: ffi_str,
             backspace_count: backspace_count.min(255) as u8, // v2 uses u8
             consumed: true,
+            key_consumed: false,
         }
     }
 }

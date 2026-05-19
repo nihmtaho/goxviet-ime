@@ -192,6 +192,9 @@ pub struct FfiProcessResult_v2 {
     pub backspace_count: u8,
     /// Whether the input was consumed
     pub consumed: bool,
+    /// Whether the triggering key was consumed by a shortcut.
+    /// When true, the platform layer must NOT re-insert the triggering character.
+    pub key_consumed: bool,
 }
 
 impl Default for FfiProcessResult_v2 {
@@ -200,6 +203,7 @@ impl Default for FfiProcessResult_v2 {
             text: std::ptr::null_mut(),
             backspace_count: 0,
             consumed: false,
+            key_consumed: false,
         }
     }
 }
@@ -228,6 +232,10 @@ pub struct FfiConfig_v2 {
     pub auto_capitalise_enabled: bool,
     /// Enable backspace-after-space word history restore
     pub word_history_enabled: bool,
+    /// Enable free tone placement (skip spelling validation)
+    pub free_tone_enabled: bool,
+    /// Skip w→ư shortcut at word start in Telex mode
+    pub skip_w_shortcut: bool,
 }
 
 impl Default for FfiConfig_v2 {
@@ -243,6 +251,8 @@ impl Default for FfiConfig_v2 {
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
+            free_tone_enabled: false,
+            skip_w_shortcut: false,
         }
     }
 }
@@ -321,5 +331,18 @@ mod tests {
             std::mem::size_of::<FfiToneStyle>(),
             std::mem::size_of::<c_int>()
         );
+    }
+
+    #[test]
+    fn test_ffi_process_result_v2_key_consumed_default() {
+        let r = FfiProcessResult_v2::default();
+        assert!(!r.key_consumed, "key_consumed defaults to false");
+    }
+
+    #[test]
+    fn test_ffi_config_v2_new_fields_default() {
+        let cfg = FfiConfig_v2::default();
+        assert!(!cfg.free_tone_enabled);
+        assert!(!cfg.skip_w_shortcut);
     }
 }
