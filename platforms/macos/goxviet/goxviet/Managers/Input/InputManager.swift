@@ -460,6 +460,7 @@ class InputManager: LifecycleManaged {
         if !enabled && freeDiacriticMode {
             freeDiacriticMode = false
             ime_instant_restore_v2(settings.instantRestoreEnabled)
+            ime_clear_all_v2()
         }
 
         // Update SettingsManager
