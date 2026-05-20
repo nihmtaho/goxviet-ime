@@ -1096,6 +1096,10 @@ impl Engine {
 
         if let Some(c) = ch {
             if !c.is_alphabetic() {
+                // Cap prefix to prevent unbounded growth for long non-matching sequences
+                if self.shortcut_prefix.chars().count() >= 64 {
+                    self.shortcut_prefix.clear();
+                }
                 self.shortcut_prefix.push(c);
 
                 let method = self.current_input_method();
@@ -1885,6 +1889,10 @@ impl Engine {
     /// Accumulates `ch` in `shortcut_prefix` and checks for an immediate shortcut match.
     /// Returns `Result::send(...)` with FLAG_KEY_CONSUMED bit set on match, or `Result::none()`.
     fn try_break_char_shortcut(&mut self, ch: char) -> Result {
+        // Cap prefix to prevent unbounded growth for long non-matching sequences
+        if self.shortcut_prefix.chars().count() >= 64 {
+            self.shortcut_prefix.clear();
+        }
         self.shortcut_prefix.push(ch);
 
         if !self.shortcuts_enabled {
