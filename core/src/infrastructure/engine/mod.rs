@@ -2158,8 +2158,9 @@ impl Engine {
             let target_pos = if last_char.key == keys::D && !last_char.stroke {
                 Some(last_pos)
             } else {
-                // Backward scan for unstroked 'd'
+                // Backward scan: only within 4 positions to prevent stroking 'd' across long English words
                 self.buf.iter().rposition(|c| c.key == keys::D && !c.stroke)
+                    .filter(|&pos| last_pos - pos <= 4)
             };
 
             let Some(target_pos) = target_pos else {
@@ -4477,6 +4478,23 @@ impl Engine {
     /// Returns `Some(result)` with trailing space included, or `None` to let SPACE
     /// fall through to normal shortcut / commit handling.
     fn check_and_restore_english_at_boundary(&mut self) -> Option<Result> {
+        // keep_english: short common English words ("as", "is", "of", "has"...) that Telex
+        // tone modifiers corrupt. Restore immediately if raw input matches.
+        {
+            let raw_str: String = self
+                .raw_input
+                .iter()
+                .filter_map(|(k, _)| crate::utils::key_to_char(k, false))
+                .collect();
+            if crate::data::keep_english::is_keep_english(&raw_str) {
+                self.is_english_word = true;
+                let result = self.auto_restore_english_with_space();
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+        }
+
         // --- Triple-tone Telex correction ---
         // When the user accidentally types a triple tone-marker consonant (e.g. a-s-s-s-e-t),
         // the raw input contains "assset" but the display shows "asset" (after double-key revert).
@@ -4637,8 +4655,25 @@ impl Engine {
             let is_real_vietnamese =
                 crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
             if !is_real_vietnamese {
+                use crate::data::keys as k;
+
+                // Special case: trailing 'w' in Telex applied horn to a vowel but output is
+                // not real Vietnamese. Words like "below" → "belơ", "elbow", "shadow" need
+                // direct restoration without requiring a phonotactic score (phonotactic gives
+                // 0 for [b,e,l,o,w] because it lacks English-specific clusters/patterns).
+                // Short words "vow/bow/cow" → "vơ/bơ/cơ" are valid Vietnamese and are
+                // excluded above by the is_real_vietnamese guard.
+                let last_raw_is_w = self.method == 0
+                    && matches!(self.raw_input.iter().last(), Some((lk, _)) if lk == k::W);
+                if last_raw_is_w && raw_len >= 4 {
+                    self.is_english_word = true;
+                    let result = self.auto_restore_english_with_space();
+                    self.sync_buffer_with_raw_input();
+                    self.last_transform = None;
+                    return Some(result);
+                }
+
                 let last_raw_is_non_modifier = {
-                    use crate::data::keys as k;
                     const TELEX_MODS: &[u16] = &[k::R, k::S, k::F, k::X, k::J, k::W];
                     match self.raw_input.iter().last() {
                         Some((lk, _)) if self.method == 0 => !TELEX_MODS.contains(&lk),
@@ -6896,5 +6931,142 @@ mod tests {
         assert_eq!(r2.action, 1);
         assert_eq!(r2.backspace, 1);
         assert!(r2.key_consumed());
+    }
+
+    #[test]
+    fn test_keep_english_as_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        // 'a' then 's' — Telex 's' applies sắc tone → 'á'. At SPACE should restore to "as"
+        e.on_key_ext(keys::A, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("as"),
+            "Expected 'as' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_keep_english_is_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.on_key_ext(keys::I, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("is"),
+            "Expected 'is' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_keep_english_of_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.on_key_ext(keys::O, false, false, false);
+        e.on_key_ext(keys::F, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("of"),
+            "Expected 'of' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_below_restored_at_space() {
+        // "below": b-e-l-o-w where 'w' after 'o' applies horn → "belơ"
+        // At SPACE, must be restored to English "below"
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "below ");
+        assert!(
+            result.contains("below"),
+            "Expected 'below' in output but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_window_restored_at_space() {
+        // "window": w-i-n-d-o-w where trailing 'w' applies horn to 'o' → "windơ"
+        // At SPACE, must be restored to English "window"
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "window ");
+        assert!(
+            result.contains("window"),
+            "Expected 'window' in output but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_vow_stays_vietnamese_at_space() {
+        // "vow" → "vơ" which IS a valid Vietnamese syllable — must NOT restore to English
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "vow ");
+        assert!(
+            !result.contains("vow"),
+            "Should keep 'vơ' as Vietnamese, not restore to 'vow', but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_download_no_stroke_on_initial_d() {
+        // d-o-w-n-l-o-a then final 'd': should NOT stroke the initial D at position 0
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "downloa");
+        // Now type the final 'd'
+        let result2 = type_word(&mut e, "d");
+        let combined = format!("{}{}", result, result2);
+        assert!(
+            !combined.contains('đ'),
+            "Should not stroke initial 'd' in 'download', got '{}'",
+            combined
+        );
+    }
+
+    #[test]
+    fn test_download_restored_at_space() {
+        // "download " should restore to "download" at space boundary
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "download ");
+        assert!(
+            result.contains("download"),
+            "Expected 'download' at space boundary, got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_da_dd_stroke_still_works() {
+        // "da" + "d" should still stroke within range — no crash
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        type_word(&mut e, "da");
+        let _ = type_word(&mut e, "d"); // just ensure it doesn't panic
     }
 }

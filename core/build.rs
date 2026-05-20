@@ -18,15 +18,18 @@ fn main() {
     let tu_ghep_path = Path::new(&manifest_dir).join("data/TuDienTuGhep.txt");
     let double_consonant_path =
         Path::new(&manifest_dir).join("src/data/double_consonant_words.txt");
+    let keep_english_path = Path::new(&manifest_dir).join("data/keep_english.txt");
 
     // Tell Cargo to re-run if dictionary files change
     println!("cargo:rerun-if-changed=data/TuDien.txt");
     println!("cargo:rerun-if-changed=data/TuDienTuGhep.txt");
     println!("cargo:rerun-if-changed=src/data/double_consonant_words.txt");
+    println!("cargo:rerun-if-changed=data/keep_english.txt");
 
     generate_viet_syllables(&tu_dien_path, &out_dir);
     generate_viet_compound_bin(&tu_ghep_path, &out_dir);
     generate_double_consonant_words(&double_consonant_path, &out_dir);
+    generate_keep_english(&keep_english_path, &out_dir);
 }
 
 /// Generate phf::Set<&'static str> for single-syllable Vietnamese words.
@@ -174,5 +177,42 @@ static DOUBLE_CONSONANT_WORDS: phf::Set<&'static str> = {};",
     eprintln!(
         "cargo:warning=Generated DOUBLE_CONSONANT_WORDS with {} entries",
         entries.len()
+    );
+}
+
+/// Generate phf::Set<&'static str> for short English words corrupted by Telex/VNI.
+/// Output: OUT_DIR/keep_english.rs
+fn generate_keep_english(path: &Path, out_dir: &str) {
+    let file = File::open(path).expect("Cannot open keep_english.txt");
+    let reader = BufReader::new(file);
+    let words: Vec<String> = reader
+        .lines()
+        .filter_map(|l| l.ok())
+        .map(|l| l.trim().to_lowercase())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    let out_path = Path::new(out_dir).join("keep_english.rs");
+    let mut out = File::create(&out_path).expect("Cannot create keep_english.rs");
+
+    let mut set_builder = phf_codegen::Set::new();
+    for w in &words {
+        set_builder.entry(w.as_str());
+    }
+
+    write!(
+        out,
+        "/// Short English words that Telex/VNI tone modifiers corrupt (~{} entries).
+/// Generated at build time from data/keep_english.txt.
+/// O(1) lookup via perfect hash function.
+static KEEP_ENGLISH: phf::Set<&'static str> = {};",
+        words.len(),
+        set_builder.build()
+    )
+    .expect("Failed to write keep_english.rs");
+
+    eprintln!(
+        "cargo:warning=Generated KEEP_ENGLISH with {} entries",
+        words.len()
     );
 }

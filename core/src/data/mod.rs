@@ -5,11 +5,13 @@
 //! - `chars`: Unicode character conversion (includes tone/mark constants)
 //! - `vowel`: Vietnamese vowel phonology system
 //! - `double_consonant`: English words with tone-marker double consonants (ff/ss/rr/xx/jj)
+//! - `keep_english`: Short English words (as/is/of/has) that Telex tone modifiers corrupt
 
 pub mod auto_capitalise;
 pub mod chars;
 pub mod constants;
 pub mod double_consonant;
+pub mod keep_english;
 pub mod keys;
 pub mod viet_syllables;
 pub mod vowel;
