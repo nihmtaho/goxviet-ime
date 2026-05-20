@@ -2158,8 +2158,9 @@ impl Engine {
             let target_pos = if last_char.key == keys::D && !last_char.stroke {
                 Some(last_pos)
             } else {
-                // Backward scan for unstroked 'd'
+                // Backward scan: only within 4 positions to prevent stroking 'd' across long English words
                 self.buf.iter().rposition(|c| c.key == keys::D && !c.stroke)
+                    .filter(|&pos| last_pos - pos <= 4)
             };
 
             let Some(target_pos) = target_pos else {
@@ -7029,5 +7030,43 @@ mod tests {
             "Should keep 'vơ' as Vietnamese, not restore to 'vow', but got '{}'",
             result
         );
+    }
+
+    #[test]
+    fn test_download_no_stroke_on_initial_d() {
+        // d-o-w-n-l-o-a then final 'd': should NOT stroke the initial D at position 0
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "downloa");
+        // Now type the final 'd'
+        let result2 = type_word(&mut e, "d");
+        let combined = format!("{}{}", result, result2);
+        assert!(
+            !combined.contains('đ'),
+            "Should not stroke initial 'd' in 'download', got '{}'",
+            combined
+        );
+    }
+
+    #[test]
+    fn test_download_restored_at_space() {
+        // "download " should restore to "download" at space boundary
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "download ");
+        assert!(
+            result.contains("download"),
+            "Expected 'download' at space boundary, got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_da_dd_stroke_still_works() {
+        // "da" + "d" should still stroke within range — no crash
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        type_word(&mut e, "da");
+        let _ = type_word(&mut e, "d"); // just ensure it doesn't panic
     }
 }

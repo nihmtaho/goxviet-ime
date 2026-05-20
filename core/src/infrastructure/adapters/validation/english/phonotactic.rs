@@ -699,6 +699,7 @@ impl PhonotacticEngine {
             &[keys::W, keys::G], // wg
             &[keys::X, keys::B], // xb
             &[keys::V, keys::T], // vt
+            &[keys::N, keys::L], // nl — no Vietnamese word has 'n' followed by 'l' in raw keys
         ];
 
         for i in 0..keys.len().saturating_sub(1) {
