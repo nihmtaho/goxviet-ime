@@ -979,14 +979,9 @@ class InputManager: LifecycleManaged {
             }
         }
         
-        // Engine has no content - try to restore word from screen into Rust buffer
+        // Engine has no content - log candidate word for future buffer-restore feature
         if let word = getWordToRestoreOnBackspace() {
-            do {
-                try RustBridgeV2.shared.restoreWord(word)
-                Log.info("Restored word into engine buffer: \(word)")
-            } catch {
-                Log.info("restoreWord failed: \(error)")
-            }
+            Log.info("DELETE: engine empty, candidate restore word='\(word)' (not yet wired)")
         }
 
         // Pass through single backspace
