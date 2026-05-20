@@ -62,10 +62,9 @@ class InputManager: LifecycleManaged {
     private var restoreShortcutEnabled: Bool = SettingsManager.shared.restoreShortcutEnabled
     private var restoreTapHistory: [(flags: UInt64, time: TimeInterval)] = []
 
-    // One-shot CTRL-commit: set to true when user taps Control alone.
-    // The next keyDown will be forwarded to the engine with ctrl=true,
-    // preventing tone application on the buffered Vietnamese text.
-    private var ctrlOneShotPending = false
+    // Free diacritic mode: toggled by tapping Control alone.
+    // While active, instant auto-restore is disabled so diacritics apply freely.
+    private var freeDiacriticMode = false
 
     
     init() {
@@ -456,10 +455,16 @@ class InputManager: LifecycleManaged {
     
     func setEnabled(_ enabled: Bool) {
         let settings = SettingsManager.shared
-        
+
+        // Exit free diacritic mode when IME is disabled
+        if !enabled && freeDiacriticMode {
+            freeDiacriticMode = false
+            ime_instant_restore_v2(settings.instantRestoreEnabled)
+        }
+
         // Update SettingsManager
         settings.setEnabled(enabled)
-        
+
         // Update Rust engine
         ime_enabled_v2(enabled)
         
@@ -590,7 +595,10 @@ class InputManager: LifecycleManaged {
         if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
             // Clear ALL state on modifier shortcuts (selection-delete, Cmd+A, Cmd+V, etc.)
             // This prevents stale buffer content from appearing after selection operations
-            ctrlOneShotPending = false
+            if freeDiacriticMode {
+                freeDiacriticMode = false
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+            }
             ime_clear_all_v2()
 
             // Cmd+Space (Spotlight) or Option+Space (Raycast/Alfred):
@@ -644,7 +652,10 @@ class InputManager: LifecycleManaged {
         ]
         
         if navigationKeys.contains(keyCode) {
-            ctrlOneShotPending = false
+            if freeDiacriticMode {
+                freeDiacriticMode = false
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+            }
             ime_clear_all_v2()
             return Unmanaged.passUnretained(event)
         }
@@ -708,20 +719,28 @@ class InputManager: LifecycleManaged {
             return nil // Swallow event
         }
 
-        // One-shot CTRL-commit: detect a bare Control tap (no Cmd/Opt mixed in).
-        // When Control is pressed alone → arm the one-shot flag.
-        // When Cmd/Opt is pressed → cancel it (user is doing an OS shortcut).
+        // Free diacritic mode toggle: detect a bare Control tap (no Cmd/Opt mixed in).
         let pureControl = flags.contains(.maskControl)
             && !flags.contains(.maskCommand)
             && !flags.contains(.maskAlternate)
         if pureControl {
-            ctrlOneShotPending = true
-            Log.info("CTRL one-shot armed")
+            freeDiacriticMode.toggle()
+            if freeDiacriticMode {
+                ime_instant_restore_v2(false)
+                Log.info("Free diacritic mode ON")
+            } else {
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+                ime_clear_all_v2()
+                Log.info("Free diacritic mode OFF")
+            }
         } else if flags.contains(.maskCommand) || flags.contains(.maskAlternate) {
-            ctrlOneShotPending = false
+            if freeDiacriticMode {
+                freeDiacriticMode = false
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+                ime_clear_all_v2()
+                Log.info("Free diacritic mode cancelled by Cmd/Opt")
+            }
         }
-        // Control release (flags no longer contains .maskControl): keep the pending flag so the
-        // next keyDown can consume it.
 
         return Unmanaged.passUnretained(event)
     }
@@ -774,11 +793,7 @@ class InputManager: LifecycleManaged {
         
         let caps = capsLock != shift
         
-        // One-shot CTRL-commit: treat this keypress as ctrl=true if the user tapped Control
-        // immediately before this key (without holding it). Consume the one-shot flag.
-        let oneShotFired = ctrlOneShotPending
-        ctrlOneShotPending = false
-        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) || oneShotFired
+        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
         
         Log.key(keyCode, "Processing")
         
