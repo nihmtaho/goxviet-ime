@@ -4654,8 +4654,25 @@ impl Engine {
             let is_real_vietnamese =
                 crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
             if !is_real_vietnamese {
+                use crate::data::keys as k;
+
+                // Special case: trailing 'w' in Telex applied horn to a vowel but output is
+                // not real Vietnamese. Words like "below" → "belơ", "elbow", "shadow" need
+                // direct restoration without requiring a phonotactic score (phonotactic gives
+                // 0 for [b,e,l,o,w] because it lacks English-specific clusters/patterns).
+                // Short words "vow/bow/cow" → "vơ/bơ/cơ" are valid Vietnamese and are
+                // excluded above by the is_real_vietnamese guard.
+                let last_raw_is_w = self.method == 0
+                    && matches!(self.raw_input.iter().last(), Some((lk, _)) if lk == k::W);
+                if last_raw_is_w && raw_len >= 4 {
+                    self.is_english_word = true;
+                    let result = self.auto_restore_english_with_space();
+                    self.sync_buffer_with_raw_input();
+                    self.last_transform = None;
+                    return Some(result);
+                }
+
                 let last_raw_is_non_modifier = {
-                    use crate::data::keys as k;
                     const TELEX_MODS: &[u16] = &[k::R, k::S, k::F, k::X, k::J, k::W];
                     match self.raw_input.iter().last() {
                         Some((lk, _)) if self.method == 0 => !TELEX_MODS.contains(&lk),
@@ -6970,6 +6987,47 @@ mod tests {
             text.contains("of"),
             "Expected 'of' in result but got '{}'",
             text
+        );
+    }
+
+    #[test]
+    fn test_below_restored_at_space() {
+        // "below": b-e-l-o-w where 'w' after 'o' applies horn → "belơ"
+        // At SPACE, must be restored to English "below"
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "below ");
+        assert!(
+            result.contains("below"),
+            "Expected 'below' in output but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_window_restored_at_space() {
+        // "window": w-i-n-d-o-w where trailing 'w' applies horn to 'o' → "windơ"
+        // At SPACE, must be restored to English "window"
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "window ");
+        assert!(
+            result.contains("window"),
+            "Expected 'window' in output but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_vow_stays_vietnamese_at_space() {
+        // "vow" → "vơ" which IS a valid Vietnamese syllable — must NOT restore to English
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "vow ");
+        assert!(
+            !result.contains("vow"),
+            "Should keep 'vơ' as Vietnamese, not restore to 'vow', but got '{}'",
+            result
         );
     }
 }
