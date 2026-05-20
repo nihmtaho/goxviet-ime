@@ -4477,6 +4477,23 @@ impl Engine {
     /// Returns `Some(result)` with trailing space included, or `None` to let SPACE
     /// fall through to normal shortcut / commit handling.
     fn check_and_restore_english_at_boundary(&mut self) -> Option<Result> {
+        // keep_english: short common English words ("as", "is", "of", "has"...) that Telex
+        // tone modifiers corrupt. Restore immediately if raw input matches.
+        {
+            let raw_str: String = self
+                .raw_input
+                .iter()
+                .filter_map(|(k, _)| crate::utils::key_to_char(k, false))
+                .collect();
+            if crate::data::keep_english::is_keep_english(&raw_str) {
+                self.is_english_word = true;
+                let result = self.auto_restore_english_with_space();
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+        }
+
         // --- Triple-tone Telex correction ---
         // When the user accidentally types a triple tone-marker consonant (e.g. a-s-s-s-e-t),
         // the raw input contains "assset" but the display shows "asset" (after double-key revert).
@@ -6896,5 +6913,63 @@ mod tests {
         assert_eq!(r2.action, 1);
         assert_eq!(r2.backspace, 1);
         assert!(r2.key_consumed());
+    }
+
+    #[test]
+    fn test_keep_english_as_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        // 'a' then 's' — Telex 's' applies sắc tone → 'á'. At SPACE should restore to "as"
+        e.on_key_ext(keys::A, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("as"),
+            "Expected 'as' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_keep_english_is_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.on_key_ext(keys::I, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("is"),
+            "Expected 'is' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_keep_english_of_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.on_key_ext(keys::O, false, false, false);
+        e.on_key_ext(keys::F, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("of"),
+            "Expected 'of' in result but got '{}'",
+            text
+        );
     }
 }
