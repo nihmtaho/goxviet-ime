@@ -58,12 +58,15 @@ struct FfiConfig_v2 {
     var foreign_consonants_enabled: Bool
     var auto_capitalise_enabled: Bool
     var word_history_enabled: Bool
+    var free_tone_enabled: Bool
+    var skip_w_shortcut: Bool
 }
 
 struct FfiProcessResult_v2 {
     var text: UnsafeMutablePointer<CChar>?
     var backspace_count: UInt8
     var consumed: Bool
+    var key_consumed: Bool
 }
 
 struct FfiVersionInfo {
@@ -186,10 +189,12 @@ final class RustBridgeV2 {
             bracket_shortcuts_enabled: false,
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
-            word_history_enabled: false
+            word_history_enabled: false,
+            free_tone_enabled: false,
+            skip_w_shortcut: false
         )
     }
-    
+
     deinit {}
     
     // MARK: - Engine Lifecycle
@@ -249,7 +254,7 @@ final class RustBridgeV2 {
             throw RustBridgeV2Error.invalidEngine
         }
         
-        var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false)
+        var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false, key_consumed: false)
         let statusCode = ime_process_key_v2(ptr, CChar(bitPattern: key), &result)
         let status = FfiStatusCode(rawValue: statusCode) ?? .errorUnknown
         
@@ -298,7 +303,7 @@ final class RustBridgeV2 {
             throw RustBridgeV2Error.invalidEngine
         }
         
-        var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false)
+        var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false, key_consumed: false)
         let statusCode = ime_process_key_ext_v2(ptr, CChar(bitPattern: key), caps, shift, ctrl, &result)
         let status = FfiStatusCode(rawValue: statusCode) ?? .errorUnknown
         
@@ -340,7 +345,7 @@ final class RustBridgeV2 {
             throw RustBridgeV2Error.invalidEngine
         }
         
-        var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false)
+        var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false, key_consumed: false)
         let statusCode = ime_restore_to_raw_v2(ptr, &result)
         let status = FfiStatusCode(rawValue: statusCode) ?? .errorUnknown
         
@@ -372,7 +377,7 @@ final class RustBridgeV2 {
             throw RustBridgeV2Error.invalidEngine
         }
         
-        var config = FfiConfig_v2(input_method: .telex, tone_style: .modern, smart_mode: true, instant_restore_enabled: true, esc_restore_enabled: false, enable_shortcuts: true, bracket_shortcuts_enabled: false, foreign_consonants_enabled: false, auto_capitalise_enabled: false, word_history_enabled: false)
+        var config = FfiConfig_v2(input_method: .telex, tone_style: .modern, smart_mode: true, instant_restore_enabled: true, esc_restore_enabled: false, enable_shortcuts: true, bracket_shortcuts_enabled: false, foreign_consonants_enabled: false, auto_capitalise_enabled: false, word_history_enabled: false, free_tone_enabled: false, skip_w_shortcut: false)
         let status = ime_get_config_v2(ptr, &config)
         
         guard status == FfiStatusCode.success.rawValue else {
