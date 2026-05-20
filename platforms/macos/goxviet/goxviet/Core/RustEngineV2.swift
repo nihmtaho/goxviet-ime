@@ -204,8 +204,10 @@ final class RustEngineV2 {
     func setFreeTone(_ enabled: Bool) {
         lock.lock()
         defer { lock.unlock() }
-        
+
         freeToneEnabled = enabled
+        currentConfig.free_tone_enabled = enabled
+        applyConfig()
         Log.info("Free tone \(enabled ? "enabled" : "disabled")")
     }
     

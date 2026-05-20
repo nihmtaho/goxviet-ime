@@ -161,6 +161,7 @@ struct ProcessResult {
     let text: String
     let backspaceCount: Int
     let consumed: Bool
+    let key_consumed: Bool
 }
 
 // MARK: - RustBridgeV2 Class
@@ -284,10 +285,11 @@ final class RustBridgeV2 {
         return ProcessResult(
             text: text,
             backspaceCount: Int(result.backspace_count),
-            consumed: result.consumed
+            consumed: result.consumed,
+            key_consumed: result.key_consumed
         )
     }
-    
+
     /// Process a keystroke with extended modifiers
     /// - Parameters:
     ///   - key: ASCII key code (a-z, 0-9)
@@ -331,10 +333,11 @@ final class RustBridgeV2 {
         return ProcessResult(
             text: text,
             backspaceCount: Int(result.backspace_count),
-            consumed: result.consumed
+            consumed: result.consumed,
+            key_consumed: result.key_consumed
         )
     }
-    
+
     /// Restore current buffer to raw ASCII input (undo all Vietnamese transforms)
     /// Used for Double OPTION key restore
     func restoreToRaw() throws -> ProcessResult {
@@ -364,10 +367,11 @@ final class RustBridgeV2 {
         return ProcessResult(
             text: text,
             backspaceCount: Int(result.backspace_count),
-            consumed: result.consumed
+            consumed: result.consumed,
+            key_consumed: result.key_consumed
         )
     }
-    
+
     /// Get current config
     func getConfig() throws -> FfiConfig_v2 {
         engineLock.lock()
