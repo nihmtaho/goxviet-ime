@@ -101,6 +101,7 @@ pub use presentation::ffi::api::{
     ime_get_buffer_v2,
     ime_get_config_v2,
     ime_get_version_v2,
+    ime_key_with_char_v2,
     ime_process_key_v2,
     ime_remove_shortcut_v2,
     ime_restore_word_v2,

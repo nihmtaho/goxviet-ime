@@ -196,6 +196,10 @@ pub struct Engine {
     /// e.g. "v.v." is built incrementally across multiple DOT break events.
     /// Stack-allocated (32 bytes) — no heap allocation on the hot path.
     pending_punct_context: AbbrevBuf,
+    /// Accumulates break/special chars for multi-char immediate shortcuts (e.g. "->" → "→").
+    /// Also accumulates Option-modified chars (√, ≈) for on_key_with_char.
+    /// Cleared when a new alphabetic word starts, when a shortcut fires, or on clear_all().
+    shortcut_prefix: String,
 }
 
 impl Default for Engine {
@@ -325,6 +329,7 @@ impl Engine {
             at_sentence_boundary: false,
             sentence_punct_pending: false,
             pending_punct_context: AbbrevBuf::default(),
+            shortcut_prefix: String::new(),
         }
     }
 
@@ -553,6 +558,36 @@ impl Engine {
     /// * `shift` - true if Shift key is pressed (for symbols like @, #, $)
     pub fn on_key_ext(&mut self, key: u16, caps: bool, ctrl: bool, shift: bool) -> Result {
         if !self.enabled {
+            // When disabled, immediate shortcuts still fire via shortcut_prefix accumulation.
+            // Only Vietnamese transforms are skipped.
+            if ctrl {
+                self.shortcut_prefix.clear();
+                self.clear();
+                self.word_history.clear();
+                self.spaces_after_commit = 0;
+                return Result::none();
+            }
+
+            // Break char — check for immediate shortcut (uses try_break_char_shortcut from Task 7)
+            let is_modifier = {
+                let m = crate::input::get(self.method);
+                m.stroke(key) || m.remove(key) || m.tone(key).is_some() || m.mark(key).is_some()
+            };
+            if !is_modifier && crate::data::keys::is_break(key) {
+                if let Some(break_char) = crate::utils::key_to_char_ext(key, caps, shift) {
+                    if !break_char.is_alphanumeric() {
+                        let result = self.try_break_char_shortcut(break_char);
+                        if result.action == Action::Send as u8 {
+                            return result;
+                        }
+                        // Prefix accumulating — pass through without clearing
+                        return Result::none();
+                    }
+                }
+            }
+
+            // Any other key — clear state and pass through
+            self.shortcut_prefix.clear();
             self.clear();
             self.word_history.clear();
             self.spaces_after_commit = 0;
@@ -807,6 +842,15 @@ impl Engine {
                     self.pending_punct_context.clear();
                 }
             }
+            // Check if this break char extends an immediate shortcut sequence
+            if let Some(break_char) = crate::utils::key_to_char_ext(key, caps, shift) {
+                if !break_char.is_alphanumeric() {
+                    let shortcut_result = self.try_break_char_shortcut(break_char);
+                    if shortcut_result.action == Action::Send as u8 {
+                        return shortcut_result;
+                    }
+                }
+            }
             return self.commit_and_break_sequence();
         }
 
@@ -1023,7 +1067,64 @@ impl Engine {
             self.raw_input.push(key, caps);
         }
 
+        // Clear stale shortcut prefix when a new word starts
+        if keys::is_letter(key) && self.buf.is_empty() {
+            self.shortcut_prefix.clear();
+        }
+
         self.process(key, caps, shift)
+    }
+
+    /// Process a key event with an optional Unicode character override.
+    ///
+    /// Used for Option-modified keys on macOS where the keycode maps to one char
+    /// but the actual Unicode char is different (e.g. Option+V → √ instead of 'v').
+    /// Accumulates non-alphabetic chars in `shortcut_prefix` for multi-char immediate
+    /// shortcuts like √√ → ✅.
+    pub fn on_key_with_char(
+        &mut self,
+        key: u16,
+        caps: bool,
+        ctrl: bool,
+        shift: bool,
+        ch: Option<char>,
+    ) -> Result {
+        if ctrl {
+            self.shortcut_prefix.clear();
+            return self.on_key_ext(key, caps, ctrl, shift);
+        }
+
+        if let Some(c) = ch {
+            if !c.is_alphabetic() {
+                // Cap prefix to prevent unbounded growth for long non-matching sequences
+                if self.shortcut_prefix.chars().count() >= 64 {
+                    self.shortcut_prefix.clear();
+                }
+                self.shortcut_prefix.push(c);
+
+                let method = self.current_input_method();
+                let prefix_chars: Vec<char> = self.shortcut_prefix.chars().collect();
+                for start in 0..prefix_chars.len() {
+                    let suffix: String = prefix_chars[start..].iter().collect();
+                    if let Some(_m) = self
+                        .shortcuts
+                        .try_match_for_method(&suffix, None, false, method)
+                    {
+                        // Chars in suffix minus 1 (the current key is not yet on screen).
+                        let bs = suffix.chars().count().saturating_sub(1) as u8;
+                        let output: Vec<char> = _m.output.chars().collect();
+                        let mut result = Result::send(bs, &output);
+                        result.flags |= 0x01; // FLAG_KEY_CONSUMED
+                        self.shortcut_prefix.clear();
+                        return result;
+                    }
+                }
+                return Result::none();
+            }
+        }
+
+        self.shortcut_prefix.clear();
+        self.on_key_ext(key, caps, ctrl, shift)
     }
 
     /// Main processing pipeline - pattern-based
@@ -1785,6 +1886,38 @@ impl Engine {
 
     /// Try word boundary shortcuts (triggered by space, punctuation, etc.)
     #[inline]
+    /// Accumulates `ch` in `shortcut_prefix` and checks for an immediate shortcut match.
+    /// Returns `Result::send(...)` with FLAG_KEY_CONSUMED bit set on match, or `Result::none()`.
+    fn try_break_char_shortcut(&mut self, ch: char) -> Result {
+        // Cap prefix to prevent unbounded growth for long non-matching sequences
+        if self.shortcut_prefix.chars().count() >= 64 {
+            self.shortcut_prefix.clear();
+        }
+        self.shortcut_prefix.push(ch);
+
+        if !self.shortcuts_enabled {
+            return Result::none();
+        }
+
+        let method = self.current_input_method();
+        let prefix_chars: Vec<char> = self.shortcut_prefix.chars().collect();
+        for start in 0..prefix_chars.len() {
+            let suffix: String = prefix_chars[start..].iter().collect();
+            if let Some(m) = self
+                .shortcuts
+                .try_match_for_method(&suffix, None, false, method)
+            {
+                let bs = (suffix.chars().count().saturating_sub(1)) as u8;
+                let output: Vec<char> = m.output.chars().collect();
+                let mut result = Result::send(bs, &output);
+                result.flags |= 0x01; // FLAG_KEY_CONSUMED
+                self.shortcut_prefix.clear();
+                return result;
+            }
+        }
+        Result::none()
+    }
+
     fn try_word_boundary_shortcut(&mut self) -> Result {
         if self.buf.is_empty() {
             return Result::none();
@@ -3832,6 +3965,7 @@ impl Engine {
         self.at_sentence_boundary = false;
         self.sentence_punct_pending = false;
         self.pending_punct_context.clear();
+        self.shortcut_prefix.clear();
     }
 
     /// Restore buffer from a Vietnamese word string
@@ -6660,5 +6794,107 @@ mod tests {
             has_horn,
             "'how' should keep Vietnamese horn (hơ), not restore to English 'how'"
         );
+    }
+
+    #[test]
+    fn test_on_key_with_char_special_shortcut() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("√√", "✅"));
+
+        let r1 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r1.action, 0, "first √ should be action=None");
+        assert!(!r1.key_consumed(), "first √ should not consume key");
+
+        let r2 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r2.action, 1, "second √ should trigger shortcut (action=Send)");
+        assert_eq!(r2.backspace, 1, "should backspace 1");
+        assert!(r2.key_consumed(), "trigger key should be consumed");
+        let out: String = (0..r2.count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r2.chars.offset(i as isize)) })
+            .collect();
+        assert_eq!(out, "✅");
+    }
+
+    #[test]
+    fn test_on_key_with_char_suffix_match() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("√√", "✅"));
+
+        let r1 = e.on_key_with_char(crate::data::keys::X, false, false, false, Some('≈'));
+        assert_eq!(r1.action, 0);
+
+        let r2 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r2.action, 0);
+
+        let r3 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r3.action, 1);
+        assert_eq!(r3.backspace, 1);
+        assert!(r3.key_consumed());
+        let out: String = (0..r3.count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r3.chars.offset(i as isize)) })
+            .collect();
+        assert_eq!(out, "✅");
+    }
+
+    #[test]
+    fn test_break_char_immediate_shortcut() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        let r1 = e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+        assert_eq!(r1.action, 0, "- should pass through (action=None)");
+
+        // Shift+. = >
+        let r2 = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r2.action, 1, "-> should trigger shortcut");
+        assert_eq!(r2.backspace, 1, "backspace 1 to remove -");
+        assert!(r2.key_consumed(), "> should be consumed by shortcut");
+        let out: String = (0..r2.count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r2.chars.offset(i as isize)) })
+            .collect();
+        assert_eq!(out, "→");
+    }
+
+    #[test]
+    fn test_immediate_shortcut_works_when_ime_disabled() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.set_enabled(false);
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        // Type "-"
+        e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+
+        // Type ">" (Shift+DOT) — shortcut should fire even though IME is disabled
+        let r = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r.action, 1, "immediate shortcut should fire when IME disabled");
+        assert!(r.key_consumed());
+    }
+
+    #[test]
+    fn test_break_char_shortcut_after_word_commit() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        for key in [crate::data::keys::A, crate::data::keys::B, crate::data::keys::C] {
+            e.on_key_ext(key, false, false, false);
+        }
+
+        let r1 = e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+        assert_eq!(r1.action, 0);
+
+        let r2 = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r2.action, 1);
+        assert_eq!(r2.backspace, 1);
+        assert!(r2.key_consumed());
     }
 }

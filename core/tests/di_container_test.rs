@@ -31,6 +31,7 @@ fn telex_config() -> EngineConfig {
         auto_capitalise_enabled: false,
         word_history_enabled: false,
         free_tone_enabled: false,
+        skip_w_shortcut: false,
     }
 }
 

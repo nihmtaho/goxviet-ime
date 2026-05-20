@@ -248,11 +248,9 @@ pub extern "C" fn ime_process_key_ext_v2(
         let processor = container.processor_service();
         let mut locked = processor.lock().unwrap();
 
-        let transform_result = match locked.process_key(key_event) {
-            Ok(result) => result,
-            Err(_) => {
-                return FfiStatusCode::ErrorProcessingFailed;
-            }
+        let (transform_result, key_consumed) = match locked.process_key_ext(key_event) {
+            Ok(r) => r,
+            Err(_) => return FfiStatusCode::ErrorProcessingFailed,
         };
 
         let ffi_result = to_ffi_process_result_v2(transform_result);
@@ -261,6 +259,7 @@ pub extern "C" fn ime_process_key_ext_v2(
             (*out).text = ffi_result.text;
             (*out).backspace_count = ffi_result.backspace_count;
             (*out).consumed = ffi_result.consumed;
+            (*out).key_consumed = key_consumed;
         }
 
         FfiStatusCode::Success
@@ -271,6 +270,83 @@ pub extern "C" fn ime_process_key_ext_v2(
         Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
     }
 }
+
+/// Process a key event with an optional Unicode character (v2 API).
+///
+/// Used for Option-modified keys on macOS where keycode stays the same but
+/// the Unicode character differs (e.g. Option+V → √).
+///
+/// # Arguments
+/// * `engine_ptr` - Engine pointer from `ime_create_engine_v2`
+/// * `key_char`   - ASCII keycode
+/// * `caps`       - CapsLock active
+/// * `shift`      - Shift pressed
+/// * `ctrl`       - Ctrl/Cmd/Alt pressed
+/// * `char_code`  - Actual Unicode codepoint (0 = use keycode mapping only)
+/// * `out`        - Output (must not be NULL); free `text` with `ime_free_string_v2`
+///
+/// # Returns
+/// 0 on success, negative on error
+///
+/// # Safety
+/// `engine_ptr` and `out` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn ime_key_with_char_v2(
+    engine_ptr: *mut c_void,
+    key_char: c_char,
+    caps: bool,
+    shift: bool,
+    ctrl: bool,
+    char_code: u32,
+    out: *mut FfiProcessResult_v2,
+) -> c_int {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    if engine_ptr.is_null() {
+        return FfiStatusCode::ErrorNullEngine.to_c_int();
+    }
+    if out.is_null() {
+        return FfiStatusCode::ErrorNullOutput.to_c_int();
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let container = unsafe { &*(engine_ptr as *const Container) };
+
+        let ascii = key_char as u8;
+        let keycode = match crate::data::keys::from_ascii(ascii) {
+            Some(kc) => kc,
+            None => return FfiStatusCode::ErrorInvalidKey,
+        };
+
+        let ch = if char_code > 0 { char::from_u32(char_code) } else { None };
+        let key_event = KeyEvent::with_caps(keycode, caps, shift, ctrl, false, false);
+
+        let processor = container.processor_service();
+        let mut locked = processor.lock().unwrap();
+
+        let (transform_result, key_consumed) = match locked.process_key_with_char(key_event, ch) {
+            Ok(r) => r,
+            Err(_) => return FfiStatusCode::ErrorProcessingFailed,
+        };
+
+        let ffi_result = to_ffi_process_result_v2(transform_result);
+
+        unsafe {
+            (*out).text = ffi_result.text;
+            (*out).backspace_count = ffi_result.backspace_count;
+            (*out).consumed = ffi_result.consumed;
+            (*out).key_consumed = key_consumed;
+        }
+
+        FfiStatusCode::Success
+    }));
+
+    match result {
+        Ok(status) => status.to_c_int(),
+        Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
+    }
+}
+
 ///
 /// # Arguments
 /// * `engine_ptr` - Engine instance (must not be NULL)
@@ -749,6 +825,52 @@ pub extern "C" fn ime_restore_word_v2(engine: *mut c_void, word: *const c_char) 
 // ============================================================================
 // Input Method Config API (T6.2)
 // ============================================================================
+
+#[cfg(test)]
+mod api_tests {
+    use super::*;
+    use crate::presentation::ffi::types::FfiProcessResult_v2;
+
+    unsafe fn make_engine() -> *mut std::ffi::c_void {
+        ime_create_engine_v2(std::ptr::null())
+    }
+
+    #[test]
+    fn test_ime_key_with_char_v2_plain_char() {
+        unsafe {
+            let engine = make_engine();
+            let mut out = FfiProcessResult_v2::default();
+            let status = ime_key_with_char_v2(engine, b'a' as i8, false, false, false, 0, &mut out);
+            assert_eq!(status, 0, "should succeed");
+            assert!(!out.key_consumed, "plain letter should not consume key");
+            ime_destroy_engine_v2(engine);
+        }
+    }
+
+    #[test]
+    fn test_ime_get_buffer_v2_returns_zero_on_empty() {
+        unsafe {
+            let engine = make_engine();
+            let mut buf = [0u32; 64];
+            let count = ime_get_buffer_v2(engine, buf.as_mut_ptr(), 64);
+            assert_eq!(count, 0, "empty buffer should return 0 codepoints");
+            ime_destroy_engine_v2(engine);
+        }
+    }
+
+    #[test]
+    fn test_ime_process_key_ext_v2_key_consumed_false_for_letter() {
+        unsafe {
+            let engine = make_engine();
+            let mut out = FfiProcessResult_v2::default();
+            // 'a' key
+            let status = ime_process_key_ext_v2(engine, b'a' as i8, false, false, false, &mut out);
+            assert_eq!(status, 0);
+            assert!(!out.key_consumed, "plain letter should not set key_consumed");
+            ime_destroy_engine_v2(engine);
+        }
+    }
+}
 
 /// Load a data-driven InputMethodConfig from JSON (v2 API — Sprint D)
 ///

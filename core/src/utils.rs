@@ -10,6 +10,55 @@ use crate::data::{
 };
 use crate::infrastructure::engine::buffer::Buffer;
 
+/// Convert key code to character, with shift support for punctuation.
+///
+/// For letter keys, `shift` makes them uppercase (same as caps).
+/// For punctuation/symbol keys, `shift` returns the shifted symbol (e.g. DOT+shift → '>').
+pub fn key_to_char_ext(key: u16, caps: bool, shift: bool) -> Option<char> {
+    if shift {
+        let shifted = match key {
+            keys::N1 => '!',
+            keys::N2 => '@',
+            keys::N3 => '#',
+            keys::N4 => '$',
+            keys::N5 => '%',
+            keys::N6 => '^',
+            keys::N7 => '&',
+            keys::N8 => '*',
+            keys::N9 => '(',
+            keys::N0 => ')',
+            keys::MINUS => '_',
+            keys::EQUAL => '+',
+            keys::LBRACKET => '{',
+            keys::RBRACKET => '}',
+            keys::BACKSLASH => '|',
+            keys::SEMICOLON => ':',
+            keys::QUOTE => '"',
+            keys::BACKQUOTE => '~',
+            keys::COMMA => '<',
+            keys::DOT => '>',
+            keys::SLASH => '?',
+            _ => return key_to_char(key, caps || shift),
+        };
+        return Some(shifted);
+    }
+    let unshifted = match key {
+        keys::MINUS => '-',
+        keys::EQUAL => '=',
+        keys::LBRACKET => '[',
+        keys::RBRACKET => ']',
+        keys::BACKSLASH => '\\',
+        keys::SEMICOLON => ';',
+        keys::QUOTE => '\'',
+        keys::BACKQUOTE => '`',
+        keys::COMMA => ',',
+        keys::DOT => '.',
+        keys::SLASH => '/',
+        _ => return key_to_char(key, caps),
+    };
+    Some(unshifted)
+}
+
 /// Convert key code to character
 pub fn key_to_char(key: u16, caps: bool) -> Option<char> {
     let ch = match key {

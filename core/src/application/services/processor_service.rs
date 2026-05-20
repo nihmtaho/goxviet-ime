@@ -176,6 +176,7 @@ impl ProcessorService {
         engine.set_auto_capitalise(config.auto_capitalise_enabled);
         engine.set_word_history_enabled(config.word_history_enabled);
         engine.set_free_tone(config.free_tone_enabled);
+        engine.set_skip_w_shortcut(config.skip_w_shortcut);
 
         // Set method based on input_method trait
         match input_method.method_id() {
@@ -290,28 +291,8 @@ impl ProcessorService {
         true
     }
 
-    /// Process keystroke (simple wrapper for FFI)
-    ///
-    /// # Arguments
-    /// - `key_event`: The key event to process
-    ///
-    /// # Returns
-    /// Transform result for the keystroke
-    pub fn process_key(
-        &mut self,
-        key_event: crate::domain::entities::key_event::KeyEvent,
-    ) -> Result<TransformResult, ProcessorError> {
-        // Use legacy engine with correct parameter mapping:
-        // Legacy engine: on_key_ext(key, caps, ctrl, shift)
-        let result = self.engine.on_key_ext(
-            key_event.keycode,
-            key_event.caps,
-            key_event.ctrl,
-            key_event.shift,
-        );
-
-        // Build output text from legacy result
-        let output_text = if result.count > 0 {
+    fn chars_from_result(result: &crate::shared::types::Result) -> CharSequence {
+        if result.count > 0 {
             let mut text = String::new();
             for i in 0..result.count as usize {
                 unsafe {
@@ -323,23 +304,85 @@ impl ProcessorService {
             CharSequence::from(text)
         } else {
             CharSequence::empty()
-        };
+        }
+    }
 
-        // Determine action based on legacy result
-        let action = if result.backspace > 0 {
-            // Has backspace: Replace action
+    fn action_from_result(result: &crate::shared::types::Result) -> Action {
+        if result.backspace > 0 {
             Action::Replace {
                 backspace_count: result.backspace,
             }
         } else if result.action == 1 {
-            // Insert action
             Action::Insert
         } else {
-            // No action
             Action::None
-        };
+        }
+    }
 
+    /// Process keystroke (simple wrapper for FFI)
+    ///
+    /// # Arguments
+    /// - `key_event`: The key event to process
+    ///
+    /// # Returns
+    /// Transform result for the keystroke
+    pub fn process_key(
+        &mut self,
+        key_event: crate::domain::entities::key_event::KeyEvent,
+    ) -> std::result::Result<TransformResult, ProcessorError> {
+        let result = self.engine.on_key_ext(
+            key_event.keycode,
+            key_event.caps,
+            key_event.ctrl,
+            key_event.shift,
+        );
+        let output_text = Self::chars_from_result(&result);
+        let action = Self::action_from_result(&result);
         Ok(TransformResult::new(action, output_text))
+    }
+
+    /// Process keystroke, also returning whether the trigger key was consumed.
+    /// Used by FFI layer for ime_process_key_ext_v2 and ime_key_with_char_v2.
+    pub fn process_key_ext(
+        &mut self,
+        key_event: crate::domain::entities::key_event::KeyEvent,
+    ) -> std::result::Result<(TransformResult, bool), ProcessorError> {
+        let result = self.engine.on_key_ext(
+            key_event.keycode,
+            key_event.caps,
+            key_event.ctrl,
+            key_event.shift,
+        );
+        let key_consumed = result.key_consumed();
+        let output_text = Self::chars_from_result(&result);
+        let action = Self::action_from_result(&result);
+        Ok((TransformResult::new(action, output_text), key_consumed))
+    }
+
+    /// Process keystroke with an optional Unicode character override.
+    /// Used for Option-modified keys on macOS (e.g. Option+V → √).
+    pub fn process_key_with_char(
+        &mut self,
+        key_event: crate::domain::entities::key_event::KeyEvent,
+        ch: Option<char>,
+    ) -> std::result::Result<(TransformResult, bool), ProcessorError> {
+        let result = self.engine.on_key_with_char(
+            key_event.keycode,
+            key_event.caps,
+            key_event.ctrl,
+            key_event.shift,
+            ch,
+        );
+        let key_consumed = result.key_consumed();
+        let output_text = Self::chars_from_result(&result);
+        let action = Self::action_from_result(&result);
+        Ok((TransformResult::new(action, output_text), key_consumed))
+    }
+
+    /// Return the full composed buffer as a UTF-8 string.
+    /// Used by ime_get_buffer_v2 for the Select All+Replace injection strategy.
+    pub fn get_buffer(&self) -> String {
+        self.engine.get_buffer()
     }
 
     /// Restore current buffer to raw ASCII input (undo all Vietnamese transforms)
@@ -353,20 +396,7 @@ impl ProcessorService {
             .on_key_ext(crate::data::keys::ESC, false, false, false);
         self.engine.set_esc_restore(was_enabled);
 
-        let output_text = if result.count > 0 {
-            let mut text = String::new();
-            for i in 0..result.count as usize {
-                unsafe {
-                    if let Some(ch) = char::from_u32(*result.chars.offset(i as isize)) {
-                        text.push(ch);
-                    }
-                }
-            }
-            CharSequence::from(text)
-        } else {
-            CharSequence::empty()
-        };
-
+        let output_text = Self::chars_from_result(&result);
         let action = if result.backspace > 0 {
             Action::Replace {
                 backspace_count: result.backspace,
@@ -435,6 +465,46 @@ impl ProcessorService {
     /// subsequent keystrokes continue from the restored state.
     pub fn restore_word_to_buffer(&mut self, word: &str) {
         self.engine.restore_word(word);
+    }
+}
+
+#[cfg(test)]
+mod processor_tests {
+    use super::*;
+    use crate::application::dto::EngineConfig;
+    use crate::infrastructure::adapters::{
+        input::TelexAdapter,
+        state::MemoryBufferAdapter,
+        transformation::{VietnameseMarkAdapter, VietnameseToneAdapter},
+        validation::{LanguageDetectorAdapter, SyllableStructureValidator},
+    };
+
+    fn make_service(config: EngineConfig) -> ProcessorService {
+        ProcessorService::new(
+            Box::new(TelexAdapter::new()),
+            Box::new(SyllableStructureValidator::new()),
+            Box::new(VietnameseToneAdapter::new(crate::domain::ports::transformation::tone_transformer::ToneStrategy::Modern)),
+            Box::new(VietnameseMarkAdapter::new()),
+            Box::new(MemoryBufferAdapter::new()),
+            Box::new(LanguageDetectorAdapter::new()),
+            &config,
+        )
+    }
+
+    #[test]
+    fn test_get_buffer_empty_initially() {
+        let service = make_service(EngineConfig::default());
+        assert_eq!(service.get_buffer(), "");
+    }
+
+    #[test]
+    fn test_process_key_ext_returns_key_consumed_false_for_plain_key() {
+        use crate::domain::entities::key_event::KeyEvent;
+        use crate::data::keys;
+        let mut service = make_service(EngineConfig::default());
+        let key_event = KeyEvent::with_caps(keys::A, false, false, false, false, false);
+        let (_, key_consumed) = service.process_key_ext(key_event).unwrap();
+        assert!(!key_consumed, "plain letter key should not set key_consumed");
     }
 }
 
