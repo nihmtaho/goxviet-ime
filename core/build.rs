@@ -14,17 +14,17 @@ fn main() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR must be set by Cargo");
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
 
-    let tu_dien_path = Path::new(&manifest_dir).join("data/TuDien.txt");
-    let tu_ghep_path = Path::new(&manifest_dir).join("data/TuDienTuGhep.txt");
+    let tu_dien_path = Path::new(&manifest_dir).join("data/TuDien.dic");
+    let tu_ghep_path = Path::new(&manifest_dir).join("data/TuDienTuGhep.dic");
     let double_consonant_path =
         Path::new(&manifest_dir).join("src/data/double_consonant_words.txt");
-    let keep_english_path = Path::new(&manifest_dir).join("data/keep_english.txt");
+    let keep_english_path = Path::new(&manifest_dir).join("data/keep_english.dic");
 
     // Tell Cargo to re-run if dictionary files change
-    println!("cargo:rerun-if-changed=data/TuDien.txt");
-    println!("cargo:rerun-if-changed=data/TuDienTuGhep.txt");
+    println!("cargo:rerun-if-changed=data/TuDien.dic");
+    println!("cargo:rerun-if-changed=data/TuDienTuGhep.dic");
     println!("cargo:rerun-if-changed=src/data/double_consonant_words.txt");
-    println!("cargo:rerun-if-changed=data/keep_english.txt");
+    println!("cargo:rerun-if-changed=data/keep_english.dic");
 
     generate_viet_syllables(&tu_dien_path, &out_dir);
     generate_viet_compound_bin(&tu_ghep_path, &out_dir);
