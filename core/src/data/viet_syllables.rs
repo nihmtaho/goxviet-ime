@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn test_lookup_all_tu_dien_entries() {
         // Verify the set was built correctly — all TuDien entries must be present
-        let tu_dien = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/TuDien.txt"));
+        let tu_dien = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/data/TuDien.dic"));
         let mut missing = 0usize;
         for line in tu_dien.lines() {
             let word = line.trim();
@@ -141,7 +141,7 @@ mod tests {
         }
         assert_eq!(
             missing, 0,
-            "{} entries from TuDien.txt not found in VIET_SYLLABLES",
+            "{} entries from TuDien.dic not found in VIET_SYLLABLES",
             missing
         );
     }

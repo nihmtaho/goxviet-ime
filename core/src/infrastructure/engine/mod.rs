@@ -3514,6 +3514,23 @@ impl Engine {
                 }
             }
 
+            // Normalize u(plain)+o(horn) → ươ BEFORE NA-PAC coda validity checks.
+            // After Telex 'w', the TH/KH/PH block in normalize_uo_compound leaves U plain.
+            // NA-PAC would then see "uơ" (open-only, no coda allowed) and restore to English.
+            // Normalizing here confirms the ươ compound and lets coda validation pass.
+            // Example: "thuowng" — after 'w' gives [T,H,U(plain),O(horn)], coda 'n' fires this.
+            if keys::is_consonant(key) {
+                if let Some(compound_pos) =
+                    vowel_compound::normalize_uo_compound_after_coda(&mut self.buf)
+                {
+                    self.buf.push(Char::new(key, caps));
+                    if let Some(restored) = self.check_and_restore_english(1, false) {
+                        return restored;
+                    }
+                    return self.rebuild_from_after_insert(compound_pos);
+                }
+            }
+
             // Check NA-PAC compatibility before adding a consonant.
             // Two checks: (1) extending existing coda to digraph, (2) adding first coda to vowel-ending buffer.
             // Example: "hoặc" + 'h' → proposed coda "ch", NA.3 (oă) + PAC.0 (ch) → invalid → restore.
