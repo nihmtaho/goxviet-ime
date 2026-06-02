@@ -64,7 +64,7 @@ impl Container {
 
     /// Create ProcessorService with all wired dependencies
     fn create_processor_service(config: Arc<Mutex<EngineConfig>>) -> ProcessorService {
-        let config_snapshot = config.lock().unwrap().clone();
+        let config_snapshot = config.lock().unwrap_or_else(|e| e.into_inner()).clone();
         ProcessorService::new(
             Self::create_input_method(&config),
             Self::create_syllable_validator(),
@@ -78,7 +78,7 @@ impl Container {
 
     /// Create input method based on configuration
     fn create_input_method(config: &Arc<Mutex<EngineConfig>>) -> Box<dyn InputMethod> {
-        let method_id = config.lock().unwrap().input_method;
+        let method_id = config.lock().unwrap_or_else(|e| e.into_inner()).input_method;
         match method_id {
             InputMethodId::Telex => Box::new(TelexAdapter::new()),
             InputMethodId::Vni => Box::new(VniAdapter::new()),
@@ -130,7 +130,7 @@ impl Container {
 
     /// Update configuration (recreates processor service)
     pub fn update_config(&mut self, new_config: EngineConfig) {
-        *self.config.lock().unwrap() = new_config;
+        *self.config.lock().unwrap_or_else(|e| e.into_inner()) = new_config;
         self.processor_service = Arc::new(Mutex::new(Self::create_processor_service(
             self.config.clone(),
         )));
@@ -138,7 +138,7 @@ impl Container {
 
     /// Get current configuration
     pub fn get_config(&self) -> EngineConfig {
-        self.config.lock().unwrap().clone()
+        self.config.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Load data-driven InputMethodConfig (T6.2)
@@ -158,12 +158,12 @@ impl Container {
         self.update_config(engine_config);
 
         // Cache the full config
-        *self.input_method_config.lock().unwrap() = Some(config);
+        *self.input_method_config.lock().unwrap_or_else(|e| e.into_inner()) = Some(config);
     }
 
     /// Get the last loaded InputMethodConfig (T6.2)
     pub fn get_input_method_config(&self) -> Option<InputMethodConfig> {
-        self.input_method_config.lock().unwrap().clone()
+        self.input_method_config.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Returns the current displayed buffer as a Vec<char>.

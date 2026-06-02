@@ -83,7 +83,7 @@ pub extern "C" fn ime_reset_buffer_v2(engine_ptr: *mut c_void) -> FfiStatusCode 
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.reset_buffer();
         FfiStatusCode::Success
     }));
@@ -111,7 +111,7 @@ pub extern "C" fn ime_reset_all_v2(engine_ptr: *mut c_void) -> FfiStatusCode {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.reset_all();
         FfiStatusCode::Success
     }));
@@ -169,7 +169,7 @@ pub extern "C" fn ime_process_key_v2(
 
         // Process through processor service (following v1 pattern)
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
 
         // Process key
         let transform_result = match locked.process_key(key_event) {
@@ -246,7 +246,7 @@ pub extern "C" fn ime_process_key_ext_v2(
         let key_event = KeyEvent::with_caps(keycode, caps, shift, ctrl, false, false);
 
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
 
         let (transform_result, key_consumed) = match locked.process_key_ext(key_event) {
             Ok(r) => r,
@@ -322,7 +322,7 @@ pub extern "C" fn ime_key_with_char_v2(
         let key_event = KeyEvent::with_caps(keycode, caps, shift, ctrl, false, false);
 
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
 
         let (transform_result, key_consumed) = match locked.process_key_with_char(key_event, ch) {
             Ok(r) => r,
@@ -502,7 +502,7 @@ pub extern "C" fn ime_add_shortcut_v2(
         };
 
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         if locked.add_shortcut(trigger_str, expansion_str) {
             FfiStatusCode::Success
         } else {
@@ -586,7 +586,7 @@ pub extern "C" fn ime_add_shortcut_ext_v2(
 
         let container = unsafe { &*(engine as *const crate::presentation::di::Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         if locked.add_shortcut_full(shortcut) {
             FfiStatusCode::Success
         } else {
@@ -632,7 +632,7 @@ pub extern "C" fn ime_remove_shortcut_v2(
         };
 
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         if locked.remove_shortcut(trigger_str) {
             FfiStatusCode::Success
         } else {
@@ -658,7 +658,7 @@ pub extern "C" fn ime_clear_shortcuts_v2(engine: *mut c_void) -> FfiStatusCode {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.clear_shortcuts();
         FfiStatusCode::Success
     }));
@@ -681,7 +681,7 @@ pub extern "C" fn ime_shortcuts_count_v2(engine: *mut c_void) -> c_int {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine as *const Container) };
         let processor = container.processor_service();
-        let locked = processor.lock().unwrap();
+        let locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.shortcuts_count() as c_int
     }));
 
@@ -706,7 +706,7 @@ pub extern "C" fn ime_set_shortcuts_enabled_v2(
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.set_shortcuts_enabled(enabled);
         FfiStatusCode::Success
     }));
@@ -741,7 +741,7 @@ pub extern "C" fn ime_restore_to_raw_v2(
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         let transform_result = locked.restore_to_raw();
         let ffi_result = to_ffi_process_result_v2(transform_result);
 
