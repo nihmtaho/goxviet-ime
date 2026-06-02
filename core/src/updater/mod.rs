@@ -71,37 +71,36 @@ impl std::fmt::Display for Version {
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn version_compare(v1: *const i8, v2: *const i8) -> i32 {
-    let v1_str = unsafe {
-        if v1.is_null() {
-            return -99;
-        }
-        match std::ffi::CStr::from_ptr(v1).to_str() {
-            Ok(s) => s,
-            Err(_) => return -99,
-        }
-    };
-
-    let v2_str = unsafe {
-        if v2.is_null() {
-            return -99;
-        }
-        match std::ffi::CStr::from_ptr(v2).to_str() {
-            Ok(s) => s,
-            Err(_) => return -99,
-        }
-    };
-
-    let ver1 = match Version::parse(v1_str) {
-        Some(v) => v,
-        None => return -99,
-    };
-
-    let ver2 = match Version::parse(v2_str) {
-        Some(v) => v,
-        None => return -99,
-    };
-
-    ver1.compare(&ver2)
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let v1_str = unsafe {
+            if v1.is_null() { return -99; }
+            match std::ffi::CStr::from_ptr(v1).to_str() {
+                Ok(s) => s,
+                Err(_) => return -99,
+            }
+        };
+        let v2_str = unsafe {
+            if v2.is_null() { return -99; }
+            match std::ffi::CStr::from_ptr(v2).to_str() {
+                Ok(s) => s,
+                Err(_) => return -99,
+            }
+        };
+        let ver1 = match Version::parse(v1_str) {
+            Some(v) => v,
+            None => return -99,
+        };
+        let ver2 = match Version::parse(v2_str) {
+            Some(v) => v,
+            None => return -99,
+        };
+        ver1.compare(&ver2)
+    }));
+    match result {
+        Ok(r) => r,
+        Err(_) => -99,
+    }
 }
 
 /// Check if an update is available
