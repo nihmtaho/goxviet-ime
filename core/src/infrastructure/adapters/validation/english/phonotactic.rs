@@ -347,12 +347,7 @@ impl PhonotacticEngine {
         if keys.len() >= 3 {
             for suffix in SUFFIXES_3 {
                 let start = keys.len() - 3;
-                if &keys[start..start + 3]
-                    .iter()
-                    .map(|k| k.0)
-                    .collect::<Vec<_>>()[..]
-                    == &suffix[..]
-                {
+                if suffix.iter().enumerate().all(|(i, &s)| keys[start + i].0 == s) {
                     return 90;
                 }
             }
@@ -361,23 +356,13 @@ impl PhonotacticEngine {
         if keys.len() >= 4 {
             for suffix in SUFFIXES_4 {
                 let start = keys.len() - 4;
-                if &keys[start..start + 4]
-                    .iter()
-                    .map(|k| k.0)
-                    .collect::<Vec<_>>()[..]
-                    == &suffix[..]
-                {
+                if suffix.iter().enumerate().all(|(i, &s)| keys[start + i].0 == s) {
                     return 90;
                 }
             }
             // Check -core suffix (hardcore, multicore)
             let start = keys.len() - 4;
-            if &keys[start..start + 4]
-                .iter()
-                .map(|k| k.0)
-                .collect::<Vec<_>>()[..]
-                == &SUFFIXES_4_CORE[..]
-            {
+            if SUFFIXES_4_CORE.iter().enumerate().all(|(i, &s)| keys[start + i].0 == s) {
                 return 90;
             }
         }
@@ -385,12 +370,7 @@ impl PhonotacticEngine {
         if keys.len() >= 5 {
             for suffix in SUFFIXES_5 {
                 let start = keys.len() - 5;
-                if &keys[start..start + 5]
-                    .iter()
-                    .map(|k| k.0)
-                    .collect::<Vec<_>>()[..]
-                    == &suffix[..]
-                {
+                if suffix.iter().enumerate().all(|(i, &s)| keys[start + i].0 == s) {
                     return 90;
                 }
             }
@@ -423,12 +403,7 @@ impl PhonotacticEngine {
         if keys.len() >= 3 {
             for suffix in SUFFIXES_3_INSTANT {
                 let start = keys.len() - 3;
-                if &keys[start..start + 3]
-                    .iter()
-                    .map(|k| k.0)
-                    .collect::<Vec<_>>()[..]
-                    == &suffix[..]
-                {
+                if suffix.iter().enumerate().all(|(i, &s)| keys[start + i].0 == s) {
                     return 95;
                 }
             }
@@ -436,12 +411,7 @@ impl PhonotacticEngine {
         if keys.len() >= 4 {
             for suffix in SUFFIXES_4_INSTANT {
                 let start = keys.len() - 4;
-                if &keys[start..start + 4]
-                    .iter()
-                    .map(|k| k.0)
-                    .collect::<Vec<_>>()[..]
-                    == &suffix[..]
-                {
+                if suffix.iter().enumerate().all(|(i, &s)| keys[start + i].0 == s) {
                     return 95;
                 }
             }
@@ -449,12 +419,7 @@ impl PhonotacticEngine {
         if keys.len() >= 5 {
             for suffix in SUFFIXES_5_INSTANT {
                 let start = keys.len() - 5;
-                if &keys[start..start + 5]
-                    .iter()
-                    .map(|k| k.0)
-                    .collect::<Vec<_>>()[..]
-                    == &suffix[..]
-                {
+                if suffix.iter().enumerate().all(|(i, &s)| keys[start + i].0 == s) {
                     return 95;
                 }
             }
