@@ -4,6 +4,5 @@
 //! not by identity. They should be comparable and hashable.
 
 pub mod char_sequence;
-pub mod engine_types;
 pub mod transformation;
 pub mod validation_result;
