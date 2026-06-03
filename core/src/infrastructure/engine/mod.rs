@@ -1178,8 +1178,7 @@ impl Engine {
                                 && crate::utils::key_to_char(last_c.key, false)
                                     .and_then(|lc| {
                                         crate::utils::key_to_char(key, false).map(|nc| {
-                                            let proposed = format!("{}{}", lc, nc);
-                                            matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                            matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                         })
                                     })
                                     .unwrap_or(false)
@@ -1235,8 +1234,7 @@ impl Engine {
                                     && crate::utils::key_to_char(last_c.key, false)
                                         .and_then(|lc| {
                                             crate::utils::key_to_char(key, false).map(|nc| {
-                                                let proposed = format!("{}{}", lc, nc);
-                                                matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                                matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                             })
                                         })
                                         .unwrap_or(false)
@@ -1304,8 +1302,7 @@ impl Engine {
                                         && crate::utils::key_to_char(last_c.key, false)
                                             .and_then(|lc| {
                                                 crate::utils::key_to_char(key, false).map(|nc| {
-                                                    let proposed = format!("{}{}", lc, nc);
-                                                    matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                                    matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                                 })
                                             })
                                             .unwrap_or(false)
@@ -1372,8 +1369,7 @@ impl Engine {
                                         && crate::utils::key_to_char(last_c.key, false)
                                             .and_then(|lc| {
                                                 crate::utils::key_to_char(key, false).map(|nc| {
-                                                    let proposed = format!("{}{}", lc, nc);
-                                                    matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                                    matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                                 })
                                             })
                                             .unwrap_or(false)
