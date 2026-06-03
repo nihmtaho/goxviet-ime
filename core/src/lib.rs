@@ -42,7 +42,6 @@ pub mod features; // Feature modules (shortcuts, encoding)
 pub mod infrastructure; // Adapters & implementations (Telex, VNI, validators)
 pub mod presentation; // FFI API & DI container
 pub mod shared; // Shared utilities (buffer, types)
-pub mod unified_engine; // SOLID facade for engine components
 
 // ============================================================
 // UTILITIES & DATA
@@ -125,8 +124,7 @@ pub use presentation::ffi::api::{
 //   - v2 returns explicit status codes
 //   - v2 supports per-engine config (no global state)
 //
-// See MIGRATION_GUIDE.md for detailed migration instructions.
-//
+
 // Removed functions:
 //   - ime_init(), ime_key(), ime_key_ext()
 //   - ime_method(), ime_enabled(), ime_skip_w_shortcut()
