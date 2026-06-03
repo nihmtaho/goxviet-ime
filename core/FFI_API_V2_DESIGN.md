@@ -416,7 +416,8 @@ class GoxVietEngine {
         var result = FfiProcessResult_v2(
             text: nil,
             backspace_count: 0,
-            consumed: false
+            consumed: false,
+            key_consumed: false
         )
         
         // Call FFI (pass by reference)
@@ -472,6 +473,8 @@ public class GoxVietEngine : IDisposable
         public byte backspace_count;
         [MarshalAs(UnmanagedType.I1)]
         public bool consumed;
+        [MarshalAs(UnmanagedType.I1)]
+        public bool key_consumed;
     }
     
     [DllImport("goxviet_core", CallingConvention = CallingConvention.Cdecl)]
@@ -573,7 +576,7 @@ func testProcessKeyV2() {
     let engine = ime_create_engine_v2(nil)
     XCTAssertNotNil(engine)
     
-    var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false)
+    var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false, key_consumed: false)
     let status = ime_process_key_v2(engine!, 97, &result)  // 'a'
     
     XCTAssertEqual(status, FFI_SUCCESS)
