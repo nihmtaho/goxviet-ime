@@ -218,23 +218,35 @@ impl VietnameseSyllableValidator {
 
         // Find vowel sequence
 
-        let mut vowel_indices = Vec::new();
+        let mut vowel_indices = [0usize; 4];
+        let mut vowel_count = 0usize;
         for (i, &k) in keys.iter().enumerate() {
             if matches!(k, keys::A | keys::E | keys::I | keys::O | keys::U | keys::Y) {
-                vowel_indices.push(i);
-            } else if !vowel_indices.is_empty() {
+                if vowel_count < 4 {
+                    vowel_indices[vowel_count] = i;
+                    vowel_count += 1;
+                }
+            } else if vowel_count > 0 {
                 break; // Stop at first consonant after vowels
             }
         }
 
-        if vowel_indices.len() < 2 {
+        if vowel_count < 2 {
             return true; // Single vowel - no tone placement rules
         }
 
-        let vowel_keys: Vec<u16> = vowel_indices.iter().map(|&i| keys[i]).collect();
-        let vowel_tones: Vec<u8> = vowel_indices.iter().map(|&i| tones[i]).collect();
+        let vowel_keys: [u16; 4] = {
+            let mut arr = [0u16; 4];
+            for j in 0..vowel_count { arr[j] = keys[vowel_indices[j]]; }
+            arr
+        };
+        let vowel_tones: [u8; 4] = {
+            let mut arr = [0u8; 4];
+            for j in 0..vowel_count { arr[j] = tones[vowel_indices[j]]; }
+            arr
+        };
 
-        match vowel_keys.len() {
+        match vowel_count {
             2 => {
                 let pair = [vowel_keys[0], vowel_keys[1]];
 
