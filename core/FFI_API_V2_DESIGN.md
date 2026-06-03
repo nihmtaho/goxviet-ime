@@ -66,6 +66,7 @@ typedef struct {
     char* text;                // UTF-8 string (caller must free)
     uint8_t backspace_count;   // Number of backspaces
     bool consumed;             // Whether key was consumed
+    bool key_consumed;         // Whether the key event should be suppressed
 } FfiProcessResult_v2;
 
 // Return codes
