@@ -29,7 +29,7 @@ GoxViet Core is a high-performance Vietnamese IME (Input Method Editor) engine b
 |--------|-------|
 | **Total Lines of Code** | ~9,450 |
 | **Test Coverage** | 100% (clean architecture) |
-| **Tests Passing** | 415/415 ✅ |
+| **Tests Passing** | 751/751 ✅ |
 | **Phases Complete** | 4/4 (Domain, Application, Infrastructure, Presentation) |
 | **Build Warnings** | 0 (clean architecture code) |
 | **FFI Safety** | Zero panics across boundary |
@@ -370,7 +370,7 @@ core/src/
 | Application | 8 | ~4,200 | 91 | ✅ 100% |
 | Infrastructure | 12 | ~3,100 | 135 | ✅ 100% |
 | Presentation | 5 | ~1,400 | 31 | ✅ 100% |
-| **Total** | **36** | **~12,550** | **415** | **✅ 100%** |
+| **Total** | **36** | **~12,550** | **751** | **✅ 100%** |
 
 ---
 
@@ -609,7 +609,7 @@ The new architecture **maintains backward compatibility** with legacy FFI API:
 
 - ✅ Complete clean architecture implementation
 - ✅ 4 layers: Domain, Application, Infrastructure, Presentation
-- ✅ 415 tests, 100% coverage
+- ✅ 751 tests, 100% coverage
 - ✅ SOLID principles enforced
 - ✅ FFI safety guaranteed
 - ✅ Backward compatible API
@@ -619,3 +619,637 @@ The new architecture **maintains backward compatibility** with legacy FFI API:
 **Maintained by:** GoxViet Team  
 **License:** MIT  
 **Contact:** [GitHub Issues](https://github.com/goxviet/goxviet)
+
+---
+
+## Dependency Graphs
+
+Visual diagrams showing dependencies and relationships between modules.
+
+### Overall Architecture Layers
+
+```mermaid
+graph TD
+    subgraph "Presentation Layer"
+        FFI[FFI API]
+        DI[DI Container]
+    end
+    
+    subgraph "Application Layer"
+        UC[Use Cases]
+        SVC[Services]
+        DTO[DTOs]
+    end
+    
+    subgraph "Domain Layer"
+        ENT[Entities]
+        VO[Value Objects]
+        PORTS[Ports/Traits]
+    end
+    
+    subgraph "Infrastructure Layer"
+        ADAPT[Adapters]
+        REPO[Repositories]
+        EXT[External]
+    end
+    
+    FFI --> DI
+    DI --> SVC
+    FFI --> DTO
+    
+    UC --> PORTS
+    SVC --> PORTS
+    SVC --> UC
+    SVC --> DTO
+    UC --> DTO
+    UC --> ENT
+    UC --> VO
+    
+    ADAPT --> PORTS
+    REPO --> PORTS
+    EXT --> PORTS
+    
+    PORTS --> ENT
+    PORTS --> VO
+    
+    style PORTS fill:#4CAF50
+    style FFI fill:#2196F3
+    style UC fill:#FF9800
+    style ADAPT fill:#9C27B0
+```
+
+### Input Method Ports
+
+```mermaid
+graph LR
+    subgraph "Domain Ports"
+        IM[InputMethod trait]
+    end
+    
+    subgraph "Infrastructure Adapters"
+        TELEX[TelexAdapter]
+        VNI[VNIAdapter]
+    end
+    
+    subgraph "Application"
+        PS[ProcessorService]
+    end
+    
+    TELEX -.implements.-> IM
+    VNI -.implements.-> IM
+    PS -->|uses| IM
+    
+    style IM fill:#4CAF50
+    style TELEX fill:#9C27B0
+    style VNI fill:#9C27B0
+    style PS fill:#FF9800
+```
+
+### Validation Ports
+
+```mermaid
+graph LR
+    subgraph "Domain Ports"
+        SV[SyllableValidator trait]
+        LD[LanguageDetector trait]
+    end
+    
+    subgraph "Infrastructure Adapters"
+        FSM[FsmValidatorAdapter]
+        PHONO[PhonotacticAdapter]
+        LANG[EnglishDetectorAdapter]
+    end
+    
+    subgraph "Application"
+        VI[ValidateInput use case]
+    end
+    
+    FSM -.implements.-> SV
+    PHONO -.implements.-> SV
+    LANG -.implements.-> LD
+    VI -->|uses| SV
+    VI -->|uses| LD
+    
+    style SV fill:#4CAF50
+    style LD fill:#4CAF50
+    style FSM fill:#9C27B0
+    style PHONO fill:#9C27B0
+    style LANG fill:#9C27B0
+    style VI fill:#FF9800
+```
+
+### Transformation Ports
+
+```mermaid
+graph LR
+    subgraph "Domain Ports"
+        TT[ToneTransformer trait]
+        MT[MarkTransformer trait]
+    end
+    
+    subgraph "Infrastructure Adapters"
+        VT[VietnameseToneAdapter]
+        TP[TonePositioningAdapter]
+    end
+    
+    subgraph "Application"
+        TX[TransformText use case]
+    end
+    
+    VT -.implements.-> TT
+    TP -.implements.-> MT
+    TX -->|uses| TT
+    TX -->|uses| MT
+    
+    style TT fill:#4CAF50
+    style MT fill:#4CAF50
+    style VT fill:#9C27B0
+    style TP fill:#9C27B0
+    style TX fill:#FF9800
+```
+
+### State Management Ports
+
+```mermaid
+graph LR
+    subgraph "Domain Ports"
+        BM[BufferManager trait]
+        HT[HistoryTracker trait]
+    end
+    
+    subgraph "Infrastructure Adapters"
+        MB[MemoryBufferAdapter]
+        SH[SimpleHistoryAdapter]
+    end
+    
+    subgraph "Application"
+        PS[ProcessorService]
+    end
+    
+    MB -.implements.-> BM
+    SH -.implements.-> HT
+    PS -->|uses| BM
+    PS -->|uses| HT
+    
+    style BM fill:#4CAF50
+    style HT fill:#4CAF50
+    style MB fill:#9C27B0
+    style SH fill:#9C27B0
+    style PS fill:#FF9800
+```
+
+### ProcessorService Dependencies
+
+```mermaid
+graph TD
+    subgraph "Services"
+        PS[ProcessorService]
+    end
+    
+    subgraph "Use Cases"
+        PK[ProcessKeystroke]
+        VI[ValidateInput]
+        TX[TransformText]
+    end
+    
+    subgraph "Ports"
+        IM[InputMethod]
+        SV[SyllableValidator]
+        TT[ToneTransformer]
+        MT[MarkTransformer]
+        BM[BufferManager]
+        LD[LanguageDetector]
+    end
+    
+    subgraph "DTOs"
+        PC[ProcessingContext]
+        EC[EngineConfig]
+    end
+    
+    PS -->|creates| PK
+    PS -->|creates| VI
+    PS -->|creates| TX
+    PS -->|uses| IM
+    PS -->|uses| SV
+    PS -->|uses| TT
+    PS -->|uses| MT
+    PS -->|uses| BM
+    PS -->|uses| LD
+    PS -->|uses| PC
+    PS -->|uses| EC
+    
+    style PS fill:#FF9800
+    style PK fill:#FFC107
+    style VI fill:#FFC107
+    style TX fill:#FFC107
+```
+
+### Complete Module Dependency Graph
+
+```mermaid
+graph TD
+    subgraph "presentation/"
+        FFI_API[ffi/api.rs]
+        FFI_TYPES[ffi/types.rs]
+        FFI_CONV[ffi/conversions.rs]
+        DI_CONT[di/container.rs]
+    end
+    
+    subgraph "application/"
+        PS[services/processor_service.rs]
+        CS[services/config_service.rs]
+        PK[use_cases/process_keystroke.rs]
+        VI[use_cases/validate_input.rs]
+        TX[use_cases/transform_text.rs]
+        MS[use_cases/manage_shortcuts.rs]
+        EC[dto/engine_config.rs]
+        PC[dto/processing_context.rs]
+    end
+    
+    subgraph "domain/"
+        PORTS[ports/]
+        ENT[entities/]
+        VO[value_objects/]
+    end
+    
+    subgraph "infrastructure/"
+        ADAPT[adapters/]
+        REPO[repositories/]
+        EXT[external/]
+    end
+    
+    FFI_API --> FFI_TYPES
+    FFI_API --> FFI_CONV
+    FFI_API --> DI_CONT
+    DI_CONT --> PS
+    DI_CONT --> CS
+    DI_CONT --> ADAPT
+    
+    FFI_CONV --> EC
+    FFI_CONV --> PC
+    
+    PS --> PK
+    PS --> VI
+    PS --> TX
+    PS --> PORTS
+    PS --> EC
+    PS --> PC
+    
+    CS --> EC
+    
+    PK --> PORTS
+    PK --> ENT
+    PK --> VO
+    VI --> PORTS
+    VI --> ENT
+    VI --> VO
+    TX --> PORTS
+    TX --> ENT
+    TX --> VO
+    MS --> PORTS
+    MS --> VO
+    
+    ADAPT --> PORTS
+    REPO --> PORTS
+    EXT --> PORTS
+    
+    PORTS --> ENT
+    PORTS --> VO
+    
+    style FFI_API fill:#2196F3
+    style DI_CONT fill:#2196F3
+    style PS fill:#FF9800
+    style PORTS fill:#4CAF50
+    style ADAPT fill:#9C27B0
+```
+
+### Dependency Inversion: Before and After
+
+```mermaid
+graph TD
+    subgraph "After: Clean Architecture with DIP"
+        subgraph "Outer"
+            UI[UI/FFI Layer]
+            INFRA[Infrastructure]
+        end
+        
+        subgraph "Inner"
+            APP[Application Layer]
+            PORTS[Domain Ports]
+            DOMAIN[Domain Entities]
+        end
+        
+        UI -->|depends on| APP
+        UI -->|depends on| PORTS
+        APP -->|depends on| PORTS
+        APP -->|depends on| DOMAIN
+        PORTS -->|depends on| DOMAIN
+        
+        INFRA -.implements.-> PORTS
+        
+        style PORTS fill:#4CAF50
+        style DOMAIN fill:#4CAF50
+        style APP fill:#FF9800
+        style UI fill:#2196F3
+        style INFRA fill:#9C27B0
+    end
+```
+
+---
+
+## Sequence Diagrams
+
+Detailed sequence diagrams showing control flow for key operations.
+
+### Keystroke Processing: Complete End-to-End Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Platform Client
+    participant FFI as FFI API Layer
+    participant Container as DI Container
+    participant Processor as ProcessorService
+    participant UseCase as ProcessKeystroke
+    participant Input as InputMethod
+    participant Validator as SyllableValidator
+    participant Transformer as ToneTransformer
+    participant Buffer as BufferManager
+    participant Detector as LanguageDetector
+    
+    Client->>+FFI: ime_process_key(handle, "s", TEXT)
+    
+    Note over FFI: Catch panic boundary
+    FFI->>FFI: Validate handle != NULL
+    FFI->>FFI: Validate UTF-8 string
+    FFI->>FFI: Convert C types to Rust
+    
+    FFI->>+Container: get_processor_service()
+    Container-->>-FFI: Arc<Mutex<ProcessorService>>
+    
+    FFI->>+Processor: process_key(context)
+    
+    Note over Processor: Load current buffer
+    Processor->>+Buffer: get_buffer()
+    Buffer-->>-Processor: Buffer state
+    
+    Note over Processor: Detect language context
+    Processor->>+Detector: is_vietnamese_context(buffer)
+    Detector-->>-Processor: true
+    
+    Processor->>+UseCase: execute(context)
+    
+    Note over UseCase: Step 1: Parse input
+    UseCase->>+Input: parse_input("s")
+    Input-->>-UseCase: KeyAction::ToneMark(Sac)
+    
+    Note over UseCase: Step 2: Validate syllable
+    UseCase->>+Validator: validate(syllable)
+    Validator-->>-UseCase: ValidationResult::Valid
+    
+    Note over UseCase: Step 3: Transform text
+    UseCase->>+Transformer: apply_tone(syllable, Sac)
+    Transformer-->>-UseCase: "viết"
+    
+    UseCase-->>-Processor: TransformResult
+    
+    Note over Processor: Update state
+    Processor->>+Buffer: update_buffer(new_state)
+    Buffer-->>-Processor: OK
+    
+    Processor-->>-FFI: TransformResult
+    
+    FFI->>FFI: to_ffi_string("viết")
+    FFI-->>-Client: FfiProcessResult{text: "viết", backspace: 4}
+    
+    Note over Client: Platform integration
+    Client->>Client: Send 4 backspaces
+    Client->>Client: Insert "viết"
+    Client->>FFI: ime_free_string(result.text)
+```
+
+### Configuration Update Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Platform Client
+    participant FFI as FFI API Layer
+    participant Container as DI Container
+    participant Config as ConfigService
+    participant Processor as ProcessorService
+    
+    Client->>+FFI: ime_set_config(handle, config)
+    
+    FFI->>FFI: Validate handle
+    FFI->>FFI: Convert FfiConfig to EngineConfig
+    
+    FFI->>+Container: get_config_service()
+    Container-->>-FFI: ConfigService
+    
+    FFI->>+Config: update_config(engine_config)
+    Config->>Config: Validate config values
+    Config->>Config: Store new config
+    Config-->>-FFI: Result::Ok
+    
+    Note over FFI: Recreate input method with new config
+    FFI->>+Container: create_input_method(config.input_method)
+    
+    alt InputMethod = Telex
+        Container->>Container: TelexAdapter::new()
+    else InputMethod = VNI
+        Container->>Container: VniAdapter::new()
+    end
+    
+    Container-->>-FFI: Box<dyn InputMethod>
+    
+    FFI->>+Processor: update_input_method(input_method)
+    Processor-->>-FFI: OK
+    
+    FFI-->>-Client: FfiResult{success: true}
+```
+
+### Validation Pipeline Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UseCase as ValidateInput Use Case
+    participant FSM as FSM Validator
+    participant Phono as Phonotactic Validator
+    participant Lang as Language Detector
+    participant Dict as Dictionary Repo
+    
+    UseCase->>UseCase: Parse buffer into syllable
+    
+    Note over UseCase: Stage 1: FSM Validation
+    UseCase->>+FSM: validate(syllable)
+    FSM->>FSM: Check vowel combinations
+    FSM->>FSM: Check consonant rules
+    FSM->>FSM: Check tone placement
+    
+    alt Valid Vietnamese structure
+        FSM-->>UseCase: ValidationResult::Valid
+    else Invalid structure
+        FSM-->>-UseCase: ValidationResult::Invalid(reason)
+        UseCase-->>UseCase: Return early with error
+    end
+    
+    Note over UseCase: Stage 2: Phonotactic Rules
+    UseCase->>+Phono: validate(syllable)
+    Phono->>Phono: Check initial consonant rules
+    Phono->>Phono: Check final consonant rules
+    Phono->>Phono: Check tone + final consonant
+    
+    alt Phonotactically valid
+        Phono-->>UseCase: ValidationResult::Valid
+    else Phonotactically invalid
+        Phono-->>-UseCase: ValidationResult::Invalid(reason)
+        UseCase-->>UseCase: Return early with error
+    end
+    
+    Note over UseCase: Stage 3: Language Detection
+    UseCase->>+Lang: is_vietnamese_word(text)
+    Lang->>+Dict: lookup_english(text)
+    
+    alt Found in English dictionary
+        Dict-->>Lang: true
+        Lang-->>UseCase: false (English, not Vietnamese)
+    else Not in English dictionary
+        Dict-->>-Lang: false
+        Lang-->>-UseCase: true (Vietnamese)
+    end
+```
+
+### Transformation Pipeline Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UseCase as TransformText Use Case
+    participant Tone as ToneTransformer
+    participant Mark as MarkTransformer
+    participant Positioning as TonePositioning
+    
+    Note over UseCase: Input: "viet" + tone Sac
+    UseCase->>UseCase: Parse syllable structure
+    
+    Note over UseCase: Step 1: Apply tone mark
+    UseCase->>+Tone: apply_tone(syllable, Sac)
+    Tone->>Tone: Identify vowel cluster: "ie"
+    Tone->>+Positioning: find_tone_position("ie")
+    Positioning->>Positioning: Check rules for "ie"
+    Positioning-->>-Tone: Position = 'e'
+    Tone->>Tone: Add sắc to 'e': "é"
+    Tone-->>-UseCase: "viét"
+    
+    Note over UseCase: Step 2: Check for diacritic marks
+    UseCase->>+Mark: has_marks("viét")
+    Mark-->>-UseCase: false (no circumflex/horn/breve)
+    
+    alt If marks needed (e.g., "vieetj" → "việt")
+        UseCase->>+Mark: apply_mark(syllable, Circumflex)
+        Mark->>Mark: Find target vowel: "e"
+        Mark->>Mark: Apply circumflex: "ê"
+        Mark-->>-UseCase: "viêt"
+        
+        Note over UseCase: Re-apply tone after mark
+        UseCase->>+Tone: apply_tone("viêt", Sac)
+        Tone->>+Positioning: find_tone_position("iê")
+        Positioning-->>-Tone: Position = 'ê'
+        Tone-->>-UseCase: "việt"
+    end
+```
+
+### Error Handling: Panic Recovery at FFI Boundary
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Platform Client
+    participant FFI as FFI API Layer
+    participant Panic as catch_unwind
+    participant Processor as ProcessorService
+    
+    Client->>+FFI: ime_process_key(handle, key, action)
+    
+    FFI->>+Panic: catch_unwind(|| { ... })
+    
+    Panic->>+Processor: process_key(context)
+    
+    alt Normal execution
+        Processor-->>Panic: TransformResult
+        Panic-->>FFI: Ok(TransformResult)
+        FFI->>FFI: Convert to FfiProcessResult
+        FFI-->>Client: FfiProcessResult{success: true}
+        
+    else Panic occurs
+        Processor->>Processor: panic!("unexpected error")
+        Processor--xPanic: Panic caught
+        Panic-->>-FFI: Err(PanicInfo)
+        
+        FFI->>FFI: eprintln!("Panic: {}", info)
+        FFI->>FFI: Create default FfiProcessResult
+        FFI-->>-Client: FfiProcessResult{success: false, error_code: 5}
+        
+        Note over Client: Client handles error gracefully
+        Client->>Client: Log error
+        Client->>Client: Continue operation
+    end
+```
+
+### Engine Lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Platform Client
+    participant FFI as FFI API Layer
+    participant Container as DI Container
+    participant Config as ConfigService
+    participant Processor as ProcessorService
+    participant Adapters as Adapters
+    
+    Note over Client: Application startup
+    Client->>+FFI: ime_engine_new_with_config(config)
+    
+    FFI->>FFI: Convert FfiConfig to EngineConfig
+    FFI->>+Container: new(engine_config)
+    
+    Note over Container: Wire dependencies
+    Container->>+Adapters: create_input_method()
+    Adapters-->>-Container: Box<dyn InputMethod>
+    
+    Container->>+Adapters: create_validator()
+    Adapters-->>-Container: Box<dyn SyllableValidator>
+    
+    Container->>+Adapters: create_tone_transformer()
+    Adapters-->>-Container: Box<dyn ToneTransformer>
+    
+    Container->>+Adapters: create_buffer_manager()
+    Adapters-->>-Container: Box<dyn BufferManager>
+    
+    Container->>+Config: new()
+    Config-->>-Container: ConfigService
+    
+    Container->>+Processor: new(all dependencies)
+    Processor-->>-Container: ProcessorService
+    
+    Container->>Container: Wrap in Arc<Mutex<>>
+    Container-->>-FFI: Container
+    
+    FFI->>FFI: Box::into_raw(container)
+    FFI-->>-Client: FfiEngineHandle (opaque pointer)
+    
+    Note over Client: Application shutdown
+    Client->>+FFI: ime_engine_free(handle)
+    
+    FFI->>FFI: Box::from_raw(handle)
+    
+    Note over FFI: Drop cascades through all components
+    FFI->>Container: Drop
+    Container->>Processor: Drop
+    Processor->>Adapters: Drop trait objects
+    
+    FFI-->>-Client: void
+```
