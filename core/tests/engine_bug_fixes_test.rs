@@ -1,6 +1,6 @@
 //! Test for critical engine bug fixes
 //!
-//! Issues from DICTIONARY_TEST_FAILURE_ANALYSIS_V2.md:
+// Source: internal analysis of 22K Vietnamese dict test run (Feb 2026).
 //! 1. Smart 'w' Double-Apply Bug: khuow → khươ (should be khuơ)
 //! 2. Compound Vowel Over-Aggressive: khoeo → khôe (should stay khoeo)
 //! 3. Foreign Word Auto-Restore: tareh → Taẻh (should be Tareh)
