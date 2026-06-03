@@ -196,7 +196,7 @@ pub fn to_ffi_process_result_v2(result: TransformResult) -> FfiProcessResult_v2 
         let ffi_str = to_ffi_string(text_seq.as_str());
         FfiProcessResult_v2 {
             text: ffi_str,
-            backspace_count: backspace_count.min(255) as u8, // v2 uses u8
+            backspace_count: backspace_count as u8,
             consumed: true,
             key_consumed: false,
         }

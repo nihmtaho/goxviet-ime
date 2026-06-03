@@ -529,26 +529,6 @@ impl Engine {
         self.on_key_ext(key, caps, ctrl, false)
     }
 
-    /// Check if key+shift combo is a raw mode prefix character
-    /// Raw prefixes: @ # : /
-    #[allow(dead_code)] // TEMP DISABLED
-    fn is_raw_prefix(key: u16, shift: bool) -> bool {
-        // / doesn't need shift
-        if key == keys::SLASH && !shift {
-            return true;
-        }
-        // @ # : need shift
-        if !shift {
-            return false;
-        }
-        matches!(
-            key,
-            keys::N2              // @ = Shift+2
-                | keys::N3        // # = Shift+3
-                | keys::SEMICOLON // : = Shift+;
-        )
-    }
-
     /// Handle key event with extended parameters
     ///
     /// # Arguments
@@ -2711,8 +2691,6 @@ impl Engine {
             false
         };
 
-        if is_backward_application {}
-
         // If switching, clear old tones first for proper rebuild
         if is_switching {
             for &pos in &target_positions {
@@ -2988,7 +2966,6 @@ impl Engine {
         // - "rươu" + 'j' → has horn transforms → DON'T skip, apply mark normally
         // - "đe" + 's' → has stroke transform → DON'T skip, apply mark normally (Issue #48)
         // Skip foreign word detection if free_tone mode is enabled
-        if !self.free_tone_enabled && !has_horn_transforms && !has_stroke_transforms {}
 
         // Normalize ie/ye/uye → iê/yê/uyê compound before placing mark
         // In Vietnamese, "ie"/"ye"/"uye" before a coda always needs circumflex on 'e'.
