@@ -46,9 +46,18 @@ class InputManager: LifecycleManaged {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var mouseMonitor: Any?  // NSEvent monitor for mouse clicks
-    
+
     // Running state for LifecycleManaged protocol
     private(set) var isRunning: Bool = false
+
+    // Remote desktop mode: use cgSessionEventTap instead of cgHIDEventTap
+    var useSessionTap: Bool = false {
+        didSet {
+            guard oldValue != useSessionTap, isRunning else { return }
+            stop()
+            start()
+        }
+    }
     
     // Shortcut configuration
     private var currentShortcut: KeyboardShortcut
@@ -62,10 +71,9 @@ class InputManager: LifecycleManaged {
     private var restoreShortcutEnabled: Bool = SettingsManager.shared.restoreShortcutEnabled
     private var restoreTapHistory: [(flags: UInt64, time: TimeInterval)] = []
 
-    // One-shot CTRL-commit: set to true when user taps Control alone.
-    // The next keyDown will be forwarded to the engine with ctrl=true,
-    // preventing tone application on the buffered Vietnamese text.
-    private var ctrlOneShotPending = false
+    // Free diacritic mode: toggled by tapping Control alone.
+    // While active, instant auto-restore is disabled so diacritics apply freely.
+    private var freeDiacriticMode = false
 
     
     init() {
@@ -86,7 +94,29 @@ class InputManager: LifecycleManaged {
         setupObservers()
     }
     
-    deinit {}
+    deinit {
+        // deinit is nonisolated in Swift 6 — schedule cleanup on MainActor.
+        // Capture identifier strings (Sendable) rather than self.
+        let ids: [String] = [
+            "InputManager.toggleObserver",
+            "InputManager.shortcutObserver",
+            "InputManager.inputMethodObserver",
+            "InputManager.toneStyleObserver",
+            "InputManager.restoreShortcutObserver",
+            "InputManager.instantRestoreObserver",
+            "InputManager.textExpansionObserver",
+            "InputManager.escRestoreObserver",
+            "InputManager.bracketShortcutsObserver",
+            "InputManager.foreignConsonantsObserver",
+            "InputManager.autoCapitaliseObserver",
+            "InputManager.wordHistoryObserver",
+        ]
+        Task { @MainActor in
+            for id in ids {
+                ResourceManager.shared.unregister(observerIdentifier: id)
+            }
+        }
+    }
     
     private func loadSavedSettings() {
         let settings = SettingsManager.shared
@@ -129,6 +159,10 @@ class InputManager: LifecycleManaged {
         ime_word_history_v2(settings.wordHistoryEnabled)
         Log.info("Feature Gap settings loaded")
         
+        // Load remote desktop mode (determines CGEventTap location)
+        useSessionTap = settings.remoteDesktopMode
+        Log.info("Remote desktop mode: \(useSessionTap ? "enabled (session tap)" : "disabled (HID tap)")")
+
         // Apply saved text expansion and sync shortcuts
         _ = ime_set_shortcuts_enabled_v2(settings.textExpansionEnabled)
         if settings.textExpansionEnabled {
@@ -152,12 +186,14 @@ class InputManager: LifecycleManaged {
         // Note: Accessibility permission is checked in AppDelegate before calling start()
         // No need to check again here to avoid priority inversion issues
         
-        let eventMask = (1 << CGEventType.keyDown.rawValue) | 
+        let eventMask = (1 << CGEventType.keyDown.rawValue) |
                         (1 << CGEventType.keyUp.rawValue) |
                         (1 << CGEventType.flagsChanged.rawValue)
-        
+
+        let tapLocation: CGEventTapLocation = useSessionTap ? .cgSessionEventTap : .cghidEventTap
+
         guard let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
+            tap: tapLocation,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(eventMask),
@@ -208,15 +244,9 @@ class InputManager: LifecycleManaged {
             self.eventTap = nil // Swift ARC releases the CFMachPort retain here
         }
         
-        // Unregister all observers via ResourceManager
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toggleObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.shortcutObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.inputMethodObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.toneStyleObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.restoreShortcutObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.instantRestoreObserver")
-        ResourceManager.shared.unregister(observerIdentifier: "InputManager.textExpansionObserver")
-        
+        // NOTE: Observers are intentionally NOT unregistered here — see deinit for explanation.
+        // Observers must persist across stop()/start() cycles (e.g. remote desktop mode toggle).
+
         // Stop mouse monitor
         if let monitor = mouseMonitor {
             NSEvent.removeMonitor(monitor)
@@ -456,19 +486,24 @@ class InputManager: LifecycleManaged {
     
     func setEnabled(_ enabled: Bool) {
         let settings = SettingsManager.shared
-        
+
+        // Exit free diacritic mode when IME is disabled
+        if !enabled && freeDiacriticMode {
+            freeDiacriticMode = false
+            ime_instant_restore_v2(settings.instantRestoreEnabled)
+            ime_clear_all_v2()
+        }
+
         // Update SettingsManager
         settings.setEnabled(enabled)
-        
+
         // Update Rust engine
         ime_enabled_v2(enabled)
         
-        // TEMPORARY: Disable buffer clear to prevent crash
-        // TODO: Re-enable after fixing the root cause
         // Clear buffer when toggling (only if InputManager is running)
-        // if isRunning {
-        //     ime_clear_v2()
-        // }
+        if isRunning {
+            ime_clear_v2()
+        }
         
         Log.info("IME \(enabled ? "enabled" : "disabled")")
         
@@ -590,7 +625,10 @@ class InputManager: LifecycleManaged {
         if flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) {
             // Clear ALL state on modifier shortcuts (selection-delete, Cmd+A, Cmd+V, etc.)
             // This prevents stale buffer content from appearing after selection operations
-            ctrlOneShotPending = false
+            if freeDiacriticMode {
+                freeDiacriticMode = false
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+            }
             ime_clear_all_v2()
 
             // Cmd+Space (Spotlight) or Option+Space (Raycast/Alfred):
@@ -619,15 +657,7 @@ class InputManager: LifecycleManaged {
         if keyCode == 53 { // ESC key
             let (text, backspace, consumed) = ime_key_v2(UInt16(keyCode), false, false)
             if consumed {
-                let (method, delays) = detectMethod()
-                TextInjector.shared.injectSync(
-                    bs: backspace,
-                    text: text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy,
-                    
-                )
+                injectText(text, backspaces: backspace, proxy: proxy)
                 return nil
             }
         }
@@ -644,7 +674,10 @@ class InputManager: LifecycleManaged {
         ]
         
         if navigationKeys.contains(keyCode) {
-            ctrlOneShotPending = false
+            if freeDiacriticMode {
+                freeDiacriticMode = false
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+            }
             ime_clear_all_v2()
             return Unmanaged.passUnretained(event)
         }
@@ -708,20 +741,28 @@ class InputManager: LifecycleManaged {
             return nil // Swallow event
         }
 
-        // One-shot CTRL-commit: detect a bare Control tap (no Cmd/Opt mixed in).
-        // When Control is pressed alone → arm the one-shot flag.
-        // When Cmd/Opt is pressed → cancel it (user is doing an OS shortcut).
+        // Free diacritic mode toggle: detect a bare Control tap (no Cmd/Opt mixed in).
         let pureControl = flags.contains(.maskControl)
             && !flags.contains(.maskCommand)
             && !flags.contains(.maskAlternate)
         if pureControl {
-            ctrlOneShotPending = true
-            Log.info("CTRL one-shot armed")
+            freeDiacriticMode.toggle()
+            if freeDiacriticMode {
+                ime_instant_restore_v2(false)
+                Log.info("Free diacritic mode ON")
+            } else {
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+                ime_clear_all_v2()
+                Log.info("Free diacritic mode OFF")
+            }
         } else if flags.contains(.maskCommand) || flags.contains(.maskAlternate) {
-            ctrlOneShotPending = false
+            if freeDiacriticMode {
+                freeDiacriticMode = false
+                ime_instant_restore_v2(SettingsManager.shared.instantRestoreEnabled)
+                ime_clear_all_v2()
+                Log.info("Free diacritic mode cancelled by Cmd/Opt")
+            }
         }
-        // Control release (flags no longer contains .maskControl): keep the pending flag so the
-        // next keyDown can consume it.
 
         return Unmanaged.passUnretained(event)
     }
@@ -731,15 +772,7 @@ class InputManager: LifecycleManaged {
         do {
             let result = try RustBridgeV2.shared.restoreToRaw()
             if !result.text.isEmpty || result.backspaceCount > 0 {
-                let (method, delays) = detectMethod()
-                TextInjector.shared.injectSync(
-                    bs: result.backspaceCount,
-                    text: result.text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy,
-                    
-                )
+                injectText(result.text, backspaces: result.backspaceCount, proxy: proxy)
                 Log.info("Restore shortcut triggered: bs=\(result.backspaceCount), text='\(result.text)'")
             }
         } catch {
@@ -774,11 +807,7 @@ class InputManager: LifecycleManaged {
         
         let caps = capsLock != shift
         
-        // One-shot CTRL-commit: treat this keypress as ctrl=true if the user tapped Control
-        // immediately before this key (without holding it). Consume the one-shot flag.
-        let oneShotFired = ctrlOneShotPending
-        ctrlOneShotPending = false
-        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate) || oneShotFired
+        let ctrl = flags.contains(.maskCommand) || flags.contains(.maskControl) || flags.contains(.maskAlternate)
         
         Log.key(keyCode, "Processing")
         
@@ -791,35 +820,6 @@ class InputManager: LifecycleManaged {
         // Cancel any pending coalesced deletes when non-delete key is pressed
         // Clear engine buffer on non-DELETE keys
         
-        // Old backspace handling (kept for reference, now replaced by coalescing)
-        if false && keyCode == 51 && !ctrl { // 51 = backspace
-            // First try Rust engine
-            let (text, backspace, consumed) = ime_key_v2(UInt16(keyCode), caps, ctrl)
-            if consumed {
-                Log.transform(backspace, text)
-                
-                let (method, delays) = detectMethod()
-                TextInjector.shared.injectSync(
-                    bs: backspace,
-                    text: text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy
-                )
-                return nil
-            }
-            
-            // Engine returned none - try to restore word from screen
-            if let word = getWordToRestoreOnBackspace() {
-                // TODO: Add ime_restore_word function to Rust bridge
-                Log.info("Restored word from screen: \(word)")
-                // For now, just log - will implement restoration in next iteration
-            }
-            
-            // Pass through backspace to delete the character
-            return Unmanaged.passUnretained(event)
-        }
-        
         // Call Rust engine for other keys (use extended API to preserve Shift state)
         // Respect SettingsManager: only treat Shift as special for engine when user enabled Shift+Backspace
         // Only let the Rust engine treat Shift specially when the user enabled Shift+Backspace.
@@ -828,8 +828,13 @@ class InputManager: LifecycleManaged {
         
         // Check if engine consumed the key
         if !consumed {
-            // Engine is not transforming this key (e.g., arrow keys, non-Vietnamese input)
-            // Just pass through and let system handle naturally
+            // Break keys (space, punctuation) always reset composition context even when
+            // the engine didn't transform them — prevents stale "d" causing "dd"→"đ" on
+            // the next word. Bracket keys are excluded (double-press detection needs state).
+            let isBracketKey = (keyCode == KeyCodes.lbracket || keyCode == KeyCodes.rbracket)
+            if keyCode.isBreakKey && !isBracketKey {
+                ime_clear_v2()
+            }
             Log.skip()
             return Unmanaged.passUnretained(event)
         }
@@ -841,18 +846,10 @@ class InputManager: LifecycleManaged {
         }
         
         Log.transform(backspace, text)
-        
-        // Inject replacement text using smart injection
-        let (method, delays) = detectMethod()
-        Log.info("DEBUG: method=\(method), delays=\(delays), bs=\(backspace), text='\(text)'")
-        TextInjector.shared.injectSync(
-            bs: backspace,
-            text: text,
-            method: method,
-            delays: delays,
-            proxy: proxy,
-            
-        )
+
+        // Inject replacement text using per-app injection dispatch
+        Log.info("DEBUG: injecting bs=\(backspace), text='\(text)'")
+        injectText(text, backspaces: backspace, proxy: proxy)
         
         // FIX: Clear buffer after break keys (punctuation) to prevent issues like "d-d" -> "dđ"
         // Break keys reset composition context, so buffer should be cleared.
@@ -873,6 +870,65 @@ class InputManager: LifecycleManaged {
         return nil
     }
     
+    // MARK: - Injection Dispatch
+
+    /// Dispatch text injection to the appropriate strategy based on per-app profile.
+    /// Call sites should prefer this over calling TextInjector directly for transform output.
+    private func injectText(_ text: String, backspaces: Int, proxy: CGEventTapProxy) {
+        let bundleId = PerAppModeManagerEnhanced.shared.currentBundleId ?? ""
+        let profile = PerAppInjectionManager.shared.profile(for: bundleId)
+
+        switch profile.injectionMethod {
+        case .auto, .fast:
+            injectFast(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+        case .slow:
+            injectFast(text, backspaces: backspaces, delays: DelayPreset.medium.delays, proxy: proxy)
+        case .charByChar:
+            injectCharByChar(text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+        case .selection:
+            if backspaces == 0 {
+                injectFast(text, backspaces: 0, delays: profile.delayPreset.delays, proxy: proxy)
+            } else {
+                TextInjector.shared.injectViaSelection(bs: backspaces, text: text, delays: profile.delayPreset.delays)
+            }
+        case .emptyCharPrefix:
+            injectFast("\u{200B}" + text, backspaces: backspaces, delays: profile.delayPreset.delays, proxy: proxy)
+        }
+    }
+
+    /// Fast injection: send backspaces then full text string (existing strategy).
+    private func injectFast(_ text: String, backspaces: Int, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy) {
+        let (method, _) = detectMethod()
+        TextInjector.shared.injectSync(
+            bs: backspaces,
+            text: text,
+            method: method,
+            delays: delays,
+            proxy: proxy
+        )
+    }
+
+    /// Char-by-char injection: send backspaces first, then each character individually.
+    private func injectCharByChar(_ text: String, backspaces: Int, delays: (UInt32, UInt32, UInt32), proxy: CGEventTapProxy) {
+        // First clear old text with backspaces (inject empty text to just send bs)
+        if backspaces > 0 {
+            injectFast("", backspaces: backspaces, delays: delays, proxy: proxy)
+        }
+        // Then inject each character individually
+        for scalar in text.unicodeScalars {
+            let source = CGEventSource(stateID: .hidSystemState)
+            if let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+                // keyboardSetUnicodeString expects UniChar (UInt16 / UTF-16), not UInt32
+                var utf16 = Array(String(scalar).utf16)
+                event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+                event.setIntegerValueField(.eventSourceUserData, value: kEventMarker)
+                let targetTap: CGEventTapLocation = useSessionTap ? .cgSessionEventTap : .cghidEventTap
+                event.post(tap: targetTap)
+            }
+            usleep(delays.2)
+        }
+    }
+
     // MARK: - DELETE Key Handling
     
     /// Handle DELETE key - process immediately through engine (no batching)
@@ -907,19 +963,8 @@ class InputManager: LifecycleManaged {
         // Check if engine consumed and has content to replace
         if consumed {
             if !text.isEmpty || backspace > 0 {
-                // Detect injection method
-                let (method, delays) = detectMethod()
-                
-                // Inject transformation
-                TextInjector.shared.injectSync(
-                    bs: backspace,
-                    text: text,
-                    method: method,
-                    delays: delays,
-                    proxy: proxy,
-                    
-                )
-                
+                // Inject transformation via per-app dispatch
+                injectText(text, backspaces: backspace, proxy: proxy)
                 Log.info("DELETE processed: bs=\(backspace), text='\(text)'")
                 return
             } else if backspace > 0 {
@@ -934,7 +979,12 @@ class InputManager: LifecycleManaged {
             }
         }
         
-        // Engine has no content - pass through single backspace
+        // Engine has no content - log candidate word for future buffer-restore feature
+        if let word = getWordToRestoreOnBackspace() {
+            Log.info("DELETE: engine empty, candidate restore word='\(word)' (not yet wired)")
+        }
+
+        // Pass through single backspace
         guard let src = CGEventSource(stateID: .privateState) else { return }
         TextInjector.shared.postKey(51, source: src, proxy: proxy)
         Log.info("DELETE: passthrough (engine empty)")

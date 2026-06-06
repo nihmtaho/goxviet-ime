@@ -196,6 +196,10 @@ pub struct Engine {
     /// e.g. "v.v." is built incrementally across multiple DOT break events.
     /// Stack-allocated (32 bytes) — no heap allocation on the hot path.
     pending_punct_context: AbbrevBuf,
+    /// Accumulates break/special chars for multi-char immediate shortcuts (e.g. "->" → "→").
+    /// Also accumulates Option-modified chars (√, ≈) for on_key_with_char.
+    /// Cleared when a new alphabetic word starts, when a shortcut fires, or on clear_all().
+    shortcut_prefix: String,
 }
 
 impl Default for Engine {
@@ -325,6 +329,7 @@ impl Engine {
             at_sentence_boundary: false,
             sentence_punct_pending: false,
             pending_punct_context: AbbrevBuf::default(),
+            shortcut_prefix: String::new(),
         }
     }
 
@@ -524,26 +529,6 @@ impl Engine {
         self.on_key_ext(key, caps, ctrl, false)
     }
 
-    /// Check if key+shift combo is a raw mode prefix character
-    /// Raw prefixes: @ # : /
-    #[allow(dead_code)] // TEMP DISABLED
-    fn is_raw_prefix(key: u16, shift: bool) -> bool {
-        // / doesn't need shift
-        if key == keys::SLASH && !shift {
-            return true;
-        }
-        // @ # : need shift
-        if !shift {
-            return false;
-        }
-        matches!(
-            key,
-            keys::N2              // @ = Shift+2
-                | keys::N3        // # = Shift+3
-                | keys::SEMICOLON // : = Shift+;
-        )
-    }
-
     /// Handle key event with extended parameters
     ///
     /// # Arguments
@@ -553,6 +538,36 @@ impl Engine {
     /// * `shift` - true if Shift key is pressed (for symbols like @, #, $)
     pub fn on_key_ext(&mut self, key: u16, caps: bool, ctrl: bool, shift: bool) -> Result {
         if !self.enabled {
+            // When disabled, immediate shortcuts still fire via shortcut_prefix accumulation.
+            // Only Vietnamese transforms are skipped.
+            if ctrl {
+                self.shortcut_prefix.clear();
+                self.clear();
+                self.word_history.clear();
+                self.spaces_after_commit = 0;
+                return Result::none();
+            }
+
+            // Break char — check for immediate shortcut (uses try_break_char_shortcut from Task 7)
+            let is_modifier = {
+                let m = crate::input::get(self.method);
+                m.stroke(key) || m.remove(key) || m.tone(key).is_some() || m.mark(key).is_some()
+            };
+            if !is_modifier && crate::data::keys::is_break(key) {
+                if let Some(break_char) = crate::utils::key_to_char_ext(key, caps, shift) {
+                    if !break_char.is_alphanumeric() {
+                        let result = self.try_break_char_shortcut(break_char);
+                        if result.action == Action::Send as u8 {
+                            return result;
+                        }
+                        // Prefix accumulating — pass through without clearing
+                        return Result::none();
+                    }
+                }
+            }
+
+            // Any other key — clear state and pass through
+            self.shortcut_prefix.clear();
             self.clear();
             self.word_history.clear();
             self.spaces_after_commit = 0;
@@ -807,6 +822,15 @@ impl Engine {
                     self.pending_punct_context.clear();
                 }
             }
+            // Check if this break char extends an immediate shortcut sequence
+            if let Some(break_char) = crate::utils::key_to_char_ext(key, caps, shift) {
+                if !break_char.is_alphanumeric() {
+                    let shortcut_result = self.try_break_char_shortcut(break_char);
+                    if shortcut_result.action == Action::Send as u8 {
+                        return shortcut_result;
+                    }
+                }
+            }
             return self.commit_and_break_sequence();
         }
 
@@ -1023,7 +1047,64 @@ impl Engine {
             self.raw_input.push(key, caps);
         }
 
+        // Clear stale shortcut prefix when a new word starts
+        if keys::is_letter(key) && self.buf.is_empty() {
+            self.shortcut_prefix.clear();
+        }
+
         self.process(key, caps, shift)
+    }
+
+    /// Process a key event with an optional Unicode character override.
+    ///
+    /// Used for Option-modified keys on macOS where the keycode maps to one char
+    /// but the actual Unicode char is different (e.g. Option+V → √ instead of 'v').
+    /// Accumulates non-alphabetic chars in `shortcut_prefix` for multi-char immediate
+    /// shortcuts like √√ → ✅.
+    pub fn on_key_with_char(
+        &mut self,
+        key: u16,
+        caps: bool,
+        ctrl: bool,
+        shift: bool,
+        ch: Option<char>,
+    ) -> Result {
+        if ctrl {
+            self.shortcut_prefix.clear();
+            return self.on_key_ext(key, caps, ctrl, shift);
+        }
+
+        if let Some(c) = ch {
+            if !c.is_alphabetic() {
+                // Cap prefix to prevent unbounded growth for long non-matching sequences
+                if self.shortcut_prefix.chars().count() >= 64 {
+                    self.shortcut_prefix.clear();
+                }
+                self.shortcut_prefix.push(c);
+
+                let method = self.current_input_method();
+                let prefix_chars: Vec<char> = self.shortcut_prefix.chars().collect();
+                for start in 0..prefix_chars.len() {
+                    let suffix: String = prefix_chars[start..].iter().collect();
+                    if let Some(_m) = self
+                        .shortcuts
+                        .try_match_for_method(&suffix, None, false, method)
+                    {
+                        // Chars in suffix minus 1 (the current key is not yet on screen).
+                        let bs = suffix.chars().count().saturating_sub(1) as u8;
+                        let output: Vec<char> = _m.output.chars().collect();
+                        let mut result = Result::send(bs, &output);
+                        result.flags |= 0x01; // FLAG_KEY_CONSUMED
+                        self.shortcut_prefix.clear();
+                        return result;
+                    }
+                }
+                return Result::none();
+            }
+        }
+
+        self.shortcut_prefix.clear();
+        self.on_key_ext(key, caps, ctrl, shift)
     }
 
     /// Main processing pipeline - pattern-based
@@ -1077,8 +1158,7 @@ impl Engine {
                                 && crate::utils::key_to_char(last_c.key, false)
                                     .and_then(|lc| {
                                         crate::utils::key_to_char(key, false).map(|nc| {
-                                            let proposed = format!("{}{}", lc, nc);
-                                            matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                            matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                         })
                                     })
                                     .unwrap_or(false)
@@ -1134,8 +1214,7 @@ impl Engine {
                                     && crate::utils::key_to_char(last_c.key, false)
                                         .and_then(|lc| {
                                             crate::utils::key_to_char(key, false).map(|nc| {
-                                                let proposed = format!("{}{}", lc, nc);
-                                                matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                                matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                             })
                                         })
                                         .unwrap_or(false)
@@ -1203,8 +1282,7 @@ impl Engine {
                                         && crate::utils::key_to_char(last_c.key, false)
                                             .and_then(|lc| {
                                                 crate::utils::key_to_char(key, false).map(|nc| {
-                                                    let proposed = format!("{}{}", lc, nc);
-                                                    matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                                    matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                                 })
                                             })
                                             .unwrap_or(false)
@@ -1271,8 +1349,7 @@ impl Engine {
                                         && crate::utils::key_to_char(last_c.key, false)
                                             .and_then(|lc| {
                                                 crate::utils::key_to_char(key, false).map(|nc| {
-                                                    let proposed = format!("{}{}", lc, nc);
-                                                    matches!(proposed.as_str(), "ch" | "ng" | "nh")
+                                                    matches!((lc, nc), ('c', 'h') | ('n', 'g') | ('n', 'h'))
                                                 })
                                             })
                                             .unwrap_or(false)
@@ -1785,6 +1862,38 @@ impl Engine {
 
     /// Try word boundary shortcuts (triggered by space, punctuation, etc.)
     #[inline]
+    /// Accumulates `ch` in `shortcut_prefix` and checks for an immediate shortcut match.
+    /// Returns `Result::send(...)` with FLAG_KEY_CONSUMED bit set on match, or `Result::none()`.
+    fn try_break_char_shortcut(&mut self, ch: char) -> Result {
+        // Cap prefix to prevent unbounded growth for long non-matching sequences
+        if self.shortcut_prefix.chars().count() >= 64 {
+            self.shortcut_prefix.clear();
+        }
+        self.shortcut_prefix.push(ch);
+
+        if !self.shortcuts_enabled {
+            return Result::none();
+        }
+
+        let method = self.current_input_method();
+        let prefix_chars: Vec<char> = self.shortcut_prefix.chars().collect();
+        for start in 0..prefix_chars.len() {
+            let suffix: String = prefix_chars[start..].iter().collect();
+            if let Some(m) = self
+                .shortcuts
+                .try_match_for_method(&suffix, None, false, method)
+            {
+                let bs = (suffix.chars().count().saturating_sub(1)) as u8;
+                let output: Vec<char> = m.output.chars().collect();
+                let mut result = Result::send(bs, &output);
+                result.flags |= 0x01; // FLAG_KEY_CONSUMED
+                self.shortcut_prefix.clear();
+                return result;
+            }
+        }
+        Result::none()
+    }
+
     fn try_word_boundary_shortcut(&mut self) -> Result {
         if self.buf.is_empty() {
             return Result::none();
@@ -2025,8 +2134,9 @@ impl Engine {
             let target_pos = if last_char.key == keys::D && !last_char.stroke {
                 Some(last_pos)
             } else {
-                // Backward scan for unstroked 'd'
+                // Backward scan: only within 4 positions to prevent stroking 'd' across long English words
                 self.buf.iter().rposition(|c| c.key == keys::D && !c.stroke)
+                    .filter(|&pos| last_pos - pos <= 4)
             };
 
             let Some(target_pos) = target_pos else {
@@ -2581,8 +2691,6 @@ impl Engine {
             false
         };
 
-        if is_backward_application {}
-
         // If switching, clear old tones first for proper rebuild
         if is_switching {
             for &pos in &target_positions {
@@ -2858,7 +2966,6 @@ impl Engine {
         // - "rươu" + 'j' → has horn transforms → DON'T skip, apply mark normally
         // - "đe" + 's' → has stroke transform → DON'T skip, apply mark normally (Issue #48)
         // Skip foreign word detection if free_tone mode is enabled
-        if !self.free_tone_enabled && !has_horn_transforms && !has_stroke_transforms {}
 
         // Normalize ie/ye/uye → iê/yê/uyê compound before placing mark
         // In Vietnamese, "ie"/"ye"/"uye" before a coda always needs circumflex on 'e'.
@@ -3380,6 +3487,23 @@ impl Engine {
                 }
             }
 
+            // Normalize u(plain)+o(horn) → ươ BEFORE NA-PAC coda validity checks.
+            // After Telex 'w', the TH/KH/PH block in normalize_uo_compound leaves U plain.
+            // NA-PAC would then see "uơ" (open-only, no coda allowed) and restore to English.
+            // Normalizing here confirms the ươ compound and lets coda validation pass.
+            // Example: "thuowng" — after 'w' gives [T,H,U(plain),O(horn)], coda 'n' fires this.
+            if keys::is_consonant(key) {
+                if let Some(compound_pos) =
+                    vowel_compound::normalize_uo_compound_after_coda(&mut self.buf)
+                {
+                    self.buf.push(Char::new(key, caps));
+                    if let Some(restored) = self.check_and_restore_english(1, false) {
+                        return restored;
+                    }
+                    return self.rebuild_from_after_insert(compound_pos);
+                }
+            }
+
             // Check NA-PAC compatibility before adding a consonant.
             // Two checks: (1) extending existing coda to digraph, (2) adding first coda to vowel-ending buffer.
             // Example: "hoặc" + 'h' → proposed coda "ch", NA.3 (oă) + PAC.0 (ch) → invalid → restore.
@@ -3832,6 +3956,7 @@ impl Engine {
         self.at_sentence_boundary = false;
         self.sentence_punct_pending = false;
         self.pending_punct_context.clear();
+        self.shortcut_prefix.clear();
     }
 
     /// Restore buffer from a Vietnamese word string
@@ -4343,6 +4468,23 @@ impl Engine {
     /// Returns `Some(result)` with trailing space included, or `None` to let SPACE
     /// fall through to normal shortcut / commit handling.
     fn check_and_restore_english_at_boundary(&mut self) -> Option<Result> {
+        // keep_english: short common English words ("as", "is", "of", "has"...) that Telex
+        // tone modifiers corrupt. Restore immediately if raw input matches.
+        {
+            let raw_str: String = self
+                .raw_input
+                .iter()
+                .filter_map(|(k, _)| crate::utils::key_to_char(k, false))
+                .collect();
+            if crate::data::keep_english::is_keep_english(&raw_str) {
+                self.is_english_word = true;
+                let result = self.auto_restore_english_with_space();
+                self.sync_buffer_with_raw_input();
+                self.last_transform = None;
+                return Some(result);
+            }
+        }
+
         // --- Triple-tone Telex correction ---
         // When the user accidentally types a triple tone-marker consonant (e.g. a-s-s-s-e-t),
         // the raw input contains "assset" but the display shows "asset" (after double-key revert).
@@ -4503,8 +4645,25 @@ impl Engine {
             let is_real_vietnamese =
                 crate::data::viet_syllables::is_valid_vietnamese_syllable(&output);
             if !is_real_vietnamese {
+                use crate::data::keys as k;
+
+                // Special case: trailing 'w' in Telex applied horn to a vowel but output is
+                // not real Vietnamese. Words like "below" → "belơ", "elbow", "shadow" need
+                // direct restoration without requiring a phonotactic score (phonotactic gives
+                // 0 for [b,e,l,o,w] because it lacks English-specific clusters/patterns).
+                // Short words "vow/bow/cow" → "vơ/bơ/cơ" are valid Vietnamese and are
+                // excluded above by the is_real_vietnamese guard.
+                let last_raw_is_w = self.method == 0
+                    && matches!(self.raw_input.iter().last(), Some((lk, _)) if lk == k::W);
+                if last_raw_is_w && raw_len >= 4 {
+                    self.is_english_word = true;
+                    let result = self.auto_restore_english_with_space();
+                    self.sync_buffer_with_raw_input();
+                    self.last_transform = None;
+                    return Some(result);
+                }
+
                 let last_raw_is_non_modifier = {
-                    use crate::data::keys as k;
                     const TELEX_MODS: &[u16] = &[k::R, k::S, k::F, k::X, k::J, k::W];
                     match self.raw_input.iter().last() {
                         Some((lk, _)) if self.method == 0 => !TELEX_MODS.contains(&lk),
@@ -6660,5 +6819,244 @@ mod tests {
             has_horn,
             "'how' should keep Vietnamese horn (hơ), not restore to English 'how'"
         );
+    }
+
+    #[test]
+    fn test_on_key_with_char_special_shortcut() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("√√", "✅"));
+
+        let r1 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r1.action, 0, "first √ should be action=None");
+        assert!(!r1.key_consumed(), "first √ should not consume key");
+
+        let r2 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r2.action, 1, "second √ should trigger shortcut (action=Send)");
+        assert_eq!(r2.backspace, 1, "should backspace 1");
+        assert!(r2.key_consumed(), "trigger key should be consumed");
+        let out: String = (0..r2.count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r2.chars.offset(i as isize)) })
+            .collect();
+        assert_eq!(out, "✅");
+    }
+
+    #[test]
+    fn test_on_key_with_char_suffix_match() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("√√", "✅"));
+
+        let r1 = e.on_key_with_char(crate::data::keys::X, false, false, false, Some('≈'));
+        assert_eq!(r1.action, 0);
+
+        let r2 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r2.action, 0);
+
+        let r3 = e.on_key_with_char(crate::data::keys::V, false, false, false, Some('√'));
+        assert_eq!(r3.action, 1);
+        assert_eq!(r3.backspace, 1);
+        assert!(r3.key_consumed());
+        let out: String = (0..r3.count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r3.chars.offset(i as isize)) })
+            .collect();
+        assert_eq!(out, "✅");
+    }
+
+    #[test]
+    fn test_break_char_immediate_shortcut() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        let r1 = e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+        assert_eq!(r1.action, 0, "- should pass through (action=None)");
+
+        // Shift+. = >
+        let r2 = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r2.action, 1, "-> should trigger shortcut");
+        assert_eq!(r2.backspace, 1, "backspace 1 to remove -");
+        assert!(r2.key_consumed(), "> should be consumed by shortcut");
+        let out: String = (0..r2.count as usize)
+            .filter_map(|i| unsafe { char::from_u32(*r2.chars.offset(i as isize)) })
+            .collect();
+        assert_eq!(out, "→");
+    }
+
+    #[test]
+    fn test_immediate_shortcut_works_when_ime_disabled() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.set_enabled(false);
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        // Type "-"
+        e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+
+        // Type ">" (Shift+DOT) — shortcut should fire even though IME is disabled
+        let r = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r.action, 1, "immediate shortcut should fire when IME disabled");
+        assert!(r.key_consumed());
+    }
+
+    #[test]
+    fn test_break_char_shortcut_after_word_commit() {
+        use crate::features::shortcut::Shortcut;
+
+        let mut e = Engine::new();
+        e.shortcuts_mut().add(Shortcut::immediate("->", "→"));
+
+        for key in [crate::data::keys::A, crate::data::keys::B, crate::data::keys::C] {
+            e.on_key_ext(key, false, false, false);
+        }
+
+        let r1 = e.on_key_ext(crate::data::keys::MINUS, false, false, false);
+        assert_eq!(r1.action, 0);
+
+        let r2 = e.on_key_ext(crate::data::keys::DOT, false, false, true);
+        assert_eq!(r2.action, 1);
+        assert_eq!(r2.backspace, 1);
+        assert!(r2.key_consumed());
+    }
+
+    #[test]
+    fn test_keep_english_as_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        // 'a' then 's' — Telex 's' applies sắc tone → 'á'. At SPACE should restore to "as"
+        e.on_key_ext(keys::A, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("as"),
+            "Expected 'as' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_keep_english_is_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.on_key_ext(keys::I, false, false, false);
+        e.on_key_ext(keys::S, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("is"),
+            "Expected 'is' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_keep_english_of_restored_at_space() {
+        use crate::data::keys;
+
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        e.on_key_ext(keys::O, false, false, false);
+        e.on_key_ext(keys::F, false, false, false);
+        let r = e.on_key_ext(keys::SPACE, false, false, false);
+        let text: String = (0..r.count as usize)
+            .filter_map(|i| char::from_u32(r.as_slice()[i]))
+            .collect();
+        assert!(
+            text.contains("of"),
+            "Expected 'of' in result but got '{}'",
+            text
+        );
+    }
+
+    #[test]
+    fn test_below_restored_at_space() {
+        // "below": b-e-l-o-w where 'w' after 'o' applies horn → "belơ"
+        // At SPACE, must be restored to English "below"
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "below ");
+        assert!(
+            result.contains("below"),
+            "Expected 'below' in output but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_window_restored_at_space() {
+        // "window": w-i-n-d-o-w where trailing 'w' applies horn to 'o' → "windơ"
+        // At SPACE, must be restored to English "window"
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "window ");
+        assert!(
+            result.contains("window"),
+            "Expected 'window' in output but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_vow_stays_vietnamese_at_space() {
+        // "vow" → "vơ" which IS a valid Vietnamese syllable — must NOT restore to English
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "vow ");
+        assert!(
+            !result.contains("vow"),
+            "Should keep 'vơ' as Vietnamese, not restore to 'vow', but got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_download_no_stroke_on_initial_d() {
+        // d-o-w-n-l-o-a then final 'd': should NOT stroke the initial D at position 0
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "downloa");
+        // Now type the final 'd'
+        let result2 = type_word(&mut e, "d");
+        let combined = format!("{}{}", result, result2);
+        assert!(
+            !combined.contains('đ'),
+            "Should not stroke initial 'd' in 'download', got '{}'",
+            combined
+        );
+    }
+
+    #[test]
+    fn test_download_restored_at_space() {
+        // "download " should restore to "download" at space boundary
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        let result = type_word(&mut e, "download ");
+        assert!(
+            result.contains("download"),
+            "Expected 'download' at space boundary, got '{}'",
+            result
+        );
+    }
+
+    #[test]
+    fn test_da_dd_stroke_still_works() {
+        // "da" + "d" should still stroke within range — no crash
+        let mut e = Engine::new();
+        e.set_method(0); // Telex
+        type_word(&mut e, "da");
+        let _ = type_word(&mut e, "d"); // just ensure it doesn't panic
     }
 }

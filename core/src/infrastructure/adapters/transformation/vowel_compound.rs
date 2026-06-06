@@ -116,6 +116,37 @@ pub fn normalize_uo_compound(buf: &mut Buffer) -> Option<usize> {
     None
 }
 
+/// Normalize uơ → ươ when a coda consonant confirms the ươ compound.
+///
+/// Unlike `normalize_uo_compound`, this variant does NOT skip TH/KH/PH digraphs.
+/// It is only called when a coda consonant has just been added to the buffer,
+/// which phonologically confirms that U+O form the compound vowel ươ (not a
+/// plain glide U + nucleus ơ). Example: "thuowng" — after 'w', O gets horn
+/// leaving U plain; when 'n' is typed the coda confirms ươ → U gets horn too.
+///
+/// Returns Some(position) of the 'u' that was modified, None if no change.
+pub fn normalize_uo_compound_after_coda(buf: &mut Buffer) -> Option<usize> {
+    for i in 0..buf.len().saturating_sub(1) {
+        let (k1, t1, k2, t2) = match (buf.get(i), buf.get(i + 1)) {
+            (Some(c1), Some(c2)) => (c1.key, c1.tone, c2.key, c2.tone),
+            _ => continue,
+        };
+
+        // U plain + O horn → normalize to ươ (coda confirmed compound)
+        // Q-initial exception preserved (quơ stays quơ)
+        if k1 == keys::U && t1 == tone::NONE && k2 == keys::O && t2 == tone::HORN {
+            let is_q_initial = i > 0 && buf.get(i - 1).map_or(false, |p| p.key == keys::Q);
+            if !is_q_initial {
+                if let Some(c) = buf.get_mut(i) {
+                    c.tone = tone::HORN;
+                    return Some(i);
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Normalize ie/ye/uye → iê/yê/uyê compound before tone mark application.
 ///
 /// In Vietnamese, "ie"/"ye"/"uye" before a final consonant ALWAYS requires

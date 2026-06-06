@@ -1522,3 +1522,68 @@ fn test_case_suffix_auto_restore_at_space() {
         );
     }
 }
+
+// =============================================================================
+// TEST SUITE: English dictionary regression — dictionary lookup API
+// =============================================================================
+
+/// Verify the 18k dictionary contains the words that were previously bugged
+/// (English words incorrectly converted to Vietnamese).
+#[test]
+fn english_dict_contains_regression_words() {
+    use goxviet_core::data::is_english_word;
+
+    // "bierer" and "birch" are not in the 18k common-word dictionary (rare words),
+    // but "bios", "text", "expect", "computer", "special" must be present.
+    let regression_words = ["bios", "text", "expect", "computer", "special"];
+    let missing: Vec<&str> = regression_words
+        .iter()
+        .filter(|&&w| !is_english_word(w))
+        .copied()
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "Words missing from English dictionary: {:?}. Check english_dict_merged.txt",
+        missing
+    );
+}
+
+/// Common Vietnamese words must NOT appear in the English dictionary.
+#[test]
+fn english_dict_returns_false_for_vietnamese() {
+    use goxviet_core::data::is_english_word;
+
+    // "nam" is in the English dictionary (means "South"), so we avoid it here.
+    // Use words that have no English meaning.
+    let viet_words = ["xin", "các", "đây"];
+    for word in viet_words {
+        assert!(
+            !is_english_word(word),
+            "Vietnamese word '{}' incorrectly in English dictionary",
+            word
+        );
+    }
+}
+
+/// EnglishDictAdapter must return confidence 100 for known English words.
+#[test]
+fn english_dict_adapter_high_confidence_for_known_words() {
+    use goxviet_core::infrastructure::adapters::validation::english::EnglishDictAdapter;
+
+    let adapter = EnglishDictAdapter::new();
+    assert_eq!(adapter.confidence("text"), 100, "Expected confidence 100 for 'text'");
+    assert_eq!(adapter.confidence("expect"), 100, "Expected confidence 100 for 'expect'");
+    assert_eq!(adapter.confidence("computer"), 100, "Expected confidence 100 for 'computer'");
+}
+
+/// EnglishDictAdapter must return confidence 0 for non-English inputs.
+#[test]
+fn english_dict_adapter_zero_confidence_for_non_english() {
+    use goxviet_core::infrastructure::adapters::validation::english::EnglishDictAdapter;
+
+    let adapter = EnglishDictAdapter::new();
+    assert_eq!(adapter.confidence("xin"), 0);
+    assert_eq!(adapter.confidence(""), 0);
+    assert_eq!(adapter.confidence("zxqvw"), 0);
+}

@@ -2,7 +2,7 @@
 
 **Version:** 2.0.0  
 **Date:** 2026-02-11  
-**Status:** Design Phase  
+**Status:** Implemented (v2) — v1 API removed in v3.0.0  
 **Priority:** CRITICAL - Fixes Swift FFI ABI issue
 
 ---
@@ -13,7 +13,7 @@
 
 **Solution:** Redesign FFI API to return status codes and write results via out parameters.
 
-**Impact:** Breaking change requiring version bump (v1 → v2), but maintains backward compatibility via dual API.
+**Impact:** Breaking change — v1 API was removed in v3.0.0. All callers must use v2.
 
 ---
 
@@ -22,7 +22,7 @@
 1. **Out Parameters:** All complex results passed via mutable pointers
 2. **Status Codes:** Return `c_int` for success/error status
 3. **C89 Compatible:** Works with C, Swift, C#, and all FFI consumers
-4. **Backward Compatible:** Keep v1 API, add v2 alongside
+4. **v2 Only:** v1 API removed in v3.0.0 — v2 is the sole API
 5. **Memory Safety:** Clear ownership rules, documented lifecycle
 
 ---
@@ -66,6 +66,7 @@ typedef struct {
     char* text;                // UTF-8 string (caller must free)
     uint8_t backspace_count;   // Number of backspaces
     bool consumed;             // Whether key was consumed
+    bool key_consumed;         // Whether the key event should be suppressed
 } FfiProcessResult_v2;
 
 // Return codes
@@ -109,29 +110,36 @@ if (status == FFI_SUCCESS) {
 
 ### 1. Status Codes
 
-```c
+```rust
 // ffi/types.rs
 #[repr(C)]
 pub enum FfiStatusCode {
     Success = 0,
-    
+
     // Input errors
     ErrorNullEngine = -1,
     ErrorNullOutput = -2,
     ErrorNullConfig = -3,
     ErrorInvalidKey = -4,
-    
+    ErrorInvalidArgument = -5,
+
     // Processing errors
     ErrorProcessingFailed = -10,
     ErrorInvalidUtf8 = -11,
-    
+    ErrorParseError = -12,
+
+    // Shortcut errors
+    ErrorAlreadyExists = -30,
+    ErrorNotFound = -31,
+
     // System errors
     ErrorOutOfMemory = -20,
+    ErrorUnknown = -98,
     ErrorPanic = -99,
 }
 
 impl FfiStatusCode {
-    pub fn to_c_int(self) -> c_int {
+    pub const fn to_c_int(self) -> c_int {
         self as c_int
     }
 }
@@ -145,22 +153,44 @@ impl FfiStatusCode {
 /// Process key result (v2) - OUT PARAMETER
 #[repr(C)]
 pub struct FfiProcessResult_v2 {
-    /// UTF-8 text to insert (caller must free with ime_free_string)
+    /// UTF-8 text to insert (caller must free with ime_free_string_v2)
     pub text: *mut c_char,
-    
     /// Number of backspaces to perform
     pub backspace_count: u8,
-    
-    /// Whether key was consumed by IME
+    /// Whether the input was consumed (IME processed the key)
     pub consumed: bool,
+    /// Whether the triggering key was consumed by a shortcut.
+    /// When true, the platform layer must NOT re-insert the triggering character.
+    pub key_consumed: bool,
 }
 
-/// Config structure (for get_config_v2)
+/// Config structure (for get_config_v2 / set_config_v2)
 #[repr(C)]
 pub struct FfiConfig_v2 {
     pub input_method: FfiInputMethod,
     pub tone_style: FfiToneStyle,
     pub smart_mode: bool,
+    pub instant_restore_enabled: bool,
+    pub esc_restore_enabled: bool,
+    pub enable_shortcuts: bool,
+    pub bracket_shortcuts_enabled: bool,
+    pub foreign_consonants_enabled: bool,
+    pub auto_capitalise_enabled: bool,
+    pub word_history_enabled: bool,
+    pub free_tone_enabled: bool,
+    pub skip_w_shortcut: bool,
+}
+
+/// Extended shortcut descriptor for ime_add_shortcut_ext_v2
+/// All pointer fields are owned by the caller — not freed by Rust.
+#[repr(C)]
+pub struct FfiShortcutExt_v2 {
+    pub trigger: *const c_char,      // Null-terminated UTF-8 (caller owns)
+    pub replacement: *const c_char,  // Null-terminated UTF-8 (caller owns)
+    pub trigger_condition: u8,       // 0 = OnWordBoundary, 1 = Immediate
+    pub case_mode: u8,               // 0 = MatchCase, 1 = Exact
+    pub enabled: bool,
+    pub input_method: u8,            // 0 = All, 1 = TelexOnly, 2 = VniOnly
 }
 
 /// Version info
@@ -175,163 +205,147 @@ pub struct FfiVersionInfo {
 
 ### 3. Core API Functions (v2)
 
-```c
+```rust
 // ffi/api.rs
 
 /// Create engine instance
-/// 
-/// @param config Initial configuration (can be NULL for defaults)
-/// @return Engine pointer or NULL on failure
+/// @param config  Initial configuration (NULL for defaults)
+/// @return Engine pointer on success, NULL on failure
 #[no_mangle]
-pub extern "C" fn ime_create_engine_v2(config: *const FfiConfig_v2) -> *mut c_void {
-    // Implementation (no change needed, already returns pointer)
-}
+pub extern "C" fn ime_create_engine_v2(config: *const FfiConfig_v2) -> *mut c_void
 
-/// Destroy engine instance
-/// 
-/// @param engine_ptr Engine to destroy (safe to pass NULL)
+/// Destroy engine instance (safe to pass NULL)
 #[no_mangle]
-pub extern "C" fn ime_destroy_engine_v2(engine_ptr: *mut c_void) {
-    // Implementation (no change needed)
-}
+pub extern "C" fn ime_destroy_engine_v2(engine_ptr: *mut c_void)
+
+/// Reset buffer state without destroying engine (preserves shortcuts and config)
+#[no_mangle]
+pub extern "C" fn ime_reset_buffer_v2(engine_ptr: *mut c_void) -> FfiStatusCode
+
+/// Reset all state including word history (preserves shortcuts and config)
+/// Use when cursor moves or app switches.
+#[no_mangle]
+pub extern "C" fn ime_reset_all_v2(engine_ptr: *mut c_void) -> FfiStatusCode
 
 /// Process single keystroke
-/// 
-/// @param engine_ptr Engine instance (must not be NULL)
-/// @param key_char  Character to process
-/// @param out       Output result (must not be NULL)
+/// @param engine_ptr  Engine (must not be NULL)
+/// @param key_char    ASCII character
+/// @param out         Output result (must not be NULL)
 /// @return Status code (0 = success, <0 = error)
 #[no_mangle]
 pub extern "C" fn ime_process_key_v2(
     engine_ptr: *mut c_void,
     key_char: c_char,
     out: *mut FfiProcessResult_v2,
-) -> c_int {
-    use std::panic::catch_unwind;
-    use std::panic::AssertUnwindSafe;
-    
-    // Null checks
-    if engine_ptr.is_null() {
-        return FfiStatusCode::ErrorNullEngine.to_c_int();
-    }
-    if out.is_null() {
-        return FfiStatusCode::ErrorNullOutput.to_c_int();
-    }
-    
-    // Panic safety
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        // Cast to engine
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-        
-        // Process key
-        let key_event = KeyEvent::Character(key_char as u8 as char);
-        let result = engine.processor_service.process_key(&mut engine.buffer_manager, key_event);
-        
-        // Convert to FFI
-        let ffi_result = FfiProcessResult_v2 {
-            text: result.text.into_raw_c_string(),
-            backspace_count: result.backspace_count,
-            consumed: result.consumed,
-        };
-        
-        // Write to out parameter
-        unsafe { *out = ffi_result; }
-        
-        FfiStatusCode::Success
-    }));
-    
-    match result {
-        Ok(status) => status.to_c_int(),
-        Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
-    }
-}
+) -> c_int
+
+/// Process key with extended modifiers (caps, shift, ctrl)
+/// Required for Shift+Backspace, correct casing, modifier-aware processing.
+#[no_mangle]
+pub extern "C" fn ime_process_key_ext_v2(
+    engine_ptr: *mut c_void,
+    key_char: c_char,
+    caps: bool,
+    shift: bool,
+    ctrl: bool,
+    out: *mut FfiProcessResult_v2,
+) -> c_int
+
+/// Process key with an optional Unicode codepoint (for Option-modified keys on macOS)
+/// @param char_code  Actual Unicode codepoint (0 = use keycode mapping only)
+#[no_mangle]
+pub extern "C" fn ime_key_with_char_v2(
+    engine_ptr: *mut c_void,
+    key_char: c_char,
+    caps: bool,
+    shift: bool,
+    ctrl: bool,
+    char_code: u32,
+    out: *mut FfiProcessResult_v2,
+) -> c_int
 
 /// Get current configuration
-/// 
-/// @param engine_ptr Engine instance (must not be NULL)
-/// @param out        Output config (must not be NULL)
-/// @return Status code
 #[no_mangle]
-pub extern "C" fn ime_get_config_v2(
-    engine_ptr: *mut c_void,
-    out: *mut FfiConfig_v2,
-) -> c_int {
-    if engine_ptr.is_null() || out.is_null() {
-        return FfiStatusCode::ErrorNullEngine.to_c_int();
-    }
-    
-    let engine = unsafe { &*(engine_ptr as *const Engine) };
-    let config = engine.config_service.get_config();
-    
-    unsafe {
-        *out = FfiConfig_v2 {
-            input_method: config.input_method.into(),
-            tone_style: config.tone_style.into(),
-            smart_mode: config.smart_mode,
-        };
-    }
-    
-    FfiStatusCode::Success.to_c_int()
-}
+pub extern "C" fn ime_get_config_v2(engine_ptr: *mut c_void, out: *mut FfiConfig_v2) -> c_int
 
 /// Set configuration
-/// 
-/// @param engine_ptr Engine instance (must not be NULL)
-/// @param config     New configuration (must not be NULL)
-/// @return Status code
 #[no_mangle]
-pub extern "C" fn ime_set_config_v2(
-    engine_ptr: *mut c_void,
-    config: *const FfiConfig_v2,
-) -> c_int {
-    if engine_ptr.is_null() || config.is_null() {
-        return FfiStatusCode::ErrorNullEngine.to_c_int();
-    }
-    
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-    let ffi_config = unsafe { &*config };
-    
-    let rust_config = EngineConfig {
-        input_method: ffi_config.input_method.into(),
-        tone_style: ffi_config.tone_style.into(),
-        smart_mode: ffi_config.smart_mode,
-    };
-    
-    engine.config_service.set_config(rust_config);
-    FfiStatusCode::Success.to_c_int()
-}
+pub extern "C" fn ime_set_config_v2(engine_ptr: *mut c_void, config: *const FfiConfig_v2) -> c_int
 
 /// Get version information
-/// 
-/// @param out Output version info (must not be NULL)
-/// @return Status code
 #[no_mangle]
-pub extern "C" fn ime_get_version_v2(out: *mut FfiVersionInfo) -> c_int {
-    if out.is_null() {
-        return FfiStatusCode::ErrorNullOutput.to_c_int();
-    }
-    
-    unsafe {
-        *out = FfiVersionInfo {
-            major: 2,
-            minor: 0,
-            patch: 0,
-            api_version: 2,
-        };
-    }
-    
-    FfiStatusCode::Success.to_c_int()
-}
+pub extern "C" fn ime_get_version_v2(out: *mut FfiVersionInfo) -> c_int
 
-/// Free string allocated by Rust
-/// 
-/// @param ptr String pointer (safe to pass NULL)
+/// Free string allocated by Rust (safe to pass NULL)
 #[no_mangle]
-pub extern "C" fn ime_free_string_v2(ptr: *mut c_char) {
-    if !ptr.is_null() {
-        unsafe { drop(CString::from_raw(ptr)); }
-    }
-}
+pub extern "C" fn ime_free_string_v2(ptr: *mut c_char)
+
+/// Restore current buffer to raw ASCII input (undo all Vietnamese transforms)
+#[no_mangle]
+pub extern "C" fn ime_restore_to_raw_v2(engine_ptr: *mut c_void, out: *mut FfiProcessResult_v2) -> c_int
+
+/// Export current displayed buffer as UTF-32 codepoints.
+/// Returns codepoints written, or -1 on error.
+#[no_mangle]
+pub extern "C" fn ime_get_buffer_v2(engine: *mut c_void, out_buf: *mut u32, capacity: i64) -> i64
+
+/// Parse a Vietnamese word back into the engine buffer (for backspace-into-word).
+#[no_mangle]
+pub extern "C" fn ime_restore_word_v2(engine: *mut c_void, word: *const c_char) -> c_int
+```
+
+### 4. Shortcut Management API (v2)
+
+```rust
+// ffi/api.rs
+
+/// Add shortcut (trigger → expansion)
+#[no_mangle]
+pub extern "C" fn ime_add_shortcut_v2(
+    engine: *mut c_void,
+    trigger: *const c_char,
+    expansion: *const c_char,
+) -> FfiStatusCode
+
+/// Add shortcut with extended fields (smart case, trigger condition, input method filter)
+#[no_mangle]
+pub extern "C" fn ime_add_shortcut_ext_v2(
+    engine: *mut c_void,
+    ext: *const FfiShortcutExt_v2,
+) -> FfiStatusCode
+
+/// Remove shortcut by trigger
+#[no_mangle]
+pub extern "C" fn ime_remove_shortcut_v2(engine: *mut c_void, trigger: *const c_char) -> FfiStatusCode
+
+/// Clear all shortcuts
+#[no_mangle]
+pub extern "C" fn ime_clear_shortcuts_v2(engine: *mut c_void) -> FfiStatusCode
+
+/// Get shortcut count
+#[no_mangle]
+pub extern "C" fn ime_shortcuts_count_v2(engine: *mut c_void) -> c_int
+
+/// Enable/disable shortcuts globally
+#[no_mangle]
+pub extern "C" fn ime_set_shortcuts_enabled_v2(engine: *mut c_void, enabled: bool) -> FfiStatusCode
+```
+
+### 5. Input Method Config API (v2)
+
+```rust
+/// Load a data-driven InputMethodConfig from JSON bytes.
+///
+/// JSON format:
+///   {"name":"telex","mappings":{"s":"tone_sac","f":"tone_huyen","dd":"stroke_d"}}
+///
+/// Does NOT require NUL terminator — use raw pointer + length.
+#[no_mangle]
+pub extern "C" fn ime_load_input_config_v2(
+    engine_ptr: *mut c_void,
+    config_json: *const u8,
+    len: usize,
+) -> FfiStatusCode
 ```
 
 ---
@@ -403,7 +417,8 @@ class GoxVietEngine {
         var result = FfiProcessResult_v2(
             text: nil,
             backspace_count: 0,
-            consumed: false
+            consumed: false,
+            key_consumed: false
         )
         
         // Call FFI (pass by reference)
@@ -459,6 +474,8 @@ public class GoxVietEngine : IDisposable
         public byte backspace_count;
         [MarshalAs(UnmanagedType.I1)]
         public bool consumed;
+        [MarshalAs(UnmanagedType.I1)]
+        public bool key_consumed;
     }
     
     [DllImport("goxviet_core", CallingConvention = CallingConvention.Cdecl)]
@@ -529,47 +546,6 @@ public class GoxVietEngine : IDisposable
 
 ---
 
-## Backward Compatibility Strategy
-
-### Dual API Approach
-
-Keep both v1 and v2 APIs for 2-3 releases:
-
-```rust
-// OLD API (v1) - Marked deprecated
-#[deprecated(since = "2.0.0", note = "Use ime_process_key_v2 instead")]
-#[no_mangle]
-pub extern "C" fn ime_process_key(
-    engine_ptr: *mut c_void,
-    key_char: c_char,
-) -> FfiProcessResult {
-    // Keep implementation, mark deprecated
-    // ...
-}
-
-// NEW API (v2) - Recommended
-#[no_mangle]
-pub extern "C" fn ime_process_key_v2(
-    engine_ptr: *mut c_void,
-    key_char: c_char,
-    out: *mut FfiProcessResult_v2,
-) -> c_int {
-    // New implementation
-    // ...
-}
-```
-
-### Migration Timeline
-
-```
-v2.0.0 (Now)     → Introduce v2 API, deprecate v1
-v2.1.0 (+1 month) → Warning if using v1
-v2.2.0 (+2 months) → Final warning
-v3.0.0 (+3 months) → Remove v1 API (breaking change)
-```
-
----
-
 ## Testing Strategy
 
 ### 1. C Test (Reference)
@@ -601,7 +577,7 @@ func testProcessKeyV2() {
     let engine = ime_create_engine_v2(nil)
     XCTAssertNotNil(engine)
     
-    var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false)
+    var result = FfiProcessResult_v2(text: nil, backspace_count: 0, consumed: false, key_consumed: false)
     let status = ime_process_key_v2(engine!, 97, &result)  // 'a'
     
     XCTAssertEqual(status, FFI_SUCCESS)
@@ -618,11 +594,11 @@ func testProcessKeyV2() {
 
 | Platform | Compiler | API | Status | Notes |
 |----------|----------|-----|--------|-------|
-| macOS | clang | v2 | ✅ Must pass | C reference |
-| macOS | swiftc standalone | v2 | ✅ Must pass | Fixes ABI issue |
-| macOS | Xcode | v2 | ✅ Must pass | Production |
-| Windows | MSVC | v2 | ✅ Must pass | C# interop |
-| Windows | MinGW | v2 | ✅ Must pass | C interop |
+| macOS | clang | v2 | ✅ Passing | C reference |
+| macOS | swiftc standalone | v2 | ✅ Passing | ABI issue resolved |
+| macOS | Xcode | v2 | ✅ Passing | Production |
+| Windows | MSVC | v2 | ✅ Target | C# interop |
+| Windows | MinGW | v2 | ✅ Target | C interop |
 
 ---
 
@@ -685,40 +661,6 @@ ime_free_string_v2(result.text);
 
 ---
 
-## Implementation Checklist
-
-### Phase 1: Core Implementation
-- [ ] Define FfiStatusCode enum
-- [ ] Define FfiProcessResult_v2 struct
-- [ ] Define FfiConfig_v2 struct
-- [ ] Define FfiVersionInfo struct
-- [ ] Implement ime_process_key_v2
-- [ ] Implement ime_get_config_v2
-- [ ] Implement ime_set_config_v2
-- [ ] Implement ime_get_version_v2
-- [ ] Implement ime_free_string_v2
-
-### Phase 2: Testing
-- [ ] Create test_ffi_v2.c (C reference test)
-- [ ] Create test_ffi_v2.swift (Swift standalone test)
-- [ ] Run all tests and verify pass
-- [ ] Verify Swift ABI issue is fixed
-- [ ] Benchmark v1 vs v2 performance
-
-### Phase 3: Integration
-- [ ] Update Xcode project to use v2 API
-- [ ] Update Windows client to use v2 API
-- [ ] Mark v1 API as deprecated
-- [ ] Update documentation
-- [ ] Create migration guide
-
-### Phase 4: Release
-- [ ] Version bump to 2.0.0
-- [ ] Update CHANGELOG.md
-- [ ] Create release notes
-- [ ] Tag release
-- [ ] Monitor for issues
-
 ---
 
 ## Success Criteria
@@ -741,16 +683,4 @@ ime_free_string_v2(result.text);
 
 ---
 
-**Next Steps:**
-1. Review and approve design
-2. Implement Phase 1 (core API)
-3. Test with C and Swift
-4. Verify ABI issue resolved
-5. Update documentation
-6. Release v2.0.0
-
----
-
-**Document Status:** ✅ READY FOR REVIEW  
-**Estimated Implementation Time:** 4-6 hours  
-**Risk Level:** LOW (backward compatible, well-tested pattern)
+**Document Status:** ✅ IMPLEMENTED — v2 API is live; v1 removed in v3.0.0

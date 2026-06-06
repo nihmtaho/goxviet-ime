@@ -192,6 +192,9 @@ pub struct FfiProcessResult_v2 {
     pub backspace_count: u8,
     /// Whether the input was consumed
     pub consumed: bool,
+    /// Whether the triggering key was consumed by a shortcut.
+    /// When true, the platform layer must NOT re-insert the triggering character.
+    pub key_consumed: bool,
 }
 
 impl Default for FfiProcessResult_v2 {
@@ -200,6 +203,7 @@ impl Default for FfiProcessResult_v2 {
             text: std::ptr::null_mut(),
             backspace_count: 0,
             consumed: false,
+            key_consumed: false,
         }
     }
 }
@@ -228,6 +232,10 @@ pub struct FfiConfig_v2 {
     pub auto_capitalise_enabled: bool,
     /// Enable backspace-after-space word history restore
     pub word_history_enabled: bool,
+    /// Enable free tone placement (skip spelling validation)
+    pub free_tone_enabled: bool,
+    /// Skip w→ư shortcut at word start in Telex mode
+    pub skip_w_shortcut: bool,
 }
 
 impl Default for FfiConfig_v2 {
@@ -243,8 +251,27 @@ impl Default for FfiConfig_v2 {
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
             word_history_enabled: false,
+            free_tone_enabled: false,
+            skip_w_shortcut: false,
         }
     }
+}
+
+/// Extended shortcut descriptor for `ime_add_shortcut_ext_v2`.
+/// All pointer fields are owned by the caller — not freed by Rust.
+#[repr(C)]
+pub struct FfiShortcutExt_v2 {
+    /// Null-terminated UTF-8 trigger string (caller owns)
+    pub trigger: *const std::os::raw::c_char,
+    /// Null-terminated UTF-8 replacement string (caller owns)
+    pub replacement: *const std::os::raw::c_char,
+    /// 0 = OnWordBoundary (default), 1 = Immediate
+    pub trigger_condition: u8,
+    /// 0 = MatchCase (default), 1 = Exact
+    pub case_mode: u8,
+    pub enabled: bool,
+    /// 0 = All (default), 1 = TelexOnly, 2 = VniOnly
+    pub input_method: u8,
 }
 
 /// Version information
@@ -320,6 +347,32 @@ mod tests {
         assert_eq!(
             std::mem::size_of::<FfiToneStyle>(),
             std::mem::size_of::<c_int>()
+        );
+    }
+
+    #[test]
+    fn test_ffi_process_result_v2_key_consumed_default() {
+        let r = FfiProcessResult_v2::default();
+        assert!(!r.key_consumed, "key_consumed defaults to false");
+    }
+
+    #[test]
+    fn test_ffi_config_v2_new_fields_default() {
+        let cfg = FfiConfig_v2::default();
+        assert!(!cfg.free_tone_enabled);
+        assert!(!cfg.skip_w_shortcut);
+    }
+
+    #[test]
+    fn test_ffi_process_result_v2_size_stable() {
+        // This test guards the ABI layout of FfiProcessResult_v2.
+        // If this fails, the Swift bridge structs must be updated to match.
+        // Current layout: *mut c_char (8) + u8 (1) + bool (1) + bool (1) + padding = 16 bytes
+        let actual = std::mem::size_of::<FfiProcessResult_v2>();
+        assert!(
+            actual == 16,
+            "FfiProcessResult_v2 size changed to {} bytes — update Swift bridge structs",
+            actual
         );
     }
 }

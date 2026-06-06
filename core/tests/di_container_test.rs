@@ -30,6 +30,8 @@ fn telex_config() -> EngineConfig {
         foreign_consonants_enabled: false,
         auto_capitalise_enabled: false,
         word_history_enabled: false,
+        free_tone_enabled: false,
+        skip_w_shortcut: false,
     }
 }
 

@@ -87,6 +87,7 @@ pub fn from_tone_style(style: TonePlacementStyle) -> FfiToneStyle {
 }
 
 /// Convert FfiConfig to EngineConfig
+// Legacy v1 path: FfiConfig has no free_tone_enabled; always defaults to false after round-trip.
 pub fn to_engine_config(config: FfiConfig) -> EngineConfig {
     EngineConfig {
         input_method: to_input_method_id(config.input_method),
@@ -105,10 +106,13 @@ pub fn to_engine_config(config: FfiConfig) -> EngineConfig {
         foreign_consonants_enabled: false,
         auto_capitalise_enabled: false,
         word_history_enabled: false,
+        free_tone_enabled: false,
+        skip_w_shortcut: false,
     }
 }
 
 /// Convert EngineConfig to FfiConfig
+// Legacy v1 path: FfiConfig has no free_tone_enabled; always defaults to false after round-trip.
 pub fn from_engine_config(config: &EngineConfig) -> FfiConfig {
     FfiConfig {
         input_method: from_input_method_id(config.input_method),
@@ -141,6 +145,8 @@ pub fn to_engine_config_v2(config: &FfiConfig_v2) -> EngineConfig {
         foreign_consonants_enabled: config.foreign_consonants_enabled,
         auto_capitalise_enabled: config.auto_capitalise_enabled,
         word_history_enabled: config.word_history_enabled,
+        free_tone_enabled: config.free_tone_enabled,
+        skip_w_shortcut: config.skip_w_shortcut,
     }
 }
 
@@ -161,6 +167,8 @@ pub fn from_engine_config_v2(config: &EngineConfig) -> FfiConfig_v2 {
         foreign_consonants_enabled: config.foreign_consonants_enabled,
         auto_capitalise_enabled: config.auto_capitalise_enabled,
         word_history_enabled: config.word_history_enabled,
+        free_tone_enabled: config.free_tone_enabled,
+        skip_w_shortcut: config.skip_w_shortcut,
     }
 }
 
@@ -182,13 +190,15 @@ pub fn to_ffi_process_result_v2(result: TransformResult) -> FfiProcessResult_v2 
             text: std::ptr::null_mut(),
             backspace_count: 0,
             consumed: false,
+            key_consumed: false,
         }
     } else {
         let ffi_str = to_ffi_string(text_seq.as_str());
         FfiProcessResult_v2 {
             text: ffi_str,
-            backspace_count: backspace_count.min(255) as u8, // v2 uses u8
+            backspace_count: backspace_count as u8,
             consumed: true,
+            key_consumed: false,
         }
     }
 }
@@ -279,6 +289,28 @@ mod tests {
     }
 
     #[test]
+    fn free_tone_round_trips_v2() {
+        // true → EngineConfig → FfiConfig_v2 → EngineConfig should preserve true
+        let ffi = FfiConfig_v2 {
+            free_tone_enabled: true,
+            ..Default::default()
+        };
+        let engine_cfg = to_engine_config_v2(&ffi);
+        assert!(engine_cfg.free_tone_enabled, "true should round-trip");
+
+        let ffi_back = from_engine_config_v2(&engine_cfg);
+        assert!(ffi_back.free_tone_enabled, "true should survive back-conversion");
+
+        // false path
+        let ffi_false = FfiConfig_v2 {
+            free_tone_enabled: false,
+            ..Default::default()
+        };
+        let cfg_false = to_engine_config_v2(&ffi_false);
+        assert!(!cfg_false.free_tone_enabled, "false should round-trip");
+    }
+
+    #[test]
     fn test_to_ffi_process_result_v2_with_text() {
         let transform = TransformResult::new(
             crate::domain::entities::key_event::Action::Insert,
@@ -307,5 +339,29 @@ mod tests {
         assert!(ffi_result.text.is_null());
         assert_eq!(ffi_result.backspace_count, 0);
         assert!(!ffi_result.consumed);
+    }
+
+    #[test]
+    fn test_to_engine_config_v2_free_tone_and_skip_w() {
+        let ffi = FfiConfig_v2 {
+            free_tone_enabled: true,
+            skip_w_shortcut: true,
+            ..FfiConfig_v2::default()
+        };
+        let engine = to_engine_config_v2(&ffi);
+        assert!(engine.free_tone_enabled);
+        assert!(engine.skip_w_shortcut);
+    }
+
+    #[test]
+    fn test_from_engine_config_v2_free_tone_and_skip_w() {
+        let engine = EngineConfig {
+            free_tone_enabled: true,
+            skip_w_shortcut: true,
+            ..EngineConfig::default()
+        };
+        let ffi = from_engine_config_v2(&engine);
+        assert!(ffi.free_tone_enabled);
+        assert!(ffi.skip_w_shortcut);
     }
 }

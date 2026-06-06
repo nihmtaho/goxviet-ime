@@ -1,10 +1,11 @@
-//! Test for 4 critical engine bug fixes
+//! Test for critical engine bug fixes
 //!
-//! Issues from DICTIONARY_TEST_FAILURE_ANALYSIS_V2.md:
+// Source: internal analysis of 22K Vietnamese dict test run (Feb 2026).
 //! 1. Smart 'w' Double-Apply Bug: khuow → khươ (should be khuơ)
 //! 2. Compound Vowel Over-Aggressive: khoeo → khôe (should stay khoeo)
 //! 3. Foreign Word Auto-Restore: tareh → Taẻh (should be Tareh)
 //! 4. VNI Compound Mark: thuo73 → thưở (should be thuở)
+//! 6. ươ coda fix: thuowng → thương, phuowng → phương (u+o+w+coda → ươ compound)
 
 use goxviet_core::engine::Engine;
 use goxviet_core::utils::type_word;
@@ -152,4 +153,49 @@ fn test_issue_5_uyu_triphthong_vni() {
     let result = type_word(&mut engine, "khuyu3");
     println!("Issue #5 VNI: khuyu3 → {}", result);
     assert_eq!(result, "khuỷu", "uyu triphthong with hỏi tone should work");
+}
+
+// ── Issue #6: ươ compound after TH/KH/PH when coda follows ─────────────────
+
+#[test]
+fn test_issue_6_thuowng_thuong() {
+    // "thuowng" → "thương" (th + ươ + ng)
+    // Previously broken: normalize_uo_compound blocked TH prefix → "thuơng"
+    let mut engine = Engine::new();
+    let result = type_word(&mut engine, "thuowng");
+    assert_eq!(result, "thương", "thuowng should produce thương");
+}
+
+#[test]
+fn test_issue_6_phuowng_phuong() {
+    // "phuowng" → "phương" (ph + ươ + ng)
+    let mut engine = Engine::new();
+    let result = type_word(&mut engine, "phuowng");
+    assert_eq!(result, "phương", "phuowng should produce phương");
+}
+
+#[test]
+fn test_issue_6_khuow_no_coda_unchanged() {
+    // "khuow" → "khuơ" (no coda → u stays plain, existing Issue #1 fix)
+    let mut engine = Engine::new();
+    let result = type_word(&mut engine, "khuow");
+    assert_eq!(result, "khuơ", "khuow without coda should stay khuơ");
+}
+
+#[test]
+fn test_issue_6_thuowr_thuor() {
+    // "thuowr" → "thuở" (tone mark follows, not coda → u stays plain)
+    // Ensures the coda-path fix doesn't break the tone-mark path.
+    let mut engine = Engine::new();
+    let result = type_word(&mut engine, "thuowr");
+    assert_eq!(result, "thuở", "thuowr should produce thuở (not thưở)");
+}
+
+#[test]
+fn test_issue_6_vni_thuo73_thuor() {
+    // VNI "thuo73" → "thuở" (issue #4 non-regression)
+    let mut engine = Engine::new();
+    engine.set_method(1);
+    let result = type_word(&mut engine, "thuo73");
+    assert_eq!(result, "thuở", "VNI thuo73 should produce thuở");
 }

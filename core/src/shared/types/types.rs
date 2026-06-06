@@ -77,9 +77,11 @@ pub struct Result {
     pub backspace: u8,
     /// Number of valid characters in `chars` array
     pub count: u8,
-    /// Padding for alignment (unused)
-    pub _pad: u8,
+    /// Flags for engine behavior (e.g., whether the triggering key was consumed)
+    pub flags: u8,
 }
+
+pub const FLAG_KEY_CONSUMED: u8 = 0x01;
 
 impl Result {
     /// Create a "no action" result
@@ -96,7 +98,7 @@ impl Result {
             action: Action::None as u8,
             backspace: 0,
             count: 0,
-            _pad: 0,
+            flags: 0,
         }
     }
 
@@ -126,7 +128,7 @@ impl Result {
                 action: Action::Send as u8,
                 backspace,
                 count: 0,
-                _pad: 0,
+                flags: 0,
             };
         }
 
@@ -147,7 +149,7 @@ impl Result {
             action: Action::Send as u8,
             backspace,
             count: count as u8,
-            _pad: 0,
+            flags: 0,
         }
     }
 
@@ -165,7 +167,7 @@ impl Result {
             action: Action::Send as u8,
             backspace,
             count: 0,
-            _pad: 0,
+            flags: 0,
         }
     }
 
@@ -179,6 +181,12 @@ impl Result {
     #[inline]
     pub fn is_send(&self) -> bool {
         self.action == Action::Send as u8
+    }
+
+    /// Check if the triggering key was consumed by a shortcut
+    #[inline]
+    pub fn key_consumed(&self) -> bool {
+        self.flags & FLAG_KEY_CONSUMED != 0
     }
 
     /// Get chars as a slice for iteration
@@ -360,5 +368,30 @@ mod tests {
         assert!(Transform::WAsVowel.is_w_transform());
         assert!(Transform::WShortcutSkipped.is_w_transform());
         assert!(!Transform::Stroke(2).is_w_transform());
+    }
+
+    #[test]
+    fn test_result_flags_default_zero() {
+        let none = Result::none();
+        assert_eq!(none.flags, 0);
+        assert!(!none.key_consumed());
+
+        let send = Result::send(1, &['a']);
+        assert_eq!(send.flags, 0);
+        assert!(!send.key_consumed());
+
+        let del = Result::delete(2);
+        assert_eq!(del.flags, 0);
+        assert!(!del.key_consumed());
+    }
+
+    #[test]
+    fn test_flag_key_consumed() {
+        let mut r = Result::none();
+        r.flags |= FLAG_KEY_CONSUMED;
+        assert!(r.key_consumed());
+
+        r.flags = 0;
+        assert!(!r.key_consumed());
     }
 }

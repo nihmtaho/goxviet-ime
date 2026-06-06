@@ -22,6 +22,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionGrantedWhileModalActive = false
     private var isModalAlertActive = false
 
+    // Retained reference to the onboarding window to prevent deallocation
+    private var onboardingWindow: NSWindow?
+
     // Flag: app was launched right after an auto-update
     private var isPostUpdateLaunch: Bool = false
     private let notificationCenter = NotificationCenter.default
@@ -35,6 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         static let settingsClose = "AppDelegate.settingsCloseObserver"
         static let settingsCleanup = "AppDelegate.settingsCleanupObserver"
         static let accessibilityRevoked = "AppDelegate.accessibilityRevokedObserver"
+        static let showOnboarding = "AppDelegate.showOnboardingObserver"
     }
     
     var isEnabled: Bool {
@@ -68,12 +72,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize settings — must happen before InputManager is created
         SettingsManager.shared.initialize()
 
+        // Initialize service singletons that depend on MainActor
+        SoundFeedbackService.shared = SoundFeedbackService()
+        PerAppInjectionManager.shared = PerAppInjectionManager()
+        DebugLogger.shared = DebugLogger()
+
         // Create InputManager singleton on main actor (init has @MainActor dependencies)
         InputManager.shared = InputManager()
 
         // Apply Dock visibility from user preference
         applyActivationPolicyFromPreference()
-        
+
+        // Show first-launch onboarding wizard if not yet completed
+        if !SettingsManager.shared.hasCompletedOnboarding {
+            showOnboarding()
+        }
+
         // Create Status Bar Item first (before permission check)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -414,8 +428,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 
     
+    // MARK: - Onboarding
+
+    private func showOnboarding() {
+        let view = OnboardingView {
+            self.onboardingWindow?.close()
+            self.onboardingWindow = nil
+        }
+        let controller = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: controller)
+        window.title = "Chào mừng"
+        window.styleMask = [.titled, .closable]
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        self.onboardingWindow = window
+    }
+
     // MARK: - Settings Window
-    
+
     @objc func openSettings() {
         // Prevent opening settings during termination
         guard !isTerminating else {
@@ -613,6 +643,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ResourceManager.shared.register(observer: revokedToken, identifier: ObserverKey.accessibilityRevoked, center: notificationCenter)
 
+        // Listen for onboarding replay requests from Settings
+        let onboardingToken = notificationCenter.addObserver(
+            forName: Notification.Name("ShowOnboarding"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.showOnboarding()
+            }
+        }
+        ResourceManager.shared.register(observer: onboardingToken, identifier: ObserverKey.showOnboarding, center: notificationCenter)
+
     }
     
     private func cleanupObservers() {
@@ -624,7 +666,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ObserverKey.inputMethod,
             ObserverKey.settingsClose,
             ObserverKey.settingsCleanup,
-            ObserverKey.accessibilityRevoked
+            ObserverKey.accessibilityRevoked,
+            ObserverKey.showOnboarding
         ]
         identifiers.forEach { identifier in
             ResourceManager.shared.unregister(observerIdentifier: identifier, center: notificationCenter)

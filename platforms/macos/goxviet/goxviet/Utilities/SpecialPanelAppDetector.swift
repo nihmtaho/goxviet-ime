@@ -60,6 +60,7 @@ class SpecialPanelAppDetector {
     /// Check if a bundle ID is a special panel app
     static func isSpecialPanelApp(_ bundleId: String?) -> Bool {
         guard let bundleId else { return false }
+        guard !SettingsManager.shared.disablePanelDetection else { return false }
         return specialPanelApps.contains { bundleId.hasPrefix($0) || bundleId == $0 }
     }
 
