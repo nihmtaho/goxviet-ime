@@ -4,6 +4,31 @@
 
 ---
 
+## [2.0.16] - 2026-06-06
+
+> 📝 **Release Note**: [.release-notes/release_note_2.0.16.md](.release-notes/release_note_2.0.16.md)
+
+### ✨ Features
+
+- **Free Diacritic Toggle Mode**: Nhấn Ctrl để tạm thời tắt transformation tiếng Việt — gõ ký tự nào sẽ ra ký tự đó mà không cần tắt hẳn IME. Nhấn Ctrl lần nữa để trở về chế độ Vietnamese. (PR #86)
+- **Selection Injection Strategy** (Shift+Left + Cmd+V): Chiến lược inject text mới dùng Shift+Left để select N ký tự ngược và dán qua Cmd+V — tránh jitter trong các trường autocomplete và combo box. (commit 222b651)
+- **English Dictionary Integration** (vi.dic / keep.dic): Tích hợp từ điển tiếng Việt mở rộng (`vi.dic`) và danh sách từ tiếng Anh cần giữ nguyên (`keep.dic`) từ gonhanh — cải thiện đáng kể độ chính xác nhận diện từ tiếng Anh vs tiếng Việt. (PR #86, commit 777cc00)
+- **Shortcuts Fire When IME Disabled**: Immediate shortcuts (ví dụ `->` → `→`) vẫn hoạt động ngay cả khi IME đang tắt. (PR #86)
+- **Per-App Mode Enhancements**: Cải thiện Smart Mode per-app — per-app row UI được nâng cấp, Advanced tab được wire đầy đủ. (PR #86)
+
+### 🐛 Bug Fixes
+
+- **English words ending in 'w' at SPACE boundary** (`below`, `window`, `elbow`): Sửa lỗi từ tiếng Anh kết thúc bằng 'w' bị chuyển thành tiếng Việt khi nhấn SPACE — do 'w' trong Telex bị xử lý như horn modifier. (commit 6afb1b9)
+- **'download' stroke bug & phonotactic detection**: Sửa lỗi ký tự 'd' đầu trong `download` bị stroke khi tiếp tục gõ; cải thiện phonotactic detection cho các từ tiếng Anh có 'd' đầu. (commit 2b8a1ee)
+- **Buffer clear on IME disable in Free Diacritic Mode**: Gọi `ime_clear_all_v2()` khi thoát free diacritic mode lúc tắt IME, tránh buffer bị giữ lại. (commit 5156329)
+
+### 🔧 Refactor/Chores
+
+- **FFI ABI sync**: Đồng bộ Swift FFI structs với Rust ABI — `FfiProcessResult_v2` size assertion, `key_consumed` field, `free_tone_enabled`/`skip_w_shortcut` trong `FfiConfig_v2`. (PR #86)
+- **Shortcut prefix cap**: Giới hạn `shortcut_prefix` tối đa 64 ký tự để tránh tăng trưởng không giới hạn. (PR #86)
+
+---
+
 ## [2.0.15] - 2026-05-01
 
 > 📝 **Release Note**: [.release-notes/release_note_2.0.15.md](.release-notes/release_note_2.0.15.md)
