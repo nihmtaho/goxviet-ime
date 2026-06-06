@@ -182,7 +182,7 @@ public final class TextInjector {
     /// Selection injection: Shift+Left to select N chars backward, then paste via Cmd+V.
     /// Avoids backspace jitter in autocomplete fields and combo boxes.
     /// Modifies NSPasteboard.general — acceptable for this opt-in method.
-    private func injectViaSelection(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
+    func injectViaSelection(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
         guard let src = CGEventSource(stateID: .privateState) else { return }
 
         let selDelay = delays.0 > 0 ? delays.0 : 1000
