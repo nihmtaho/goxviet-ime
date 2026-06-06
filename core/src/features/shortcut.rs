@@ -61,7 +61,7 @@ pub struct Shortcut {
 impl Shortcut {
     /// Validate and truncate replacement if it exceeds MAX_REPLACEMENT_LEN.
     /// Counts UTF-32 codepoints (Vietnamese diacritics = 1 codepoint each).
-    fn validate_replacement(replacement: &str) -> String {
+    pub fn validate_replacement(replacement: &str) -> String {
         let char_count = replacement.chars().count();
         if char_count <= MAX_REPLACEMENT_LEN {
             replacement.to_string()

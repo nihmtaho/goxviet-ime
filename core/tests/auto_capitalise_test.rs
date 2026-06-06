@@ -228,6 +228,38 @@ fn test_backspace_after_auto_capitalised_letter_does_not_restore_word() {
     );
 }
 
+// ── EngineConfig / FfiConfig_v2 defaults and roundtrip ───────────────────────
+
+#[test]
+fn auto_capitalise_config_default_is_false() {
+    use goxviet_core::application::dto::engine_config::EngineConfig;
+    let cfg = EngineConfig::new();
+    assert!(
+        !cfg.auto_capitalise_enabled,
+        "auto_capitalise_enabled should default to false"
+    );
+}
+
+#[test]
+fn auto_capitalise_in_ffi_config_default_is_false() {
+    use goxviet_core::presentation::ffi::types::FfiConfig_v2;
+    let cfg = FfiConfig_v2::default();
+    assert!(!cfg.auto_capitalise_enabled);
+}
+
+#[test]
+fn auto_capitalise_survives_config_roundtrip() {
+    use goxviet_core::presentation::ffi::conversions::{from_engine_config_v2, to_engine_config_v2};
+    use goxviet_core::presentation::ffi::types::FfiConfig_v2;
+
+    let mut ffi = FfiConfig_v2::default();
+    ffi.auto_capitalise_enabled = true;
+    let engine_cfg = to_engine_config_v2(&ffi);
+    assert!(engine_cfg.auto_capitalise_enabled);
+    let ffi_back = from_engine_config_v2(&engine_cfg);
+    assert!(ffi_back.auto_capitalise_enabled);
+}
+
 // ── US4 – Enter as sentence-end trigger ──────────────────────────────────────
 
 #[test]

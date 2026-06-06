@@ -47,6 +47,15 @@ struct SettingsWindowCoordinator: View {
             }
             .tag(2)
             
+            // Advanced Tab - Lazy load
+            LazyView {
+                AdvancedSettingsTab()
+            }
+            .tabItem {
+                Label("Advanced", systemImage: "slider.horizontal.3")
+            }
+            .tag(3)
+
             // About Tab - Lazy load
             LazyView {
                 AboutSettingsTab()
@@ -54,7 +63,7 @@ struct SettingsWindowCoordinator: View {
             .tabItem {
                 Label("About", systemImage: "info.circle")
             }
-            .tag(3)
+            .tag(4)
         }
         .frame(minWidth: 680, minHeight: 540)
         .onAppear {
@@ -90,14 +99,24 @@ struct SettingsWindowCoordinator: View {
             perAppModes.removeAll()
             showClearConfirmation = false
             selectedTab = 0
-            
+
             // Post memory cleanup notification
             NotificationCenter.default.post(name: NSNotification.Name("settingsWindowCleanup"), object: nil)
         }
-        
+
         // Force UI update to release views
         DispatchQueue.main.async {
             // Additional cleanup on next runloop
+        }
+
+        if SettingsManager.shared.restartOnClose {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard let bundleURL = Bundle.main.bundleURL as URL? else { return }
+                let config = NSWorkspace.OpenConfiguration()
+                NSWorkspace.shared.openApplication(at: bundleURL, configuration: config) { _, _ in
+                    NSApplication.shared.terminate(nil)
+                }
+            }
         }
     }
 }
@@ -183,7 +202,10 @@ struct TextExpansionSettingsTab: View {
 
 struct AdvancedSettingsTab: View {
     var body: some View {
-        EmptyView()
+        AdvancedSettingsView(openLogAction: {
+            // Log viewer is shown inline in AdvancedSettingsView when debugLogEnabled is true
+        })
+        .environmentObject(SettingsManager.shared)
     }
 }
 

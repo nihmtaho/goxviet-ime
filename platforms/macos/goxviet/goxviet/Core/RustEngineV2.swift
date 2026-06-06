@@ -47,7 +47,9 @@ final class RustEngineV2 {
             bracket_shortcuts_enabled: false,
             foreign_consonants_enabled: false,
             auto_capitalise_enabled: false,
-            word_history_enabled: false
+            word_history_enabled: false,
+            free_tone_enabled: false,
+            skip_w_shortcut: false
         )
     }
     
@@ -202,8 +204,10 @@ final class RustEngineV2 {
     func setFreeTone(_ enabled: Bool) {
         lock.lock()
         defer { lock.unlock() }
-        
+
         freeToneEnabled = enabled
+        currentConfig.free_tone_enabled = enabled
+        applyConfig()
         Log.info("Free tone \(enabled ? "enabled" : "disabled")")
     }
     

@@ -179,23 +179,22 @@ public final class TextInjector {
         postText(text, source: src, proxy: proxy)
     }
 
-    /// Selection injection: Shift+Left to select, then type replacement (for browser address bars)
-    /// For backspace-only (text empty): use backspace to properly delete spaces/punctuation
-    /// For text replacement: use Shift+Left to select (normal behavior)
-    private func injectViaSelection(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
+    /// Selection injection: Shift+Left to select N chars backward, then paste via Cmd+V.
+    /// Avoids backspace jitter in autocomplete fields and combo boxes.
+    /// Modifies NSPasteboard.general — acceptable for this opt-in method.
+    func injectViaSelection(bs: Int, text: String, delays: (UInt32, UInt32, UInt32)) {
         guard let src = CGEventSource(stateID: .privateState) else { return }
 
         let selDelay = delays.0 > 0 ? delays.0 : 1000
         let waitDelay = delays.1 > 0 ? delays.1 : 3000
-        let textDelay = delays.2 > 0 ? delays.2 : 2000
 
+        // Select N characters backward using Shift+Left
         if bs > 0 {
-            // If text is empty (backspace-only, no replacement), use backspace to properly delete spaces/punctuation
-            // This fixes issue where Shift+Left selects space instead of deleting it
             if text.isEmpty {
-                // Backspace-only: use backspace for all deletions
+                // Backspace-only: use backspace to properly delete spaces/punctuation
+                // This fixes issue where Shift+Left selects space instead of deleting it
                 for _ in 0..<bs {
-            postKey(KeyCodes.backspace, source: src)
+                    postKey(KeyCodes.backspace, source: src)
                     usleep(selDelay)
                 }
             } else {
@@ -204,11 +203,21 @@ public final class TextInjector {
                     postKey(KeyCodes.leftArrow, source: src, flags: .maskShift)
                     usleep(selDelay)
                 }
-            }
-            usleep(waitDelay)
-        }
+                usleep(waitDelay)
 
-        postText(text, source: src, delay: textDelay)
+                // Place replacement text in pasteboard
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+
+                // Paste via Cmd+V
+                postKey(0x09, source: src, flags: .maskCommand)  // V key = 0x09
+            }
+        } else {
+            // No selection needed, just paste
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            postKey(0x09, source: src, flags: .maskCommand)  // V key = 0x09
+        }
     }
 
     /// Autocomplete injection: Forward Delete to clear suggestion, then backspace + text via proxy

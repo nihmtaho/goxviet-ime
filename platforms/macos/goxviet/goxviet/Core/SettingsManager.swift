@@ -153,8 +153,40 @@ final class SettingsManager: ObservableObject {
         }
     }
     
+    // MARK: - Feedback & Onboarding Settings
+
+    var soundEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.soundEnabled) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.soundEnabled) }
+    }
+
+    var remoteDesktopMode: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.remoteDesktopMode) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.remoteDesktopMode) }
+    }
+
+    var hasCompletedOnboarding: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.hasCompletedOnboarding) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.hasCompletedOnboarding) }
+    }
+
+    var debugLogEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.debugLogEnabled) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.debugLogEnabled) }
+    }
+
+    var disablePanelDetection: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.disablePanelDetection) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.disablePanelDetection) }
+    }
+
+    var restartOnClose: Bool {
+        get { UserDefaults.standard.bool(forKey: SettingsKey.restartOnClose) }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.restartOnClose) }
+    }
+
     // MARK: - Shortcuts (Text Expansion)
-    
+
     /// Source of truth for shortcuts - stored in UserDefaults and synced to Rust engine
     @Published var shortcuts: [TextShortcutItem] = []
     
@@ -356,19 +388,20 @@ final class SettingsManager: ObservableObject {
     /// Set enabled state and notify observers
     /// Debounced to reduce overhead during rapid toggles
     func setEnabled(_ enabled: Bool) {
+        let wasChanged: Bool
         lock.lock()
-        defer { lock.unlock() }
-        
-        guard enabled != isEnabled else { return }
-        
+        if enabled == isEnabled {
+            lock.unlock()
+            return
+        }
         isEnabled = enabled
-        
+
         // Persist to UserDefaults
         userDefaults.set(enabled, forKey: SettingsKey.isEnabled)
-        
+
         // Cancel pending debounce work
         setEnabledDebounceWork?.cancel()
-        
+
         // Create new debounced notification (50ms delay)
         let work = DispatchWorkItem {
             // Post notification for UI update
@@ -379,9 +412,20 @@ final class SettingsManager: ObservableObject {
 
             Log.info("Gõ Việt input: \(enabled ? "enabled" : "disabled")")
         }
-        
+
         setEnabledDebounceWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        wasChanged = true
+        lock.unlock()
+
+        // Sound feedback outside the lock (NSSound must not be called while holding a lock)
+        if wasChanged {
+            if enabled {
+                SoundFeedbackService.shared.playEnable()
+            } else {
+                SoundFeedbackService.shared.playDisable()
+            }
+        }
     }
     
     /// Set enabled state without posting notification (used during app switching)

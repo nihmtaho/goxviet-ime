@@ -42,7 +42,6 @@ pub mod features; // Feature modules (shortcuts, encoding)
 pub mod infrastructure; // Adapters & implementations (Telex, VNI, validators)
 pub mod presentation; // FFI API & DI container
 pub mod shared; // Shared utilities (buffer, types)
-pub mod unified_engine; // SOLID facade for engine components
 
 // ============================================================
 // UTILITIES & DATA
@@ -86,21 +85,25 @@ pub mod updater; // Auto-update functionality
 
 // Re-export main types from presentation layer
 pub use presentation::ffi::types::{
-    FfiConfig_v2, FfiProcessResult_v2, FfiStatusCode, FfiVersionInfo,
+    FfiConfig_v2, FfiProcessResult_v2, FfiShortcutExt_v2, FfiStatusCode, FfiVersionInfo,
 };
 
 // Re-export v2 FFI API
 pub use presentation::ffi::api::{
     // Shortcut API
+    ime_add_shortcut_ext_v2,
     ime_add_shortcut_v2,
     ime_clear_shortcuts_v2,
     ime_create_engine_v2,
     ime_destroy_engine_v2,
     ime_free_string_v2,
+    ime_get_buffer_v2,
     ime_get_config_v2,
     ime_get_version_v2,
+    ime_key_with_char_v2,
     ime_process_key_v2,
     ime_remove_shortcut_v2,
+    ime_restore_word_v2,
     ime_set_config_v2,
     ime_set_shortcuts_enabled_v2,
     ime_shortcuts_count_v2,
@@ -121,8 +124,7 @@ pub use presentation::ffi::api::{
 //   - v2 returns explicit status codes
 //   - v2 supports per-engine config (no global state)
 //
-// See MIGRATION_GUIDE.md for detailed migration instructions.
-//
+
 // Removed functions:
 //   - ime_init(), ime_key(), ime_key_ext()
 //   - ime_method(), ime_enabled(), ime_skip_w_shortcut()

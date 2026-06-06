@@ -14,7 +14,7 @@ use std::os::raw::{c_char, c_int};
 // ============================================================================
 
 use crate::presentation::ffi::types::{
-    FfiConfig_v2, FfiProcessResult_v2, FfiStatusCode, FfiVersionInfo,
+    FfiConfig_v2, FfiProcessResult_v2, FfiShortcutExt_v2, FfiStatusCode, FfiVersionInfo,
 };
 
 /// Create engine with optional config (v2 API)
@@ -83,7 +83,7 @@ pub extern "C" fn ime_reset_buffer_v2(engine_ptr: *mut c_void) -> FfiStatusCode 
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.reset_buffer();
         FfiStatusCode::Success
     }));
@@ -111,7 +111,7 @@ pub extern "C" fn ime_reset_all_v2(engine_ptr: *mut c_void) -> FfiStatusCode {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.reset_all();
         FfiStatusCode::Success
     }));
@@ -169,7 +169,7 @@ pub extern "C" fn ime_process_key_v2(
 
         // Process through processor service (following v1 pattern)
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
 
         // Process key
         let transform_result = match locked.process_key(key_event) {
@@ -246,13 +246,11 @@ pub extern "C" fn ime_process_key_ext_v2(
         let key_event = KeyEvent::with_caps(keycode, caps, shift, ctrl, false, false);
 
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
 
-        let transform_result = match locked.process_key(key_event) {
-            Ok(result) => result,
-            Err(_) => {
-                return FfiStatusCode::ErrorProcessingFailed;
-            }
+        let (transform_result, key_consumed) = match locked.process_key_ext(key_event) {
+            Ok(r) => r,
+            Err(_) => return FfiStatusCode::ErrorProcessingFailed,
         };
 
         let ffi_result = to_ffi_process_result_v2(transform_result);
@@ -261,6 +259,7 @@ pub extern "C" fn ime_process_key_ext_v2(
             (*out).text = ffi_result.text;
             (*out).backspace_count = ffi_result.backspace_count;
             (*out).consumed = ffi_result.consumed;
+            (*out).key_consumed = key_consumed;
         }
 
         FfiStatusCode::Success
@@ -271,6 +270,83 @@ pub extern "C" fn ime_process_key_ext_v2(
         Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
     }
 }
+
+/// Process a key event with an optional Unicode character (v2 API).
+///
+/// Used for Option-modified keys on macOS where keycode stays the same but
+/// the Unicode character differs (e.g. Option+V → √).
+///
+/// # Arguments
+/// * `engine_ptr` - Engine pointer from `ime_create_engine_v2`
+/// * `key_char`   - ASCII keycode
+/// * `caps`       - CapsLock active
+/// * `shift`      - Shift pressed
+/// * `ctrl`       - Ctrl/Cmd/Alt pressed
+/// * `char_code`  - Actual Unicode codepoint (0 = use keycode mapping only)
+/// * `out`        - Output (must not be NULL); free `text` with `ime_free_string_v2`
+///
+/// # Returns
+/// 0 on success, negative on error
+///
+/// # Safety
+/// `engine_ptr` and `out` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn ime_key_with_char_v2(
+    engine_ptr: *mut c_void,
+    key_char: c_char,
+    caps: bool,
+    shift: bool,
+    ctrl: bool,
+    char_code: u32,
+    out: *mut FfiProcessResult_v2,
+) -> c_int {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    if engine_ptr.is_null() {
+        return FfiStatusCode::ErrorNullEngine.to_c_int();
+    }
+    if out.is_null() {
+        return FfiStatusCode::ErrorNullOutput.to_c_int();
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let container = unsafe { &*(engine_ptr as *const Container) };
+
+        let ascii = key_char as u8;
+        let keycode = match crate::data::keys::from_ascii(ascii) {
+            Some(kc) => kc,
+            None => return FfiStatusCode::ErrorInvalidKey,
+        };
+
+        let ch = if char_code > 0 { char::from_u32(char_code) } else { None };
+        let key_event = KeyEvent::with_caps(keycode, caps, shift, ctrl, false, false);
+
+        let processor = container.processor_service();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
+
+        let (transform_result, key_consumed) = match locked.process_key_with_char(key_event, ch) {
+            Ok(r) => r,
+            Err(_) => return FfiStatusCode::ErrorProcessingFailed,
+        };
+
+        let ffi_result = to_ffi_process_result_v2(transform_result);
+
+        unsafe {
+            (*out).text = ffi_result.text;
+            (*out).backspace_count = ffi_result.backspace_count;
+            (*out).consumed = ffi_result.consumed;
+            (*out).key_consumed = key_consumed;
+        }
+
+        FfiStatusCode::Success
+    }));
+
+    match result {
+        Ok(status) => status.to_c_int(),
+        Err(_) => FfiStatusCode::ErrorPanic.to_c_int(),
+    }
+}
+
 ///
 /// # Arguments
 /// * `engine_ptr` - Engine instance (must not be NULL)
@@ -426,8 +502,92 @@ pub extern "C" fn ime_add_shortcut_v2(
         };
 
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         if locked.add_shortcut(trigger_str, expansion_str) {
+            FfiStatusCode::Success
+        } else {
+            FfiStatusCode::ErrorAlreadyExists
+        }
+    }));
+
+    match result {
+        Ok(status) => status,
+        Err(_) => FfiStatusCode::ErrorUnknown,
+    }
+}
+
+/// Add a shortcut with extended fields: smart case, trigger condition, input method filter.
+///
+/// # Arguments
+/// * `engine` - Engine pointer (must not be NULL)
+/// * `ext` - Extended shortcut descriptor (must not be NULL)
+///
+/// # Returns
+/// * `FfiStatusCode::Success` on success
+/// * `FfiStatusCode::ErrorInvalidArgument` if any pointer is NULL or strings are invalid UTF-8
+/// * `FfiStatusCode::ErrorAlreadyExists` if shortcut table is at capacity and trigger is new
+///
+/// # Safety
+/// `engine` and `ext` must not be null. Pointer fields in `ext` must be valid null-terminated UTF-8.
+#[no_mangle]
+pub extern "C" fn ime_add_shortcut_ext_v2(
+    engine: *mut c_void,
+    ext: *const FfiShortcutExt_v2,
+) -> FfiStatusCode {
+    use crate::features::shortcut::{CaseMode, InputMethod, Shortcut, TriggerCondition};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    if engine.is_null() || ext.is_null() {
+        return FfiStatusCode::ErrorInvalidArgument;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let ext_ref = unsafe { &*ext };
+
+        if ext_ref.trigger.is_null() || ext_ref.replacement.is_null() {
+            return FfiStatusCode::ErrorInvalidArgument;
+        }
+
+        let trigger_str = match unsafe { std::ffi::CStr::from_ptr(ext_ref.trigger).to_str() } {
+            Ok(s) => s,
+            Err(_) => return FfiStatusCode::ErrorInvalidArgument,
+        };
+
+        let replacement_str =
+            match unsafe { std::ffi::CStr::from_ptr(ext_ref.replacement).to_str() } {
+                Ok(s) => s,
+                Err(_) => return FfiStatusCode::ErrorInvalidArgument,
+            };
+
+        let condition = match ext_ref.trigger_condition {
+            1 => TriggerCondition::Immediate,
+            _ => TriggerCondition::OnWordBoundary,
+        };
+
+        let case_mode = match ext_ref.case_mode {
+            1 => CaseMode::Exact,
+            _ => CaseMode::MatchCase,
+        };
+
+        let input_method = match ext_ref.input_method {
+            1 => InputMethod::Telex,
+            2 => InputMethod::Vni,
+            _ => InputMethod::All,
+        };
+
+        let shortcut = Shortcut {
+            trigger: trigger_str.to_string(),
+            replacement: Shortcut::validate_replacement(replacement_str),
+            condition,
+            case_mode,
+            enabled: ext_ref.enabled,
+            input_method,
+        };
+
+        let container = unsafe { &*(engine as *const crate::presentation::di::Container) };
+        let processor = container.processor_service();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
+        if locked.add_shortcut_full(shortcut) {
             FfiStatusCode::Success
         } else {
             FfiStatusCode::ErrorAlreadyExists
@@ -472,7 +632,7 @@ pub extern "C" fn ime_remove_shortcut_v2(
         };
 
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         if locked.remove_shortcut(trigger_str) {
             FfiStatusCode::Success
         } else {
@@ -498,7 +658,7 @@ pub extern "C" fn ime_clear_shortcuts_v2(engine: *mut c_void) -> FfiStatusCode {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.clear_shortcuts();
         FfiStatusCode::Success
     }));
@@ -521,7 +681,7 @@ pub extern "C" fn ime_shortcuts_count_v2(engine: *mut c_void) -> c_int {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine as *const Container) };
         let processor = container.processor_service();
-        let locked = processor.lock().unwrap();
+        let locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.shortcuts_count() as c_int
     }));
 
@@ -546,7 +706,7 @@ pub extern "C" fn ime_set_shortcuts_enabled_v2(
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         locked.set_shortcuts_enabled(enabled);
         FfiStatusCode::Success
     }));
@@ -581,7 +741,7 @@ pub extern "C" fn ime_restore_to_raw_v2(
     let result = catch_unwind(AssertUnwindSafe(|| {
         let container = unsafe { &*(engine_ptr as *const Container) };
         let processor = container.processor_service();
-        let mut locked = processor.lock().unwrap();
+        let mut locked = processor.lock().unwrap_or_else(|e| e.into_inner());
         let transform_result = locked.restore_to_raw();
         let ffi_result = to_ffi_process_result_v2(transform_result);
 
@@ -601,8 +761,116 @@ pub extern "C" fn ime_restore_to_raw_v2(
 }
 
 // ============================================================================
+// Buffer Export and Word Restore API
+// ============================================================================
+
+/// Export the current displayed buffer as UTF-32 codepoints.
+///
+/// `out_buf` must be caller-allocated with at least `capacity` elements.
+/// Returns the number of codepoints written, or -1 on error.
+///
+/// # Safety
+/// - `engine` must be a valid pointer from `ime_create_engine_v2`
+/// - `out_buf` must point to a writable array of at least `capacity` u32 values
+#[no_mangle]
+pub extern "C" fn ime_get_buffer_v2(
+    engine: *mut c_void,
+    out_buf: *mut u32,
+    capacity: i64,
+) -> i64 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if engine.is_null() || out_buf.is_null() || capacity <= 0 {
+            return -1i64;
+        }
+        let container = unsafe { &*(engine as *const Container) };
+        let chars = container.get_buffer_chars();
+        let count = chars.len().min(capacity as usize);
+        let buf_slice = unsafe { std::slice::from_raw_parts_mut(out_buf, count) };
+        for (i, ch) in chars.iter().take(count).enumerate() {
+            buf_slice[i] = *ch as u32;
+        }
+        count as i64
+    }))
+    .unwrap_or(-1i64)
+}
+
+/// Parse a Vietnamese word back into the engine buffer (for backspace-into-word).
+///
+/// `word` must be null-terminated UTF-8. Clears the current buffer and re-populates
+/// it from `word` so that subsequent keystrokes continue from the restored state.
+///
+/// # Safety
+/// - `engine` must be a valid pointer from `ime_create_engine_v2`
+/// - `word` must be a valid null-terminated UTF-8 C string
+#[no_mangle]
+pub extern "C" fn ime_restore_word_v2(engine: *mut c_void, word: *const c_char) -> c_int {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if engine.is_null() {
+            return FfiStatusCode::ErrorNullEngine.to_c_int();
+        }
+        if word.is_null() {
+            return FfiStatusCode::ErrorInvalidArgument.to_c_int();
+        }
+        let container = unsafe { &mut *(engine as *mut Container) };
+        let text = match unsafe { std::ffi::CStr::from_ptr(word) }.to_str() {
+            Ok(s) => s,
+            Err(_) => return FfiStatusCode::ErrorInvalidArgument.to_c_int(),
+        };
+        container.restore_word(text);
+        FfiStatusCode::Success.to_c_int()
+    }))
+    .unwrap_or(FfiStatusCode::ErrorPanic.to_c_int())
+}
+
+// ============================================================================
 // Input Method Config API (T6.2)
 // ============================================================================
+
+#[cfg(test)]
+mod api_tests {
+    use super::*;
+    use crate::presentation::ffi::types::FfiProcessResult_v2;
+
+    unsafe fn make_engine() -> *mut std::ffi::c_void {
+        ime_create_engine_v2(std::ptr::null())
+    }
+
+    #[test]
+    fn test_ime_key_with_char_v2_plain_char() {
+        unsafe {
+            let engine = make_engine();
+            let mut out = FfiProcessResult_v2::default();
+            let status = ime_key_with_char_v2(engine, b'a' as i8, false, false, false, 0, &mut out);
+            assert_eq!(status, 0, "should succeed");
+            assert!(!out.key_consumed, "plain letter should not consume key");
+            ime_destroy_engine_v2(engine);
+        }
+    }
+
+    #[test]
+    fn test_ime_get_buffer_v2_returns_zero_on_empty() {
+        unsafe {
+            let engine = make_engine();
+            let mut buf = [0u32; 64];
+            let count = ime_get_buffer_v2(engine, buf.as_mut_ptr(), 64);
+            assert_eq!(count, 0, "empty buffer should return 0 codepoints");
+            ime_destroy_engine_v2(engine);
+        }
+    }
+
+    #[test]
+    fn test_ime_process_key_ext_v2_key_consumed_false_for_letter() {
+        unsafe {
+            let engine = make_engine();
+            let mut out = FfiProcessResult_v2::default();
+            // 'a' key
+            let status = ime_process_key_ext_v2(engine, b'a' as i8, false, false, false, &mut out);
+            assert_eq!(status, 0);
+            assert!(!out.key_consumed, "plain letter should not set key_consumed");
+            ime_destroy_engine_v2(engine);
+        }
+    }
+}
 
 /// Load a data-driven InputMethodConfig from JSON (v2 API — Sprint D)
 ///

@@ -4,7 +4,6 @@
 //! They contain business logic and maintain invariants.
 
 pub mod buffer;
-pub mod engine_buffer;
 pub mod input_method_config;
 pub mod key_event;
 pub mod syllable;
