@@ -11,6 +11,7 @@ docs/
 
 scripts/
 !scripts/calc_hash.py
+!scripts/rust_build_dll_for_windows.ps1
 bindings/
 homebrew/
 platforms/macos/goxviet/archive/
